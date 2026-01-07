@@ -36,48 +36,48 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('events') }}">
+                        <a class="nav-link" href="{{ url_for('main.events') }}">
                             <i class="fas fa-trophy"></i> Турниры
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('athletes') }}">
+                        <a class="nav-link" href="{{ url_for('main.athletes') }}">
                             <i class="fas fa-users"></i> Спортсмены
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('categories') }}">
+                        <a class="nav-link" href="{{ url_for('main.categories') }}">
                             <i class="fas fa-layer-group"></i> Разряды
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('best_results') }}">
+                        <a class="nav-link" href="{{ url_for('main.best_results') }}">
                             <i class="fas fa-medal"></i> Лучшие результаты
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('clubs') }}">
+                        <a class="nav-link" href="{{ url_for('main.clubs') }}">
                             <i class="fas fa-school"></i> Школы
                         </a>
                     </li>
                     {% if session.admin_logged_in %}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('upload_file') }}">
+                        <a class="nav-link" href="{{ url_for('upload.upload_file') }}">
                             <i class="fas fa-upload"></i> Загрузить файл
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('admin_free_participation') }}">
+                        <a class="nav-link" href="{{ url_for('admin.admin_free_participation') }}">
                             <i class="fas fa-gift"></i> Бесплатное участие
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('admin_export_google_sheets') }}">
+                        <a class="nav-link" href="{{ url_for('admin.admin_export_google_sheets') }}">
                             <i class="fas fa-table"></i> Экспорт в Google Sheets
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('admin_tools') }}">
+                        <a class="nav-link" href="{{ url_for('admin.admin_tools') }}">
                             <i class="fas fa-tools"></i> Инструменты админа
                         </a>
                     </li>
@@ -86,29 +86,29 @@
                 
                 <ul class="navbar-nav">
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('free_participation') }}">
+                        <a class="nav-link" href="{{ url_for('main.free_participation') }}">
                             <i class="fas fa-gift"></i> Бесплатное участие
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('free_participation_analysis') }}">
+                        <a class="nav-link" href="{{ url_for('main.free_participation_analysis') }}">
                             <i class="fas fa-chart-line"></i> Анализ участий
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('club_free_analysis') }}">
+                        <a class="nav-link" href="{{ url_for('main.club_free_analysis') }}">
                             <i class="fas fa-school"></i> Анализ по школам
                         </a>
                     </li>
                     {% if session.admin_logged_in %}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('admin_logout') }}">
+                        <a class="nav-link" href="{{ url_for('admin.admin_logout') }}">
                             <i class="fas fa-sign-out-alt"></i> Выйти
                         </a>
                     </li>
                     {% else %}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('admin_login') }}">
+                        <a class="nav-link" href="{{ url_for('admin.admin_login') }}">
                             <i class="fas fa-sign-in-alt"></i> Вход
                         </a>
                     </li>
