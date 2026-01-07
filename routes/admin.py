@@ -33,12 +33,13 @@ logger = logging.getLogger(__name__)
 def rate_limit(limit_str):
     """Применяет rate limiting к функции используя limiter из app"""
     def decorator(f):
-        # Получаем limiter из current_app после инициализации
-        # Flask-Limiter автоматически регистрируется в app
-        from flask_limiter import Limiter
-        from flask_limiter.util import get_remote_address
+        # ВАЖНО: используем wraps(), иначе все view-функции будут называться "wrapper"
+        # и Flask упадет с:
+        # AssertionError: View function mapping is overwriting an existing endpoint function: upload.wrapper
+        from functools import wraps
         
         # Создаем декоратор, который будет применен во время выполнения
+        @wraps(f)
         def wrapper(*args, **kwargs):
             # Получаем limiter из current_app
             limiter_instance = current_app.extensions.get('limiter')
