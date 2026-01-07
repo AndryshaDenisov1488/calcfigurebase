@@ -1,0 +1,785 @@
+{% extends "base.html" %}
+
+{% block title %}Спортсмены с бесплатным участием - Система управления турнирами{% endblock %}
+
+{% block extra_css %}
+<style>
+    .athlete-card {
+        transition: transform 0.2s;
+    }
+    .athlete-card:hover {
+        transform: translateY(-2px);
+    }
+    .event-item {
+        border-left: 3px solid #28a745;
+        padding-left: 10px;
+        margin-bottom: 8px;
+    }
+    .stats-badge {
+        font-size: 0.9em;
+    }
+
+    /* Мобильная адаптация для страницы бесплатного участия */
+    @media (max-width: 768px) {
+        .accordion-item {
+            margin-bottom: 0.75rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        }
+
+        .accordion-button {
+            padding: 0.75rem;
+            font-size: 0.9rem;
+        }
+
+        .accordion-body {
+            padding: 0.75rem;
+        }
+
+        .event-item {
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            background-color: #f8f9fa;
+            border-radius: 0.5rem;
+            border-left: 4px solid #28a745;
+        }
+
+        .stats-cards .col-6 {
+            margin-bottom: 1rem;
+        }
+
+        .stats-cards .card {
+            text-align: center;
+            padding: 1rem 0.5rem;
+        }
+
+        .stats-cards .card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .stats-cards .card small {
+            font-size: 0.75rem;
+        }
+
+        .btn-profile {
+            width: 100%;
+            margin-top: 0.5rem;
+        }
+    }
+
+    @media (max-width: 576px) {
+        .stats-cards .col-6 {
+            flex: 0 0 100%;
+            max-width: 100%;
+        }
+
+        .accordion-button {
+            font-size: 0.85rem;
+            padding: 0.5rem;
+        }
+
+        .event-item {
+            padding: 0.5rem;
+        }
+
+        .event-item strong {
+            font-size: 0.9rem;
+        }
+
+        .event-item small {
+            font-size: 0.8rem;
+        }
+    }
+
+    .accordion-button:not(.collapsed) {
+        background-color: #e8f5e8;
+    }
+
+    /* Раздел с анализом по разрядам */
+    .rank-accordion-item .accordion-button {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+
+    @media (min-width: 768px) {
+        .rank-accordion-item .accordion-button {
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+        }
+    }
+
+    .rank-header-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        font-size: 0.85rem;
+        color: var(--bs-secondary);
+    }
+
+    .rank-header-meta .rank-stat-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.25rem 0.65rem;
+        border-radius: 999px;
+        background: rgba(33, 37, 41, 0.05);
+        font-size: 0.8rem;
+    }
+
+    .rank-header-meta .rank-stat-pill i {
+        color: #198754;
+    }
+
+    .rank-accordion-item .accordion-body {
+        background-color: #fcfcfd;
+    }
+
+    .rank-empty {
+        text-align: center;
+        color: var(--bs-secondary);
+        padding: 2rem 1rem;
+        border: 1px dashed rgba(0, 0, 0, 0.1);
+        border-radius: 0.75rem;
+        background: #fff;
+    }
+
+    .rank-table thead th {
+        position: sticky;
+        top: 0;
+        background: #fff;
+        z-index: 1;
+    }
+
+    .rank-table tbody tr:hover {
+        background-color: rgba(25, 135, 84, 0.08);
+    }
+
+    .free-events {
+        margin-top: 0.5rem;
+    }
+
+    .free-events summary {
+        cursor: pointer;
+        font-weight: 600;
+    }
+
+    .free-events ul {
+        margin-top: 0.5rem;
+        padding-left: 1.1rem;
+    }
+
+    .rank-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        border-radius: 999px;
+        background: #f1f3f5;
+        padding: 0.15rem 0.6rem;
+        font-size: 0.75rem;
+        border: 1px solid rgba(0, 0, 0, 0.05);
+        color: var(--bs-dark);
+    }
+
+    .rank-badge strong {
+        color: #198754;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-gift text-success"></i> Спортсмены с бесплатным участием</h2>
+                <a href="{{ url_for('analytics') }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left"></i> Назад к аналитике
+                </a>
+            </div>
+
+            <!-- Статистика -->
+            <div class="row mb-4">
+                <div class="col-md-4">
+                    <div class="card bg-success text-white">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h4 id="totalAthletes">-</h4>
+                                    <p class="mb-0">Спортсменов с бесплатным участием</p>
+                                </div>
+                                <div class="align-self-center">
+                                    <i class="fas fa-users fa-2x"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card bg-info text-white">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h4 id="totalParticipations">-</h4>
+                                    <p class="mb-0">Всего бесплатных участий</p>
+                                </div>
+                                <div class="align-self-center">
+                                    <i class="fas fa-gift fa-2x"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card bg-warning text-white">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h4 id="avgParticipations">-</h4>
+                                    <p class="mb-0">Среднее участие на спортсмена</p>
+                                </div>
+                                <div class="align-self-center">
+                                    <i class="fas fa-chart-line fa-2x"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Анализ по разрядам -->
+            <div class="card mt-4 d-none" id="rankSection">
+                <div class="card-header d-flex flex-column flex-lg-row justify-content-lg-between align-items-lg-center gap-2">
+                    <div>
+                        <h5 class="mb-1"><i class="fas fa-layer-group text-success"></i> Анализ по разрядам</h5>
+                        <small class="text-muted" id="rankStatsOverview">Показатели загружаются...</small>
+                    </div>
+                    <div class="text-muted small">
+                        <i class="fas fa-info-circle me-1"></i>Группировка показывает только разряды с бесплатными стартами
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 align-items-center mb-3">
+                        <div class="col-12 col-lg-4">
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                <input type="search" id="rankSearchInput" class="form-control" placeholder="Поиск по разряду или спортсмену">
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3 col-lg-2">
+                            <select class="form-select" id="rankGenderFilter">
+                                <option value="">Пол: все</option>
+                                <option value="F">Только женские</option>
+                                <option value="M">Только мужские</option>
+                                <option value="X">Смешанные</option>
+                                <option value="U">Не указан</option>
+                            </select>
+                        </div>
+                        <div class="col-6 col-md-3 col-lg-2">
+                            <select class="form-select" id="rankGroupSort">
+                                <option value="weight">Разряды: по значимости</option>
+                                <option value="name">Разряды: по алфавиту</option>
+                                <option value="athletes">Разряды: по числу спортсменов</option>
+                                <option value="free">Разряды: по бесплатным стартам</option>
+                            </select>
+                        </div>
+                        <div class="col-6 col-md-3 col-lg-2">
+                            <select class="form-select" id="rankAthleteSort">
+                                <option value="free">Спортсмены: по бесплатным стартам</option>
+                                <option value="events">Спортсмены: по турнирам</option>
+                                <option value="recent">Спортсмены: по дате старта</option>
+                                <option value="name">Спортсмены: по имени</option>
+                            </select>
+                        </div>
+                        <div class="col-6 col-md-3 col-lg-2">
+                            <div class="form-check form-switch ps-0">
+                                <input class="form-check-input ms-0" type="checkbox" id="rankHideEmpty" checked>
+                                <label class="form-check-label ms-3" for="rankHideEmpty">Скрывать пустые</label>
+                            </div>
+                        </div>
+                    </div>
+                    <p id="rankSummaryText" class="text-muted small mb-3"></p>
+                    <div id="rankAccordion" class="accordion"></div>
+                </div>
+            </div>
+
+            <!-- Список спортсменов -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-list"></i> Список спортсменов</h5>
+                </div>
+                <div class="card-body">
+                    <div id="athletesList">
+                        <div class="text-center">
+                            <div class="spinner-border" role="status">
+                                <span class="visually-hidden">Загрузка...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const rankExpandedSet = new Set();
+let rankGroupsData = [];
+let rankSummaryData = {};
+let rankFilters = {};
+let rankFiltersInitialized = false;
+
+function updateTopStats(data) {
+    document.getElementById('totalAthletes').textContent = data.total_athletes ?? '-';
+    document.getElementById('totalParticipations').textContent = data.total_free_participations ?? '-';
+
+    const avgParticipations = data.total_athletes > 0 ?
+        (data.total_free_participations / data.total_athletes).toFixed(1) : 0;
+    document.getElementById('avgParticipations').textContent = avgParticipations;
+}
+
+function renderAthletesList(data) {
+    const athletesList = document.getElementById('athletesList');
+    if (!athletesList) {
+        return;
+    }
+
+    const athletes = Array.isArray(data.athletes) ? data.athletes : [];
+
+    if (!athletes.length) {
+        athletesList.innerHTML = `
+            <div class="text-center py-5">
+                <i class="fas fa-gift fa-3x text-muted mb-3"></i>
+                <h4 class="text-muted">Нет спортсменов с бесплатным участием</h4>
+                <p class="text-muted">Спортсмены с бесплатным участием появятся здесь после загрузки соответствующих данных.</p>
+            </div>
+        `;
+        return;
+    }
+
+    athletesList.innerHTML = athletes.map((athlete, index) => {
+        const dominantRankSuffix = athlete.dominant_rank ? ` · ${athlete.dominant_rank}` : '';
+        const rankBadges = Array.isArray(athlete.ranks)
+            ? athlete.ranks.slice(0, 3).map(rankInfo => `
+                <span class="rank-badge me-1">
+                    ${rankInfo.name}
+                    <strong>${rankInfo.count}</strong>
+                </span>
+            `).join('')
+            : '';
+        const extraRanks = Array.isArray(athlete.ranks) && athlete.ranks.length > 3
+            ? `<span class="rank-badge me-1">+${athlete.ranks.length - 3}</span>`
+            : '';
+
+        return `
+            <div class="accordion mb-3" id="accordion-${athlete.id}">
+                <div class="accordion-item">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                data-bs-target="#collapse-${athlete.id}"
+                                aria-expanded="false" aria-controls="collapse-${athlete.id}">
+                            <div class="d-flex justify-content-between w-100 me-3">
+                                <div class="d-flex align-items-center">
+                                    <span class="badge bg-success me-2">${index + 1}</span>
+                                    <div>
+                                        <strong>${athlete.name}</strong>
+                                        <br><small class="text-muted">${athlete.free_participations} бесплатных участий${dominantRankSuffix}</small>
+                                        ${rankBadges || extraRanks ? `<div class="mt-2">${rankBadges}${extraRanks}</div>` : ''}
+                                    </div>
+                                </div>
+                                <div class="text-end">
+                                    <a href="/athlete/${athlete.id}" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-user"></i> Профиль
+                                    </a>
+                                </div>
+                            </div>
+                        </button>
+                    </h2>
+                    <div id="collapse-${athlete.id}" class="accordion-collapse collapse"
+                         data-bs-parent="#accordion-${athlete.id}">
+                        <div class="accordion-body">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6><i class="fas fa-trophy text-warning"></i> Турниры с бесплатным участием:</h6>
+                                    ${athlete.events.map(event => `
+                                        <div class="event-item">
+                                            <div class="d-flex justify-content-between align-items-start">
+                                                <div>
+                                                    <strong>${event.event_name}</strong>
+                                                    <br><small class="text-muted">
+                                                        <i class="fas fa-calendar"></i> ${event.event_date}
+                                                        <br><i class="fas fa-layer-group"></i> ${event.category_name}
+                                                        <br><i class="fas fa-medal"></i> ${event.rank}
+                                                    </small>
+                                                </div>
+                                                <div class="text-end">
+                                                    ${event.place ? `<span class="badge bg-warning">${event.place} место</span>` : ''}
+                                                    ${event.points ? `<br><small class="text-muted">${event.points} баллов</small>` : ''}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+                                            <h6><i class="fas fa-chart-pie text-info"></i> Статистика:</h6>
+                                            <div class="row text-center">
+                                                <div class="col-6">
+                                                    <div class="border rounded p-2">
+                                                        <div class="fw-bold text-success">${athlete.free_participations}</div>
+                                                        <small class="text-muted">Бесплатных участий</small>
+                                                    </div>
+                                                </div>
+                                                <div class="col-6">
+                                                    <div class="border rounded p-2">
+                                                        <div class="fw-bold text-primary">${athlete.events.length}</div>
+                                                        <small class="text-muted">Турниров</small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <hr>
+                                            <div class="text-center">
+                                                <small class="text-muted">
+                                                    <i class="fas fa-info-circle"></i>
+                                                    Все участия данного спортсмена были бесплатными
+                                                </small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function updateRankOverview() {
+    const overviewEl = document.getElementById('rankStatsOverview');
+    if (!overviewEl) {
+        return;
+    }
+    const summary = rankSummaryData || {};
+    overviewEl.textContent = `Всего разрядов: ${summary.total_ranks ?? 0} · С данными: ${summary.ranks_with_data ?? 0} · ` +
+        `Спортсменов: ${summary.total_athletes ?? 0} · Бесплатных стартов: ${summary.total_free_participations ?? 0}`;
+}
+
+function sortRankAthletes(athletes, sortKey) {
+    const list = athletes.slice();
+    switch (sortKey) {
+        case 'name':
+            return list.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+        case 'events':
+            return list.sort((a, b) => (b.events_count || 0) - (a.events_count || 0));
+        case 'recent':
+            return list.sort((a, b) => {
+                const aDate = a.last_event_date || '';
+                const bDate = b.last_event_date || '';
+                return bDate.localeCompare(aDate);
+            });
+        case 'free':
+        default:
+            return list.sort((a, b) => (b.free_participations || 0) - (a.free_participations || 0));
+    }
+}
+
+function applyRankFilters() {
+    if (!rankFilters.search) {
+        return [];
+    }
+    const searchTerm = rankFilters.search.value.trim().toLowerCase();
+    const genderValue = rankFilters.gender.value;
+    const groupSortValue = rankFilters.groupSort.value;
+    const athleteSortValue = rankFilters.athleteSort.value;
+    const hideEmpty = rankFilters.hideEmpty.checked;
+
+    const processed = rankGroupsData.map(group => ({
+        ...group,
+        athletes: Array.isArray(group.athletes) ? sortRankAthletes(group.athletes, athleteSortValue) : []
+    })).filter(group => {
+        if (genderValue && group.gender !== genderValue) {
+            return false;
+        }
+        if (hideEmpty && (!group.athletes || group.athletes.length === 0)) {
+            return false;
+        }
+        if (searchTerm) {
+            const inGroupName = group.display_name.toLowerCase().includes(searchTerm);
+            const inAthletes = group.athletes.some(athlete => athlete.name.toLowerCase().includes(searchTerm));
+            if (!inGroupName && !inAthletes) {
+                return false;
+            }
+        }
+        return true;
+    });
+
+    processed.sort((a, b) => {
+        switch (groupSortValue) {
+            case 'name':
+                return a.display_name.localeCompare(b.display_name, 'ru');
+            case 'athletes': {
+                const diff = (b.athlete_count || 0) - (a.athlete_count || 0);
+                if (diff !== 0) {
+                    return diff;
+                }
+                return a.display_name.localeCompare(b.display_name, 'ru');
+            }
+            case 'free': {
+                const diff = (b.total_participations || 0) - (a.total_participations || 0);
+                if (diff !== 0) {
+                    return diff;
+                }
+                return a.display_name.localeCompare(b.display_name, 'ru');
+            }
+            case 'weight':
+            default: {
+                const diff = (a.weight || 0) - (b.weight || 0);
+                if (diff !== 0) {
+                    return diff;
+                }
+                return a.display_name.localeCompare(b.display_name, 'ru');
+            }
+        }
+    });
+
+    return processed;
+}
+
+function renderRankAccordion() {
+    if (!rankFilters.accordion) {
+        return;
+    }
+
+    const data = applyRankFilters();
+    const summaryEl = rankFilters.summary;
+    const accordion = rankFilters.accordion;
+
+    if (!data.length) {
+        summaryEl.textContent = 'Подходящих разрядов не найдено. Попробуйте изменить условия поиска.';
+        accordion.innerHTML = '<div class="rank-empty">Ничего не найдено. Измените фильтры и попробуйте снова.</div>';
+        return;
+    }
+
+    const ranksWithData = data.filter(group => group.athletes && group.athletes.length > 0);
+    const totalAthletes = ranksWithData.reduce((acc, group) => acc + group.athletes.length, 0);
+    const totalFree = ranksWithData.reduce((acc, group) => acc + (group.total_participations || 0), 0);
+
+    summaryEl.textContent = `Показано разрядов: ${data.length}. С данными: ${ranksWithData.length}. ` +
+        `Спортсменов: ${totalAthletes}. Бесплатных стартов: ${totalFree}.`;
+
+    const fragment = document.createDocumentFragment();
+
+    data.forEach(group => {
+        const isExpanded = rankExpandedSet.has(group.anchor);
+        const collapseId = `rank-collapse-${group.anchor}`;
+        const headingId = `rank-heading-${group.anchor}`;
+        const topAthlete = group.athletes[0];
+        const totalFreeStarts = group.total_participations || 0;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'accordion-item rank-accordion-item mb-3 shadow-sm border-0';
+        const groupAccordionId = `rank-group-${group.anchor}-athletes`;
+        const athletesHtml = group.athletes && group.athletes.length ? `
+            <div class="accordion" id="${groupAccordionId}">
+                ${group.athletes.map((athlete, idx) => {
+                    const headerId = `${groupAccordionId}-heading-${athlete.id}`;
+                    const collapseId = `${groupAccordionId}-collapse-${athlete.id}`;
+                    const events = Array.isArray(athlete.events) ? athlete.events : [];
+                    const eventsHtml = events.length ? events.map(event => `
+                        <div class="event-item bg-white rounded-3 shadow-sm p-3 mb-3">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <strong>${event.event_name}</strong>
+                                    <br><small class="text-muted">
+                                        <i class="fas fa-calendar me-1"></i>${event.event_date || 'Дата неизвестна'}
+                                        <br><i class="fas fa-layer-group me-1"></i>${event.category_name || 'Категория не указана'}
+                                        ${event.rank ? `<br><i class="fas fa-medal me-1"></i>${event.rank}` : ''}
+                                    </small>
+                                </div>
+                                <div class="text-end">
+                                    ${event.place ? `<span class="badge bg-warning text-dark">${event.place} место</span>` : ''}
+                                    ${event.points ? `<div class="small text-muted mt-1">${event.points} баллов</div>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `).join('') : `
+                        <div class="alert alert-light border text-muted mb-0">
+                            Информация о турнирах для этого спортсмена пока отсутствует.
+                        </div>
+                    `;
+                    const lastEvent = athlete.last_event_display || '—';
+                    return `
+                        <div class="accordion-item">
+                            <h2 class="accordion-header" id="${headerId}">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                        data-bs-target="#${collapseId}" aria-expanded="false" aria-controls="${collapseId}">
+                                    <div class="d-flex justify-content-between w-100 me-3 align-items-center">
+                                        <div class="d-flex align-items-center gap-3">
+                                            <span class="badge bg-success">${idx + 1}</span>
+                                            <div>
+                                                <strong>${athlete.name}</strong>
+                                                <div class="small text-muted">
+                                                    ${athlete.free_participations} бесплатных стартов · ${athlete.events_count ?? events.length} турниров
+                                                    ${lastEvent !== '—' ? `· последний старт: ${lastEvent}` : ''}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="text-end">
+                                            <a href="/athlete/${athlete.id}" class="btn btn-sm btn-outline-primary">
+                                                <i class="fas fa-user"></i> Профиль
+                                            </a>
+                                        </div>
+                                    </div>
+                                </button>
+                            </h2>
+                            <div id="${collapseId}" class="accordion-collapse collapse" aria-labelledby="${headerId}" data-bs-parent="#${groupAccordionId}">
+                                <div class="accordion-body">
+                                    <div class="row g-3">
+                                        <div class="col-lg-7">
+                                            <h6 class="fw-semibold">
+                                                <i class="fas fa-trophy text-warning me-1"></i>Турниры с бесплатным участием
+                                            </h6>
+                                            ${eventsHtml}
+                                        </div>
+                                        <div class="col-lg-5">
+                                            <div class="card bg-light border-0 shadow-sm h-100">
+                                                <div class="card-body">
+                                                    <h6 class="fw-semibold"><i class="fas fa-chart-pie text-info me-1"></i>Статистика</h6>
+                                                    <div class="row text-center g-2">
+                                                        <div class="col-6">
+                                                            <div class="border rounded p-2 bg-white h-100">
+                                                                <div class="fw-bold text-success fs-5">${athlete.free_participations}</div>
+                                                                <small class="text-muted d-block">Бесплатных стартов</small>
+                                                            </div>
+                                                        </div>
+                                                        <div class="col-6">
+                                                            <div class="border rounded p-2 bg-white h-100">
+                                                                <div class="fw-bold text-primary fs-5">${athlete.events_count ?? events.length}</div>
+                                                                <small class="text-muted d-block">Турниров</small>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <hr>
+                                                    <div class="small text-muted">
+                                                        <i class="fas fa-calendar-alt me-1"></i>
+                                                        Последний старт: ${lastEvent}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        ` : `
+            <div class="rank-empty">В этом разряде пока нет спортсменов с бесплатными стартами.</div>
+        `;
+        wrapper.innerHTML = `
+            <h2 class="accordion-header" id="${headingId}">
+                <button class="accordion-button ${isExpanded ? '' : 'collapsed'}" type="button" data-bs-toggle="collapse"
+                        data-bs-target="#${collapseId}" aria-expanded="${isExpanded}" aria-controls="${collapseId}">
+                    <div>
+                        <span class="fw-semibold">${group.display_name}</span>
+                        <span class="badge bg-light text-dark border ms-2">${group.gender_label}</span>
+                    </div>
+                    <div class="rank-header-meta">
+                        <span class="rank-stat-pill"><i class="fas fa-users"></i>${group.athlete_count || 0}</span>
+                        <span class="rank-stat-pill"><i class="fas fa-gift"></i>${totalFreeStarts}</span>
+                        <span class="rank-stat-pill"><i class="fas fa-crown"></i>${topAthlete ? topAthlete.free_participations : 0}</span>
+                    </div>
+                </button>
+            </h2>
+            <div id="${collapseId}" class="accordion-collapse collapse ${isExpanded ? 'show' : ''}" aria-labelledby="${headingId}" data-anchor="${group.anchor}">
+                <div class="accordion-body">
+                    ${athletesHtml}
+                </div>
+            </div>
+        `;
+
+        fragment.appendChild(wrapper);
+    });
+
+    accordion.innerHTML = '';
+    accordion.appendChild(fragment);
+
+    accordion.querySelectorAll('.accordion-collapse').forEach(collapseEl => {
+        const anchor = collapseEl.getAttribute('data-anchor');
+        if (!anchor) {
+            return;
+        }
+        collapseEl.addEventListener('shown.bs.collapse', () => rankExpandedSet.add(anchor));
+        collapseEl.addEventListener('hidden.bs.collapse', () => rankExpandedSet.delete(anchor));
+    });
+}
+
+function initRankSection(groups, summary) {
+    const section = document.getElementById('rankSection');
+    if (!section) {
+        return;
+    }
+
+    rankGroupsData = Array.isArray(groups) ? groups : [];
+    rankSummaryData = summary || {};
+    updateRankOverview();
+
+    if (!rankGroupsData.length) {
+        section.classList.add('d-none');
+        return;
+    }
+
+    section.classList.remove('d-none');
+
+    rankFilters = {
+        search: document.getElementById('rankSearchInput'),
+        gender: document.getElementById('rankGenderFilter'),
+        groupSort: document.getElementById('rankGroupSort'),
+        athleteSort: document.getElementById('rankAthleteSort'),
+        hideEmpty: document.getElementById('rankHideEmpty'),
+        summary: document.getElementById('rankSummaryText'),
+        accordion: document.getElementById('rankAccordion')
+    };
+
+    if (!rankFiltersInitialized) {
+        rankFilters.search.addEventListener('input', renderRankAccordion);
+        [rankFilters.gender, rankFilters.groupSort, rankFilters.athleteSort].forEach(el => el.addEventListener('change', renderRankAccordion));
+        rankFilters.hideEmpty.addEventListener('change', renderRankAccordion);
+        rankFiltersInitialized = true;
+    }
+
+    renderRankAccordion();
+}
+
+function loadFreeParticipationData() {
+    fetch('/api/analytics/free-participation')
+        .then(response => response.json())
+        .then(data => {
+            updateTopStats(data);
+            renderAthletesList(data);
+            initRankSection(data.rank_groups || [], data.rank_summary || {});
+        })
+        .catch(error => {
+            console.error('Ошибка загрузки данных:', error);
+            document.getElementById('athletesList').innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Ошибка загрузки данных. Попробуйте обновить страницу.
+                </div>
+            `;
+        });
+}
+
+// Загрузка данных при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    loadFreeParticipationData();
+});
+</script>
+{% endblock %}

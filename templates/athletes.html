@@ -1,0 +1,596 @@
+{% extends "base.html" %}
+
+{% block title %}Спортсмены - Система управления турнирами{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Мобильная адаптация для страницы спортсменов */
+    @media (max-width: 768px) {
+        .d-flex.justify-content-between {
+            flex-direction: column;
+            align-items: stretch !important;
+            gap: 1rem;
+        }
+        
+        .d-flex.gap-2 {
+            flex-direction: column;
+            gap: 0.75rem !important;
+        }
+        
+        .position-relative[style*="width: 300px"] {
+            width: 100% !important;
+        }
+        
+        .form-select[style*="width: 250px"] {
+            width: 100% !important;
+        }
+        
+        .btn {
+            width: 100%;
+        }
+        
+        .table-responsive {
+            font-size: 0.875rem;
+        }
+        
+        .table th,
+        .table td {
+            padding: 0.5rem 0.25rem;
+        }
+        
+        .badge {
+            font-size: 0.75rem;
+        }
+        
+        .pagination {
+            justify-content: center;
+        }
+        
+        .pagination .page-link {
+            padding: 0.375rem 0.5rem;
+            font-size: 0.875rem;
+        }
+    }
+    
+    @media (max-width: 576px) {
+        .table th:nth-child(3),
+        .table td:nth-child(3) {
+            display: none;
+        }
+        
+        .table th:nth-child(4),
+        .table td:nth-child(4) {
+            display: none;
+        }
+        
+        .table th,
+        .table td {
+            padding: 0.375rem 0.125rem;
+        }
+        
+        .btn-sm {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+        }
+    }
+    
+    /* Стили для разрядов */
+    .bg-pink {
+        background-color: #e91e63 !important;
+        color: white;
+    }
+
+    .bg-blue {
+        background-color: #2196f3 !important;
+        color: white;
+    }
+    
+    /* Улучшенная пагинация */
+    .pagination {
+        margin-bottom: 0;
+    }
+    
+    .pagination .page-link {
+        border-radius: 0.375rem;
+        margin: 0 2px;
+        border: 1px solid #dee2e6;
+        color: #0d6efd;
+        transition: all 0.15s ease-in-out;
+    }
+    
+    .pagination .page-link:hover {
+        background-color: #e9ecef;
+        border-color: #adb5bd;
+        color: #0a58ca;
+    }
+    
+    .pagination .page-item.active .page-link {
+        background-color: #0d6efd;
+        border-color: #0d6efd;
+        color: white;
+    }
+    
+    .pagination .page-item.disabled .page-link {
+        color: #6c757d;
+        background-color: #fff;
+        border-color: #dee2e6;
+    }
+    
+    .pagination .page-item:first-child .page-link {
+        border-top-left-radius: 0.375rem;
+        border-bottom-left-radius: 0.375rem;
+    }
+    
+    .pagination .page-item:last-child .page-link {
+        border-top-right-radius: 0.375rem;
+        border-bottom-right-radius: 0.375rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-users"></i> Спортсмены</h2>
+    <div class="d-flex gap-2">
+        <div class="position-relative" style="width: 300px;">
+            <input type="text" class="form-control" id="searchInput" placeholder="Поиск по имени или фамилии (нечувствителен к регистру)..." value="{{ search or '' }}">
+            <div id="searchSpinner" class="position-absolute top-50 end-0 translate-middle-y me-3" style="display: none;">
+                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                    <span class="visually-hidden">Поиск...</span>
+                </div>
+            </div>
+        </div>
+        <select class="form-select" id="rankFilter" style="width: 250px;">
+            <option value="">Все разряды</option>
+            {% for rank in available_ranks %}
+                <option value="{{ rank }}">{{ rank }}</option>
+            {% endfor %}
+        </select>
+        <button class="btn btn-outline-primary" onclick="searchAthletes()">
+            <i class="fas fa-search"></i>
+        </button>
+        {% if search %}
+            <button class="btn btn-outline-secondary" onclick="clearSearch()">
+                <i class="fas fa-times"></i>
+            </button>
+        {% endif %}
+    </div>
+</div>
+
+{% if search %}
+    <div class="alert alert-info">
+        <i class="fas fa-search"></i> 
+        Найдено спортсменов: <strong id="resultsCount">0</strong>
+        по запросу "<strong>{{ search }}</strong>"
+    </div>
+{% endif %}
+
+<div class="card">
+    <div class="card-body">
+        <div id="athletesTable">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th class="sortable" data-sort="name">
+                                ФИО <i class="fas fa-sort"></i>
+                            </th>
+                            <th>Дата рождения</th>
+                            <th>Пол</th>
+                            <th class="sortable" data-sort="rank">
+                                Разряд <i class="fas fa-sort"></i>
+                            </th>
+                            <th class="sortable" data-sort="club">
+                                Клуб <i class="fas fa-sort"></i>
+                            </th>
+                            <th class="sortable" data-sort="participations">
+                                Участий <i class="fas fa-sort"></i>
+                            </th>
+                            <th class="sortable" data-sort="best_place">
+                                Лучший результат <i class="fas fa-sort"></i>
+                            </th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Данные будут загружены через AJAX -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Пагинация -->
+            <nav aria-label="Навигация по страницам">
+                <ul class="pagination justify-content-center">
+                    <!-- Будет заполнено через JavaScript -->
+                </ul>
+            </nav>
+        </div>
+        
+        <!-- Сообщение когда ничего не найдено -->
+        <div class="text-center py-5" style="display: none;">
+            <i class="fas fa-search fa-3x text-muted mb-3"></i>
+            <h5 class="text-muted">По запросу ничего не найдено</h5>
+            <p class="text-muted">Попробуйте изменить поисковый запрос</p>
+            <button class="btn btn-outline-primary" onclick="clearSearch()">
+                <i class="fas fa-times"></i> Очистить поиск
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Всплывающее окно для выбора разряда -->
+<div id="rankFilterModal" class="modal fade" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Выберите разряд</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="list-group">
+                    <button type="button" class="list-group-item list-group-item-action rank-filter-option" data-rank="">
+                        <i class="fas fa-list"></i> Все разряды
+                    </button>
+                    {% for rank in available_ranks %}
+                    <button type="button" class="list-group-item list-group-item-action rank-filter-option" data-rank="{{ rank }}">
+                        <i class="fas fa-medal"></i> {{ rank }}
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+{% block extra_js %}
+<script>
+let searchTimeout;
+let currentPage = 1;
+let currentSort = { by: 'best_place', order: 'asc' };
+let currentRankFilter = '';
+
+function loadAthletes(search = '', page = 1, sortBy = currentSort.by, sortOrder = currentSort.order, rankFilter = currentRankFilter) {
+    const searchSpinner = document.getElementById('searchSpinner');
+    const tbody = document.querySelector('tbody');
+    const pagination = document.querySelector('.pagination');
+    const alertInfo = document.querySelector('.alert-info');
+    const noResults = document.querySelector('.text-center.py-5');
+    const resultsCount = document.getElementById('resultsCount');
+    
+    // Получаем выбранный разряд
+    // Используем переданный параметр rankFilter или значение из элемента
+    const currentRankFilterValue = rankFilter !== undefined ? rankFilter : document.getElementById('rankFilter').value;
+    
+    // Показываем индикатор загрузки
+    searchSpinner.style.display = 'block';
+    
+    // Создаем URL для API
+    const url = new URL('/api/athletes', window.location.origin);
+    if (search) url.searchParams.set('search', search);
+    if (currentRankFilterValue) url.searchParams.set('rank', currentRankFilterValue);
+    if (page > 1) url.searchParams.set('page', page);
+    if (sortBy) url.searchParams.set('sort_by', sortBy);
+    if (sortOrder) url.searchParams.set('sort_order', sortOrder);
+    
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            // Скрываем индикатор загрузки
+            searchSpinner.style.display = 'none';
+            
+            // Обновляем таблицу
+            updateTable(data.athletes);
+            
+            // Обновляем пагинацию
+            updatePagination(data.pagination);
+            
+            // Обновляем счетчик результатов
+            updateResultsCounter(data.pagination.total, data.search);
+            
+            currentPage = page;
+        })
+        .catch(error => {
+            console.error('Ошибка загрузки данных:', error);
+            searchSpinner.style.display = 'none';
+        });
+}
+
+function updateTable(athletes) {
+    const tbody = document.querySelector('tbody');
+    const noResults = document.querySelector('.text-center.py-5');
+    
+    if (athletes.length === 0) {
+        tbody.innerHTML = '';
+        noResults.style.display = 'block';
+        return;
+    }
+    
+    noResults.style.display = 'none';
+    
+    tbody.innerHTML = athletes.map(athlete => `
+        <tr ${athlete.has_free_participation ? 'class="table-success"' : ''}>
+            <td>
+                <strong>${athlete.full_name}</strong>
+                ${athlete.short_name ? `<br><small class="text-muted">${athlete.short_name}</small>` : ''}
+                ${athlete.has_free_participation ? '<br><small class="badge bg-success"><i class="fas fa-gift"></i> Бесплатное участие</small>' : ''}
+            </td>
+            <td>
+                ${athlete.birth_date || '<span class="text-muted">Не указана</span>'}
+            </td>
+            <td>
+                ${athlete.gender === 'F' ? '<span class="badge bg-pink">Ж</span>' : 
+                  athlete.gender === 'M' ? '<span class="badge bg-blue">М</span>' : 
+                  athlete.gender === 'P' ? '<span class="badge" style="background-color: #9b59b6; color: white;"><i class="fas fa-user-friends"></i> Пара</span>' : 
+                  '<span class="text-muted">-</span>'}
+            </td>
+            <td>
+                ${athlete.category_name ? `<span class="badge bg-info">${athlete.category_name}</span>` : '<span class="text-muted">-</span>'}
+            </td>
+            <td>
+                ${athlete.club_name ? 
+                    `<a href="/club/${athlete.club_id}" class="text-decoration-none">${athlete.club_name}</a>` : 
+                    '<span class="text-muted">Не указан</span>'}
+            </td>
+            <td>
+                <span class="badge bg-primary">${athlete.participations_count}</span>
+            </td>
+            <td>
+                ${athlete.best_place ? 
+                    `<span class="badge bg-success">${athlete.best_place} место</span><br><small class="text-muted">${athlete.best_points} баллов</small>` :
+                    '<span class="text-muted">-</span>'}
+            </td>
+            <td>
+                <a href="/athlete/${athlete.id}" class="btn btn-sm btn-outline-primary">
+                    <i class="fas fa-eye"></i> Подробнее
+                </a>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function updatePagination(pagination) {
+    const paginationContainer = document.querySelector('.pagination');
+    
+    if (pagination.pages <= 1) {
+        paginationContainer.style.display = 'none';
+        return;
+    }
+    
+    paginationContainer.style.display = 'block';
+    
+    let paginationHTML = '';
+    const currentPage = pagination.page;
+    const totalPages = pagination.pages;
+    const searchValue = document.getElementById('searchInput').value;
+    
+    // Предыдущая страница
+    if (pagination.has_prev) {
+        paginationHTML += `<li class="page-item">
+            <a class="page-link" href="#" onclick="loadAthletes('${searchValue}', ${pagination.prev_num})">
+                <i class="fas fa-chevron-left"></i> Предыдущая
+            </a>
+        </li>`;
+    }
+    
+    // Логика отображения страниц
+    let startPage = Math.max(1, currentPage - 2);
+    let endPage = Math.min(totalPages, currentPage + 2);
+    
+    // Если мы близко к началу, показываем больше страниц справа
+    if (currentPage <= 3) {
+        endPage = Math.min(totalPages, 5);
+    }
+    
+    // Если мы близко к концу, показываем больше страниц слева
+    if (currentPage >= totalPages - 2) {
+        startPage = Math.max(1, totalPages - 4);
+    }
+    
+    // Первая страница
+    if (startPage > 1) {
+        paginationHTML += `<li class="page-item">
+            <a class="page-link" href="#" onclick="loadAthletes('${searchValue}', 1)">1</a>
+        </li>`;
+        
+        if (startPage > 2) {
+            paginationHTML += `<li class="page-item disabled">
+                <span class="page-link">...</span>
+            </li>`;
+        }
+    }
+    
+    // Основные страницы
+    for (let i = startPage; i <= endPage; i++) {
+        if (i === currentPage) {
+            paginationHTML += `<li class="page-item active">
+                <span class="page-link">${i}</span>
+            </li>`;
+        } else {
+            paginationHTML += `<li class="page-item">
+                <a class="page-link" href="#" onclick="loadAthletes('${searchValue}', ${i})">${i}</a>
+            </li>`;
+        }
+    }
+    
+    // Последняя страница
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            paginationHTML += `<li class="page-item disabled">
+                <span class="page-link">...</span>
+            </li>`;
+        }
+        
+        paginationHTML += `<li class="page-item">
+            <a class="page-link" href="#" onclick="loadAthletes('${searchValue}', ${totalPages})">${totalPages}</a>
+        </li>`;
+    }
+    
+    // Следующая страница
+    if (pagination.has_next) {
+        paginationHTML += `<li class="page-item">
+            <a class="page-link" href="#" onclick="loadAthletes('${searchValue}', ${pagination.next_num})">
+                Следующая <i class="fas fa-chevron-right"></i>
+            </a>
+        </li>`;
+    }
+    
+    paginationContainer.innerHTML = paginationHTML;
+}
+
+function updateResultsCounter(total, search) {
+    const alertInfo = document.querySelector('.alert-info');
+    const resultsCount = document.getElementById('resultsCount');
+    
+    if (resultsCount) {
+        resultsCount.textContent = total;
+    }
+    
+    if (search && total > 0) {
+        if (alertInfo) {
+            alertInfo.style.display = 'block';
+        }
+    } else if (search && total === 0) {
+        if (alertInfo) {
+            alertInfo.style.display = 'none';
+        }
+    } else {
+        if (alertInfo) {
+            alertInfo.style.display = 'none';
+        }
+    }
+}
+
+function searchAthletes() {
+    const searchTerm = document.getElementById('searchInput').value.trim();
+    loadAthletes(searchTerm, 1);
+}
+
+function clearSearch() {
+    document.getElementById('searchInput').value = '';
+    loadAthletes('', 1);
+}
+
+// Поиск в реальном времени с задержкой
+document.getElementById('searchInput').addEventListener('input', function(e) {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        searchAthletes();
+    }, 300); // Задержка 300мс
+});
+
+// Поиск по Enter (мгновенно)
+document.getElementById('searchInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        clearTimeout(searchTimeout);
+        searchAthletes();
+    }
+});
+
+// Очистка поиска по Escape
+document.getElementById('searchInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        clearSearch();
+    }
+});
+
+// Фильтрация по разрядам
+document.getElementById('rankFilter').addEventListener('change', function() {
+    const searchTerm = document.getElementById('searchInput').value.trim();
+    loadAthletes(searchTerm, 1);
+});
+
+// Обработка кликов по заголовкам для сортировки
+document.addEventListener('DOMContentLoaded', function() {
+    // Добавляем обработчики для сортируемых заголовков
+    document.querySelectorAll('.sortable').forEach(header => {
+        header.style.cursor = 'pointer';
+        header.addEventListener('click', function() {
+            const sortBy = this.dataset.sort;
+            
+            // Для разрядов показываем модальное окно
+            if (sortBy === 'rank') {
+                showRankFilterModal();
+                return;
+            }
+            
+            let newOrder = 'asc';
+            
+            // Если кликаем по тому же столбцу, меняем порядок
+            if (currentSort.by === sortBy) {
+                newOrder = currentSort.order === 'asc' ? 'desc' : 'asc';
+            }
+            
+            currentSort = { by: sortBy, order: newOrder };
+            
+            // Обновляем иконки сортировки
+            updateSortIcons(sortBy, newOrder);
+            
+            // Загружаем данные с новой сортировкой
+            const searchValue = document.getElementById('searchInput').value;
+            loadAthletes(searchValue, 1, sortBy, newOrder);
+        });
+    });
+    
+    // Загружаем данные при загрузке страницы
+    const searchTerm = '{{ search or "" }}';
+    loadAthletes(searchTerm, 1);
+    
+    // Добавляем обработчики для кнопок выбора разряда
+    document.querySelectorAll('.rank-filter-option').forEach(button => {
+        button.addEventListener('click', function() {
+            const selectedRank = this.dataset.rank;
+            applyRankFilter(selectedRank);
+            
+            // Закрываем модальное окно
+            const modal = bootstrap.Modal.getInstance(document.getElementById('rankFilterModal'));
+            modal.hide();
+        });
+    });
+});
+
+function showRankFilterModal() {
+    const modal = new bootstrap.Modal(document.getElementById('rankFilterModal'));
+    modal.show();
+}
+
+function applyRankFilter(selectedRank) {
+    // Обновляем текущий фильтр разряда
+    currentRankFilter = selectedRank;
+    
+    // Обновляем визуальное отображение активного фильтра
+    updateRankFilterDisplay(selectedRank);
+    
+    // Загружаем данные с новым фильтром
+    const searchValue = document.getElementById('searchInput').value;
+    loadAthletes(searchValue, 1, currentSort.by, currentSort.order, selectedRank);
+}
+
+function updateRankFilterDisplay(selectedRank) {
+    // Обновляем заголовок разряда, чтобы показать активный фильтр
+    const rankHeader = document.querySelector('[data-sort="rank"]');
+    if (rankHeader) {
+        const icon = rankHeader.querySelector('i');
+        if (selectedRank) {
+            rankHeader.innerHTML = `Разряд <i class="fas fa-filter text-primary"></i>`;
+            rankHeader.title = `Фильтр: ${selectedRank}`;
+        } else {
+            rankHeader.innerHTML = `Разряд <i class="fas fa-sort"></i>`;
+            rankHeader.title = 'Сортировка по разрядам';
+        }
+    }
+}
+
+function updateSortIcons(activeSort, order) {
+    document.querySelectorAll('.sortable i').forEach(icon => {
+        icon.className = 'fas fa-sort';
+    });
+    
+    const activeHeader = document.querySelector(`[data-sort="${activeSort}"] i`);
+    if (activeHeader) {
+        activeHeader.className = order === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down';
+    }
+}
+</script>
+{% endblock %}

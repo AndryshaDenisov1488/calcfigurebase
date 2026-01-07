@@ -1,0 +1,55 @@
+/* Стили для сортировки таблиц */
+
+.sortable {
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    transition: background-color 0.2s ease;
+}
+
+.sortable:hover {
+    background-color: #f8f9fa;
+}
+
+.sortable i {
+    margin-left: 5px;
+    opacity: 0.5;
+    transition: opacity 0.2s ease;
+}
+
+.sortable:hover i {
+    opacity: 0.8;
+}
+
+.sortable.active i {
+    opacity: 1;
+    color: #007bff;
+}
+
+/* Анимация для иконок сортировки */
+.fa-sort-up, .fa-sort-down {
+    animation: sortPulse 0.3s ease;
+}
+
+@keyframes sortPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); }
+}
+
+/* Стили для таблиц с сортировкой */
+.table th.sortable {
+    border-bottom: 2px solid #dee2e6;
+}
+
+.table th.sortable.active {
+    border-bottom-color: #007bff;
+    background-color: #e3f2fd;
+}
+
+/* Адаптивность */
+@media (max-width: 768px) {
+    .sortable i {
+        font-size: 0.8em;
+    }
+}

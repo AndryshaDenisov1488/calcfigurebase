@@ -1,0 +1,10 @@
+================================================================================
+ПРОВЕРКА ШКОЛ/КЛУБОВ БЕЗ СПОРТСМЕНОВ
+================================================================================
+
+📊 Всего клубов в базе: 67
+
+✅ Все клубы имеют хотя бы одного спортсмена!
+   Нет клубов для удаления.
+/var/www/calc.figurebase.ru/venv/lib/python3.10/site-packages/flask_limiter/extension.py:336: UserWarning: Using the in-memory storage for tracking rate limits as no storage was explicitly specified. This is not recommended for production use. See: https://flask-limiter.readthedocs.io#configuring-a-storage-backend for documentation about configuring the storage backend.
+  warnings.warn(

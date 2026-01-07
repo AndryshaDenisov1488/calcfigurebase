@@ -1,0 +1,452 @@
+{% extends "base.html" %}
+
+{% block title %}Анализ бесплатного участия по школам - Система управления турнирами{% endblock %}
+
+{% block extra_css %}
+<style>
+    .club-card {
+        transition: transform 0.2s;
+    }
+    .club-card:hover {
+        transform: translateY(-2px);
+    }
+    .progress-bar {
+        height: 8px;
+    }
+    .stats-badge {
+        font-size: 0.9em;
+    }
+    .free-participation-high {
+        background-color: #d4edda !important;
+        border-left: 4px solid #28a745 !important;
+    }
+    .free-participation-medium {
+        background-color: #fff3cd !important;
+        border-left: 4px solid #ffc107 !important;
+    }
+    .free-participation-low {
+        background-color: #f8d7da !important;
+        border-left: 4px solid #dc3545 !important;
+    }
+    
+    /* Мобильная адаптация для страницы анализа по школам */
+    @media (max-width: 768px) {
+        .club-card {
+            margin-bottom: 1rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        }
+        
+        .club-card .card-body {
+            padding: 1rem;
+        }
+        
+        .club-stats {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .club-stats .row {
+            margin: 0;
+        }
+        
+        .club-stats .col-3 {
+            flex: 0 0 25%;
+            max-width: 25%;
+            padding: 0.25rem;
+        }
+        
+        .club-stats .col-6 {
+            flex: 0 0 50%;
+            max-width: 50%;
+            padding: 0.25rem;
+        }
+        
+        .stats-badge {
+            font-size: 0.8em;
+            padding: 0.25rem 0.5rem;
+        }
+        
+        .club-name {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        
+        .club-location {
+            font-size: 0.875rem;
+            color: #6c757d;
+            margin-bottom: 0.75rem;
+        }
+        
+        .progress {
+            height: 6px;
+            margin-top: 0.5rem;
+        }
+        
+        .btn-details {
+            width: 100%;
+            margin-top: 0.75rem;
+        }
+        
+        /* Статистические карточки вверху */
+        .stats-cards .col-6 {
+            margin-bottom: 1rem;
+        }
+        
+        .stats-cards .card {
+            text-align: center;
+            padding: 1rem 0.5rem;
+        }
+        
+        .stats-cards .card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .stats-cards .card small {
+            font-size: 0.75rem;
+        }
+    }
+    
+    @media (max-width: 576px) {
+        .club-stats .col-3 {
+            flex: 0 0 50%;
+            max-width: 50%;
+            margin-bottom: 0.5rem;
+        }
+        
+        .club-stats .col-6 {
+            flex: 0 0 100%;
+            max-width: 100%;
+        }
+        
+        .stats-cards .col-6 {
+            flex: 0 0 100%;
+            max-width: 100%;
+        }
+        
+        .club-name {
+            font-size: 0.9rem;
+        }
+        
+        .club-location {
+            font-size: 0.8rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-school text-primary"></i> Анализ бесплатного участия по школам</h2>
+                <a href="{{ url_for('analytics') }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left"></i> Назад к аналитике
+                </a>
+            </div>
+
+            <!-- Общая статистика -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card bg-primary text-white">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h4 id="totalClubs">-</h4>
+                                    <p class="mb-0">Школ/клубов</p>
+                                </div>
+                                <div class="align-self-center">
+                                    <i class="fas fa-school fa-2x"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-success text-white">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h4 id="totalAthletes">-</h4>
+                                    <p class="mb-0">Всего спортсменов</p>
+                                </div>
+                                <div class="align-self-center">
+                                    <i class="fas fa-users fa-2x"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-info text-white">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h4 id="athletesWithFree">-</h4>
+                                    <p class="mb-0">С бесплатным участием</p>
+                                </div>
+                                <div class="align-self-center">
+                                    <i class="fas fa-gift fa-2x"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-warning text-white">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <h4 id="freeParticipationPercentage">-</h4>
+                                    <p class="mb-0">% бесплатного участия</p>
+                                </div>
+                                <div class="align-self-center">
+                                    <i class="fas fa-percentage fa-2x"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Фильтры -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label for="sortBy" class="form-label">Сортировка:</label>
+                            <select class="form-select" id="sortBy" onchange="sortClubs()">
+                                <option value="total_athletes">По количеству спортсменов</option>
+                                <option value="free_participation_percentage">По % бесплатного участия</option>
+                                <option value="athletes_without_free_participation">По количеству без бесплатного участия</option>
+                                <option value="name">По названию</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="filterBy" class="form-label">Фильтр:</label>
+                            <select class="form-select" id="filterBy" onchange="filterClubs()">
+                                <option value="all">Все школы</option>
+                                <option value="high">Высокий % бесплатного участия (>50%)</option>
+                                <option value="medium">Средний % бесплатного участия (20-50%)</option>
+                                <option value="low">Низкий % бесплатного участия (<20%)</option>
+                                <option value="no_free">Без бесплатного участия</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Список школ -->
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-list"></i> Список школ и клубов</h5>
+                </div>
+                <div class="card-body">
+                    <div id="clubsList">
+                        <div class="text-center">
+                            <div class="spinner-border" role="status">
+                                <span class="visually-hidden">Загрузка...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let allClubsData = [];
+
+// Загрузка данных о школах с бесплатным участием
+function loadClubFreeParticipationData() {
+    fetch('/api/analytics/club-free-participation')
+        .then(response => response.json())
+        .then(data => {
+            allClubsData = data.clubs;
+            
+            // Обновляем статистику
+            document.getElementById('totalClubs').textContent = data.total_clubs;
+            document.getElementById('totalAthletes').textContent = data.total_athletes;
+            document.getElementById('athletesWithFree').textContent = data.total_athletes_with_free_participation;
+            
+            const percentage = data.total_athletes > 0 ? 
+                (data.total_athletes_with_free_participation / data.total_athletes * 100).toFixed(1) : 0;
+            document.getElementById('freeParticipationPercentage').textContent = percentage + '%';
+
+            // Отображаем список школ
+            displayClubs(allClubsData);
+        })
+        .catch(error => {
+            console.error('Ошибка загрузки данных:', error);
+            document.getElementById('clubsList').innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Ошибка загрузки данных. Попробуйте обновить страницу.
+                </div>
+            `;
+        });
+}
+
+// Отображение списка школ
+function displayClubs(clubs) {
+    const clubsList = document.getElementById('clubsList');
+    
+    if (clubs.length === 0) {
+        clubsList.innerHTML = `
+            <div class="text-center py-5">
+                <i class="fas fa-school fa-3x text-muted mb-3"></i>
+                <h4 class="text-muted">Нет данных о школах</h4>
+                <p class="text-muted">Данные о школах появятся после загрузки турниров.</p>
+            </div>
+        `;
+        return;
+    }
+
+    clubsList.innerHTML = clubs.map((club, index) => {
+        // Определяем класс для карточки в зависимости от процента бесплатного участия
+        let cardClass = 'club-card card mb-3';
+        if (club.free_participation_percentage >= 50) {
+            cardClass += ' free-participation-high';
+        } else if (club.free_participation_percentage >= 20) {
+            cardClass += ' free-participation-medium';
+        } else {
+            cardClass += ' free-participation-low';
+        }
+
+        return `
+            <div class="${cardClass}">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h5 class="card-title">
+                                        <a href="/club/${club.id}" class="text-decoration-none">
+                                            ${club.name}
+                                        </a>
+                                    </h5>
+                                    <p class="card-text text-muted mb-2">
+                                        <i class="fas fa-map-marker-alt"></i> 
+                                        ${club.city || 'Город не указан'}${club.country ? ', ' + club.country : ''}
+                                        ${club.short_name ? '<br><small>' + club.short_name + '</small>' : ''}
+                                    </p>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-primary">${club.total_athletes} спортсменов</span>
+                                </div>
+                            </div>
+                            
+                            <div class="row mt-3">
+                                <div class="col-md-6">
+                                    <div class="d-flex justify-content-between mb-2">
+                                        <span>Бесплатное участие:</span>
+                                        <strong class="text-success">${club.athletes_with_free_participation}/${club.total_athletes}</strong>
+                                    </div>
+                                    <div class="progress mb-2">
+                                        <div class="progress-bar bg-success" role="progressbar" 
+                                             style="width: ${club.free_participation_percentage}%">
+                                            ${club.free_participation_percentage}%
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="row text-center">
+                                        <div class="col-4">
+                                            <div class="border rounded p-2">
+                                                <div class="fw-bold text-success">${club.athletes_with_free_participation}</div>
+                                                <small class="text-muted">С бесплатным</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="border rounded p-2">
+                                                <div class="fw-bold text-warning">${club.athletes_without_free_participation}</div>
+                                                <small class="text-muted">Без бесплатного</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div class="border rounded p-2">
+                                                <div class="fw-bold text-info">${club.total_participations}</div>
+                                                <small class="text-muted">Всего спортсменов</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center">
+                                <div class="mb-3">
+                                    <h3 class="text-${club.free_participation_percentage >= 50 ? 'success' : club.free_participation_percentage >= 20 ? 'warning' : 'danger'}">
+                                        ${club.free_participation_percentage}%
+                                    </h3>
+                                    <small class="text-muted">бесплатного участия</small>
+                                </div>
+                                <a href="/club/${club.id}" class="btn btn-outline-primary btn-sm">
+                                    <i class="fas fa-eye"></i> Подробнее
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Сортировка школ
+function sortClubs() {
+    const sortBy = document.getElementById('sortBy').value;
+    let sortedClubs = [...allClubsData];
+    
+    switch(sortBy) {
+        case 'total_athletes':
+            sortedClubs.sort((a, b) => b.total_athletes - a.total_athletes);
+            break;
+        case 'free_participation_percentage':
+            sortedClubs.sort((a, b) => b.free_participation_percentage - a.free_participation_percentage);
+            break;
+        case 'athletes_without_free_participation':
+            sortedClubs.sort((a, b) => b.athletes_without_free_participation - a.athletes_without_free_participation);
+            break;
+        case 'name':
+            sortedClubs.sort((a, b) => a.name.localeCompare(b.name));
+            break;
+    }
+    
+    displayClubs(sortedClubs);
+}
+
+// Фильтрация школ
+function filterClubs() {
+    const filterBy = document.getElementById('filterBy').value;
+    let filteredClubs = [...allClubsData];
+    
+    switch(filterBy) {
+        case 'high':
+            filteredClubs = filteredClubs.filter(club => club.free_participation_percentage > 50);
+            break;
+        case 'medium':
+            filteredClubs = filteredClubs.filter(club => club.free_participation_percentage >= 20 && club.free_participation_percentage <= 50);
+            break;
+        case 'low':
+            filteredClubs = filteredClubs.filter(club => club.free_participation_percentage < 20 && club.free_participation_percentage > 0);
+            break;
+        case 'no_free':
+            filteredClubs = filteredClubs.filter(club => club.free_participation_percentage === 0);
+            break;
+    }
+    
+    displayClubs(filteredClubs);
+}
+
+// Загрузка данных при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    loadClubFreeParticipationData();
+});
+</script>
+{% endblock %}

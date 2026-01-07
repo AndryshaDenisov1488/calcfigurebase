@@ -1,0 +1,413 @@
+{% extends "base.html" %}
+
+{% block title %}{{ event.name }} - Система управления турнирами{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 mb-4">
+    <div>
+        <h2 class="mb-2">
+            <i class="fas fa-trophy me-2"></i>{{ event.name }}
+        </h2>
+        <div class="event-info-summary">
+            <p class="text-muted mb-1">
+                <i class="fas fa-map-marker-alt me-1"></i>
+                <strong>{{ event.place or 'Место не указано' }}</strong>
+            </p>
+            <p class="text-muted mb-1">
+                <i class="fas fa-calendar me-1"></i>
+                {% if event.begin_date %}
+                    <strong>{{ event.begin_date.strftime('%d.%m.%Y') }}</strong>
+                    {% if event.end_date and event.end_date != event.begin_date %}
+                        - {{ event.end_date.strftime('%d.%m.%Y') }}
+                    {% endif %}
+                {% else %}
+                    Даты не указаны
+                {% endif %}
+            </p>
+            <p class="text-muted mb-1 small">
+                Всего категорий: {{ category_groups|length }} · Участников: {{ total_participants }}
+            </p>
+        </div>
+    </div>
+    <div class="d-flex flex-column gap-2">
+        <span class="badge bg-{{ 'success' if event.status == 'A' else 'secondary' }} fs-6">
+            {{ 'Активный' if event.status == 'A' else 'Завершен' }}
+        </span>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-center">
+            <div class="col-12 col-lg-6">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="search" id="categorySearch" class="form-control" placeholder="Поиск по категории или спортсмену">
+                </div>
+            </div>
+            <div class="col-6 col-md-4 col-lg-3">
+                <select class="form-select" id="categorySort">
+                    <option value="participants">По числу участников</option>
+                    <option value="name">По названию</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-3">
+                <div class="form-check form-switch ps-0">
+                    <input class="form-check-input ms-0" type="checkbox" id="hideEmpty" checked>
+                    <label class="form-check-label ms-3" for="hideEmpty">Скрывать пустые</label>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<p id="categorySummary" class="text-muted small mb-3"></p>
+
+<div id="categoriesAccordion" class="accordion"></div>
+
+<!-- Быстрые действия -->
+<div class="card mt-4">
+    <div class="card-header">
+        <h5><i class="fas fa-bolt"></i> Быстрые действия</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-2">
+            <div class="col-md-4">
+                <button class="btn btn-outline-primary w-100" onclick="exportResults()">
+                    <i class="fas fa-download"></i> Экспорт результатов
+                </button>
+            </div>
+            <div class="col-md-4">
+                <button class="btn btn-outline-info w-100" onclick="printResults()">
+                    <i class="fas fa-print"></i> Печать результатов
+                </button>
+            </div>
+            <div class="col-md-4">
+                <button class="btn btn-outline-success w-100" onclick="shareResults()">
+                    <i class="fas fa-share"></i> Поделиться
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.category-accordion-item .accordion-button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+@media (min-width: 768px) {
+    .category-accordion-item .accordion-button {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+    }
+}
+
+.category-header-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    font-size: 0.85rem;
+    color: var(--bs-secondary);
+}
+
+.category-header-meta .badge {
+    font-size: 0.75rem;
+}
+
+.category-accordion-item .accordion-body {
+    background-color: #fcfcfd;
+}
+
+.category-empty {
+    text-align: center;
+    color: var(--bs-secondary);
+    padding: 2rem 1rem;
+    border: 1px dashed rgba(0, 0, 0, 0.1);
+    border-radius: 0.75rem;
+    background: #fff;
+}
+
+.category-stat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 999px;
+    background: rgba(33, 37, 41, 0.05);
+    font-size: 0.8rem;
+}
+
+.category-stat-pill i {
+    color: #0d6efd;
+}
+
+.category-table thead th {
+    position: sticky;
+    top: 0;
+    background: #fff;
+    z-index: 1;
+}
+
+.category-table tbody tr:hover {
+    background-color: rgba(13, 110, 253, 0.05);
+}
+
+.event-info-summary {
+    padding-left: 0.25rem;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const categoryGroups = {{ category_groups_json | safe }};
+const expandedCategories = new Set();
+
+function formatPoints(value) {
+    if (value === null || value === undefined) {
+        return '—';
+    }
+    // Баллы уже приходят правильно отформатированными с бэкенда
+    const numValue = Number(value);
+    if (isNaN(numValue)) {
+        return '—';
+    }
+    return numValue.toFixed(2);
+}
+
+function formatPlace(value) {
+    if (value === null || value === undefined) {
+        return '—';
+    }
+    return value;
+}
+
+function renderCategoryAccordion(groups) {
+    const accordion = document.getElementById('categoriesAccordion');
+    if (!groups || groups.length === 0) {
+        accordion.innerHTML = `
+            <div class="category-empty">
+                <i class="fas fa-layer-group fa-3x mb-3"></i>
+                <p class="mb-0">Категорий не найдено</p>
+            </div>
+        `;
+        updateSummary(0, 0);
+        return;
+    }
+
+    let visibleCount = 0;
+    let totalAthletes = 0;
+
+    accordion.innerHTML = groups.map((group, index) => {
+        if (group.num_participants === 0 && document.getElementById('hideEmpty')?.checked) {
+            return '';
+        }
+
+        visibleCount++;
+        totalAthletes += group.participants.length;
+
+        const isExpanded = expandedCategories.has(group.id);
+        const collapseId = `categoryCollapse${group.id}`;
+
+        const genderIcon = group.gender === 'F' ? 'venus' : group.gender === 'M' ? 'mars' : 'venus-mars';
+        const genderLabel = group.gender === 'F' ? 'Женский' : group.gender === 'M' ? 'Мужской' : 'Смешанный';
+
+        return `
+            <div class="accordion-item category-accordion-item mb-2">
+                <h2 class="accordion-header">
+                    <button class="accordion-button ${isExpanded ? '' : 'collapsed'}" 
+                            type="button" 
+                            data-bs-toggle="collapse" 
+                            data-bs-target="#${collapseId}"
+                            onclick="toggleCategory(${group.id})">
+                        <div class="w-100">
+                            <div class="d-flex justify-content-between align-items-start w-100">
+                                <strong class="me-2">
+                                    <i class="fas fa-medal me-1"></i>${group.name}
+                                </strong>
+                            </div>
+                            <div class="category-header-meta mt-2">
+                                <span class="category-stat-pill">
+                                    <i class="fas fa-users"></i>
+                                    <span>${group.num_participants} участн.</span>
+                                </span>
+                                <span class="category-stat-pill">
+                                    <i class="fas fa-${genderIcon}"></i>
+                                    <span>${genderLabel}</span>
+                                </span>
+                                ${group.category_type ? `
+                                <span class="category-stat-pill">
+                                    <i class="fas fa-layer-group"></i>
+                                    <span>${group.category_type}</span>
+                                </span>` : ''}
+                                ${group.free_participations > 0 ? `
+                                <span class="badge bg-success">
+                                    <i class="fas fa-gift"></i> ${group.free_participations} бесплатных
+                                </span>` : ''}
+                            </div>
+                        </div>
+                    </button>
+                </h2>
+                <div id="${collapseId}" 
+                     class="accordion-collapse collapse ${isExpanded ? 'show' : ''}" 
+                     data-bs-parent="#categoriesAccordion">
+                    <div class="accordion-body">
+                        ${renderParticipantsTable(group.participants, group.id)}
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    updateSummary(visibleCount, totalAthletes);
+}
+
+function renderParticipantsTable(participants, categoryId) {
+    if (!participants || participants.length === 0) {
+        return `
+            <div class="text-center text-muted py-3">
+                <i class="fas fa-user-slash fa-2x mb-2"></i>
+                <p class="mb-0">Участники не найдены</p>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="table-responsive">
+            <table class="table table-sm table-hover category-table mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 5%">Место</th>
+                        <th style="width: 30%">Спортсмен</th>
+                        <th style="width: 30%">Школа</th>
+                        <th style="width: 10%">Баллы</th>
+                        <th style="width: 10%">Бесплатно</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${participants.map(p => {
+                        const rowClass = p.free ? 'table-success' : '';
+                        return `
+                        <tr class="${rowClass}">
+                            <td class="text-center">
+                                ${p.place !== null ? `<strong>${p.place}</strong>` : '—'}
+                            </td>
+                            <td>
+                                <a href="/athlete/${p.athlete.id}" class="text-decoration-none">
+                                    ${p.athlete.last_name} ${p.athlete.first_name}${p.athlete.patronymic ? ' ' + p.athlete.patronymic : ''}
+                                </a>
+                                ${p.free ? '<span class="badge bg-success ms-2">БЕСП</span>' : ''}
+                            </td>
+                            <td>
+                                ${p.club ? `<a href="/club/${p.club.id}" class="text-decoration-none text-muted small">${p.club.name}</a>` : '<span class="text-muted">—</span>'}
+                            </td>
+                            <td class="text-center">
+                                ${p.points !== null ? formatPoints(p.points) : '—'}
+                            </td>
+                            <td class="text-center">
+                                ${p.free ? '<span class="badge bg-success"><i class="fas fa-check"></i></span>' : '—'}
+                            </td>
+                        </tr>
+                    `;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function toggleCategory(categoryId) {
+    if (expandedCategories.has(categoryId)) {
+        expandedCategories.delete(categoryId);
+    } else {
+        expandedCategories.add(categoryId);
+    }
+}
+
+function updateSummary(visibleCount, totalAthletes) {
+    const summary = document.getElementById('categorySummary');
+    if (!summary) return;
+    
+    const totalCategories = categoryGroups.length;
+    summary.textContent = `Показано категорий: ${visibleCount} из ${totalCategories} · Спортсменов: ${totalAthletes}`;
+}
+
+function filterAndSortCategories() {
+    const searchTerm = document.getElementById('categorySearch')?.value.toLowerCase() || '';
+    const sortBy = document.getElementById('categorySort')?.value || 'participants';
+    const hideEmpty = document.getElementById('hideEmpty')?.checked ?? true;
+
+    let filtered = categoryGroups.filter(group => {
+        if (hideEmpty && group.num_participants === 0) {
+            return false;
+        }
+        
+        if (!searchTerm) {
+            return true;
+        }
+
+        // Поиск по названию категории
+        if (group.name.toLowerCase().includes(searchTerm)) {
+            return true;
+        }
+
+        // Поиск по спортсменам
+        return group.participants.some(p => {
+            const fullName = `${p.athlete.last_name} ${p.athlete.first_name} ${p.athlete.patronymic || ''}`.toLowerCase();
+            return fullName.includes(searchTerm);
+        });
+    });
+
+    // Сортировка
+    filtered.sort((a, b) => {
+        if (sortBy === 'participants') {
+            return b.num_participants - a.num_participants;
+        } else if (sortBy === 'name') {
+            return a.name.localeCompare(b.name);
+        }
+        return 0;
+    });
+
+    renderCategoryAccordion(filtered);
+}
+
+function exportResults() {
+    const eventId = {{ event.id }};
+    window.location.href = `/api/event/${eventId}/export`;
+}
+
+function printResults() {
+    window.print();
+}
+
+function shareResults() {
+    if (navigator.share) {
+        navigator.share({
+            title: '{{ event.name }}',
+            text: 'Результаты турнира по фигурному катанию',
+            url: window.location.href
+        });
+    } else {
+        navigator.clipboard.writeText(window.location.href).then(() => {
+            alert('Ссылка скопирована в буфер обмена');
+        });
+    }
+}
+
+// Инициализация
+document.addEventListener('DOMContentLoaded', () => {
+    renderCategoryAccordion(categoryGroups);
+    
+    document.getElementById('categorySearch')?.addEventListener('input', filterAndSortCategories);
+    document.getElementById('categorySort')?.addEventListener('change', filterAndSortCategories);
+    document.getElementById('hideEmpty')?.addEventListener('change', filterAndSortCategories);
+});
+</script>
+{% endblock %}
