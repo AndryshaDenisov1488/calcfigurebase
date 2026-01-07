@@ -542,6 +542,178 @@ def get_participations_statistics_data():
             }
         }
 
+<<<<<<< HEAD
+=======
+def get_summary_statistics_data():
+    """Получает сводную статистику для нового листа 'сводная статистика'
+    Включает:
+    - Общее количество участий (не уникальных) с разделением платно/бесплатно
+    - Общее количество уникальных участий с разделением платно/бесплатно
+    - Количество уникальных участий по каждому разряду с разделением платно/бесплатно
+    - Количество бесплатных участий по каждому разряду с процентами тех, кто выступал >1 раза
+    - Количество платных участий по каждому разряду с процентами тех, кто выступал >1 раза
+    """
+    
+    # Разряды, которые нужно исключить из отчета (МС и КМС)
+    excluded_ranks = {
+        'МС, Женщины',
+        'МС, Мужчины',
+        'МС, Пары',
+        'МС, Танцы',
+        'КМС, Девушки',
+        'КМС, Юноши',
+        'КМС, Пары',
+        'КМС, Танцы'
+    }
+    
+    with app.app_context():
+        from models import Event, Category
+        
+        # Получаем все участия с их категориями (исключая МС и КМС)
+        participants_query = db.session.query(
+            Participant.id,
+            Participant.athlete_id,
+            Participant.pct_ppname,
+            Category.normalized_name.label('rank')
+        ).join(
+            Category, Participant.category_id == Category.id
+        ).filter(
+            db.or_(
+                Category.normalized_name.is_(None),
+                Category.normalized_name.notin_(excluded_ranks)
+            )
+        ).all()
+        
+        # 1. Общее количество участий (не уникальных) - как лист 5
+        total_participations = len(participants_query)
+        total_free_participations = sum(1 for row in participants_query if row.pct_ppname == 'БЕСП')
+        total_paid_participations = total_participations - total_free_participations
+        
+        # 2. Общее количество уникальных участий - как лист 4
+        unique_athletes = set()
+        unique_free_athletes = set()
+        unique_paid_athletes = set()
+        
+        for row in participants_query:
+            athlete_id = row.athlete_id
+            is_free = row.pct_ppname == 'БЕСП'
+            unique_athletes.add(athlete_id)
+            if is_free:
+                unique_free_athletes.add(athlete_id)
+            else:
+                unique_paid_athletes.add(athlete_id)
+        
+        total_unique_athletes = len(unique_athletes)
+        total_unique_free = len(unique_free_athletes)
+        total_unique_paid = len(unique_paid_athletes)
+        
+        # 3. Количество уникальных участий по каждому разряду с разделением платно/бесплатно
+        # ВАЖНО: один спортсмен может участвовать и платно, и бесплатно в одном разряде
+        # Поэтому сначала собираем информацию о каждом спортсмене, затем определяем категорию
+        rank_athlete_participations = {}  # {rank: {athlete_id: {'has_free': bool, 'has_paid': bool}}}
+        
+        for row in participants_query:
+            rank_name = (row.rank or 'Без разряда').strip()
+            athlete_id = row.athlete_id
+            is_free = row.pct_ppname == 'БЕСП'
+            
+            if rank_name not in rank_athlete_participations:
+                rank_athlete_participations[rank_name] = {}
+            
+            if athlete_id not in rank_athlete_participations[rank_name]:
+                rank_athlete_participations[rank_name][athlete_id] = {
+                    'has_free': False,
+                    'has_paid': False
+                }
+            
+            if is_free:
+                rank_athlete_participations[rank_name][athlete_id]['has_free'] = True
+            else:
+                rank_athlete_participations[rank_name][athlete_id]['has_paid'] = True
+        
+        # Теперь определяем категории и считаем
+        rank_unique_counts = {}
+        for rank, athletes_dict in rank_athlete_participations.items():
+            free_only = set()  # Только бесплатно
+            paid_only = set()  # Только платно
+            both = set()       # И платно, и бесплатно
+            
+            for athlete_id, participation_info in athletes_dict.items():
+                has_free = participation_info['has_free']
+                has_paid = participation_info['has_paid']
+                
+                if has_free and has_paid:
+                    both.add(athlete_id)
+                elif has_free:
+                    free_only.add(athlete_id)
+                elif has_paid:
+                    paid_only.add(athlete_id)
+            
+            # Для отображения: "Платно" = только платно + смешанные, "Бесплатно" = только бесплатно + смешанные
+            # "Всего" = все уникальные спортсмены
+            total_unique = len(free_only) + len(paid_only) + len(both)
+            rank_unique_counts[rank] = {
+                'free': len(free_only) + len(both),  # Участвовали бесплатно (включая тех, кто и платно тоже)
+                'paid': len(paid_only) + len(both),  # Участвовали платно (включая тех, кто и бесплатно тоже)
+                'total': total_unique,                # Всего уникальных спортсменов
+                'free_only': len(free_only),          # Только бесплатно
+                'paid_only': len(paid_only),         # Только платно
+                'both': len(both)                     # И платно, и бесплатно
+            }
+        
+        # 4. Количество бесплатных участий по каждому разряду с процентами тех, кто выступал >1 раза
+        # 5. Количество платных участий по каждому разряду с процентами тех, кто выступал >1 раза
+        rank_free_stats = {}  # {rank: {'total': count, 'multiple': count}}
+        rank_paid_stats = {}  # {rank: {'total': count, 'multiple': count}}
+        
+        # Подсчитываем для каждого спортсмена количество бесплатных и платных участий по разрядам
+        athlete_rank_free = {}  # {(athlete_id, rank): count}
+        athlete_rank_paid = {}  # {(athlete_id, rank): count}
+        
+        for row in participants_query:
+            rank_name = (row.rank or 'Без разряда').strip()
+            athlete_id = row.athlete_id
+            is_free = row.pct_ppname == 'БЕСП'
+            
+            key = (athlete_id, rank_name)
+            
+            if is_free:
+                athlete_rank_free[key] = athlete_rank_free.get(key, 0) + 1
+            else:
+                athlete_rank_paid[key] = athlete_rank_paid.get(key, 0) + 1
+        
+        # Подсчитываем статистику по разрядам
+        for (athlete_id, rank_name), count in athlete_rank_free.items():
+            if rank_name not in rank_free_stats:
+                rank_free_stats[rank_name] = {'total': 0, 'multiple': 0}
+            rank_free_stats[rank_name]['total'] += 1
+            if count > 1:
+                rank_free_stats[rank_name]['multiple'] += 1
+        
+        for (athlete_id, rank_name), count in athlete_rank_paid.items():
+            if rank_name not in rank_paid_stats:
+                rank_paid_stats[rank_name] = {'total': 0, 'multiple': 0}
+            rank_paid_stats[rank_name]['total'] += 1
+            if count > 1:
+                rank_paid_stats[rank_name]['multiple'] += 1
+        
+        return {
+            'total_participations': {
+                'total': total_participations,
+                'free': total_free_participations,
+                'paid': total_paid_participations
+            },
+            'total_unique_athletes': {
+                'total': total_unique_athletes,
+                'free': total_unique_free,
+                'paid': total_unique_paid
+            },
+            'rank_unique_counts': rank_unique_counts,
+            'rank_free_stats': rank_free_stats,
+            'rank_paid_stats': rank_paid_stats
+        }
+
+>>>>>>> 0ad5c8fdbf27d11e9354e3c0f7d3e79ec45ba482
 def get_events_first_timers_report_data():
     """Формирует данные по турнирам с подсчетом новичков и повторяющихся по разрядам"""
     
@@ -739,6 +911,7 @@ def get_events_first_timers_report_data():
         # Сортируем турниры по дате (новые сверху)
         events_data.sort(key=lambda x: (x['event_date'] is None, x['event_date']), reverse=True)
         
+<<<<<<< HEAD
         # Подсчитываем общее количество участий (как в get_participations_statistics_data)
         # Используем тот же запрос для идентичности
         total_participations_count = len(participants_query)  # Это все участия без МС/КМС (должно быть 3321)
@@ -747,6 +920,11 @@ def get_events_first_timers_report_data():
         totals = {
             'total_children': total_participations_count,  # Общее количество участий (как в "Статистике участий" = 3321)
             'total_children_by_events': sum(event['total_children'] for event in events_data),  # Для проверки (должно совпадать)
+=======
+        # Подсчитываем итоги
+        totals = {
+            'total_children': sum(event['total_children'] for event in events_data),  # Количество участий (для столбца "Всего")
+>>>>>>> 0ad5c8fdbf27d11e9354e3c0f7d3e79ec45ba482
             'unique_athletes': len(unique_athletes),  # Количество уникальных спортсменов (для унификации с листом "Статистика")
             'unique_first_timers': len(unique_first_timers),  # Количество уникальных спортсменов-новичков (для столбца "Новички")
             'free_children': sum(event['free_children'] for event in events_data),
@@ -2749,8 +2927,334 @@ def export_to_google_sheets(spreadsheet_id=None):
             logger.warning(f"Не удалось заморозить строки шестого листа: {freeze_error}")
         
         logger.info("[OK] Шестой лист 'Турниры: новички и повторяющиеся' создан!")
+<<<<<<< HEAD
         logger.info("Экспорт завершен успешно!")
         logger.info("Примерное количество API запросов: ~30-35 (удален 4-й лист)")
+=======
+        
+        # ========================================
+        # СЕДЬМОЙ ЛИСТ: СВОДНАЯ СТАТИСТИКА
+        # ========================================
+        
+        logger.info("Создание седьмого листа 'сводная статистика'...")
+        summary_stats = get_summary_statistics_data()
+        
+        try:
+            worksheet7 = spreadsheet.worksheet("сводная статистика")
+            sheet_id7 = worksheet7.id
+            
+            logger.info("Очистка седьмого листа...")
+            try:
+                clear_requests7 = [
+                    {
+                        'unmergeCells': {
+                            'range': {
+                                'sheetId': sheet_id7,
+                                'startRowIndex': 0,
+                                'endRowIndex': 1000,
+                                'startColumnIndex': 0,
+                                'endColumnIndex': 6
+                            }
+                        }
+                    },
+                    {
+                        'updateCells': {
+                            'range': {
+                                'sheetId': sheet_id7,
+                                'startRowIndex': 0,
+                                'endRowIndex': 1000,
+                                'startColumnIndex': 0,
+                                'endColumnIndex': 6
+                            },
+                            'fields': 'userEnteredFormat,userEnteredValue'
+                        }
+                    }
+                ]
+                spreadsheet.batch_update({'requests': clear_requests7})
+                logger.info("[OK] Седьмой лист очищен")
+            except Exception as e:
+                logger.warning(f"Ошибка при очистке седьмого листа: {e}")
+                worksheet7.clear()
+            
+        except:
+            worksheet7 = spreadsheet.add_worksheet(title="сводная статистика", rows=1000, cols=6)
+            sheet_id7 = worksheet7.id
+        
+        # Заголовок седьмого листа
+        worksheet7.update_acell('A1', 
+            f'ОБЩАЯ СВОДКА (без МС/КМС) - Обновлено: {datetime.now().strftime("%d.%m.%Y %H:%M")}')
+        worksheet7.format('A1:F1', {
+            'textFormat': {'bold': True, 'fontSize': 14},
+            'horizontalAlignment': 'CENTER',
+            'backgroundColor': {'red': 0.29, 'green': 0.53, 'blue': 0.91}
+        })
+        
+        # Объединение главного заголовка седьмого листа
+        try:
+            main_header_merge7 = {
+                'mergeCells': {
+                    'range': {
+                        'sheetId': sheet_id7,
+                        'startRowIndex': 0,
+                        'endRowIndex': 1,
+                        'startColumnIndex': 0,
+                        'endColumnIndex': 6
+                    },
+                    'mergeType': 'MERGE_ALL'
+                }
+            }
+            spreadsheet.batch_update({'requests': [main_header_merge7]})
+        except Exception as e:
+            logger.debug(f"Объединение заголовка седьмого листа: {e}")
+        
+        # Формируем данные для седьмого листа
+        summary_data = []
+        current_row = 3
+        
+        # 1. Общее количество участий (не уникальных) - как лист 5
+        summary_data.append(['ОБЩЕЕ КОЛИЧЕСТВО УЧАСТИЙ (не уникальных)', '', '', '', '', ''])
+        summary_data.append(['', 'Всего', 'Платно', 'Бесплатно', '', ''])
+        summary_data.append([
+            'Всего участий',
+            summary_stats['total_participations']['total'],
+            summary_stats['total_participations']['paid'],
+            summary_stats['total_participations']['free'],
+            '',
+            ''
+        ])
+        summary_data.append(['', '', '', '', '', ''])
+        
+        # 2. Общее количество уникальных участий - как лист 4
+        summary_data.append(['ОБЩЕЕ КОЛИЧЕСТВО УНИКАЛЬНЫХ УЧАСТИЙ', '', '', '', '', ''])
+        summary_data.append(['', 'Всего', 'Платно', 'Бесплатно', '', ''])
+        summary_data.append([
+            'Уникальных спортсменов',
+            summary_stats['total_unique_athletes']['total'],
+            summary_stats['total_unique_athletes']['paid'],
+            summary_stats['total_unique_athletes']['free'],
+            '',
+            ''
+        ])
+        summary_data.append(['', '', '', '', '', ''])
+        
+        # 3. Количество уникальных участий по каждому разряду с разделением платно/бесплатно
+        # ВАЖНО: один спортсмен может участвовать и платно, и бесплатно в одном разряде
+        # Поэтому "Платно" + "Бесплатно" может быть больше "Всего"
+        summary_data.append(['УНИКАЛЬНЫЕ УЧАСТИЯ ПО РАЗРЯДАМ', '', '', '', '', ''])
+        summary_data.append(['Разряд', 'Всего', 'Платно', 'Бесплатно', 'Примечание', ''])
+        summary_data.append(['', '(уникальных)', '(участников)', '(участников)', '(сумма может > всего)', ''])
+        
+        # Порядок разрядов
+        rank_order = [
+            '1 Спортивный, Девочки', '1 Спортивный, Мальчики', '1 Спортивный, Пары', '1 Спортивный, Танцы',
+            '2 Спортивный, Девочки', '2 Спортивный, Мальчики', '2 Спортивный, Пары', '2 Спортивный, Танцы',
+            '3 Спортивный, Девочки', '3 Спортивный, Мальчики', '3 Спортивный, Пары', '3 Спортивный, Танцы',
+            '1 Юношеский, Девочки', '1 Юношеский, Мальчики',
+            '2 Юношеский, Девочки', '2 Юношеский, Мальчики',
+            '3 Юношеский, Девочки', '3 Юношеский, Мальчики',
+            'Юный Фигурист, Девочки', 'Юный Фигурист, Мальчики',
+            'Дебют, Девочки', 'Дебют, Мальчики',
+            'Новичок, Девочки', 'Новичок, Мальчики',
+        ]
+        
+        # Добавляем остальные разряды (кроме МС и КМС)
+        excluded_ms_kms = {
+            'МС, Женщины', 'МС, Мужчины', 'МС, Пары', 'МС, Танцы',
+            'КМС, Девушки', 'КМС, Юноши', 'КМС, Пары', 'КМС, Танцы'
+        }
+        
+        for rank in summary_stats['rank_unique_counts'].keys():
+            if rank not in rank_order and rank not in excluded_ms_kms:
+                rank_order.append(rank)
+        
+        # Выводим разряды в порядке
+        for rank in rank_order:
+            if rank in summary_stats['rank_unique_counts'] and rank not in excluded_ms_kms:
+                counts = summary_stats['rank_unique_counts'][rank]
+                # Формируем примечание для наглядности
+                note = ''
+                both_count = counts.get('both', 0)
+                paid_only_count = counts.get('paid_only', 0)
+                free_only_count = counts.get('free_only', 0)
+                
+                # Рассчитываем разбивку для понятного объяснения
+                if both_count > 0:
+                    note = f"Только платно: {paid_only_count}, только бесплатно: {free_only_count}, и платно и бесплатно: {both_count}"
+                elif paid_only_count > 0 and free_only_count > 0:
+                    note = f"Только платно: {paid_only_count}, только бесплатно: {free_only_count}"
+                elif paid_only_count > 0:
+                    note = f"Все {paid_only_count} участвовали только платно"
+                elif free_only_count > 0:
+                    note = f"Все {free_only_count} участвовали только бесплатно"
+                
+                summary_data.append([
+                    rank,
+                    counts['total'],
+                    counts['paid'],
+                    counts['free'],
+                    note,
+                    ''
+                ])
+        
+        summary_data.append(['', '', '', '', '', ''])
+        
+        # 4. Количество бесплатных участий по каждому разряду с процентами тех, кто выступал >1 раза
+        summary_data.append(['БЕСПЛАТНЫЕ УЧАСТИЯ ПО РАЗРЯДАМ', '', '', '', '', ''])
+        summary_data.append(['Разряд', 'Всего', 'Выступали >1 раза', '%', '', ''])
+        
+        for rank in rank_order:
+            if rank in summary_stats['rank_free_stats'] and rank not in excluded_ms_kms:
+                stats = summary_stats['rank_free_stats'][rank]
+                total = stats['total']
+                multiple = stats['multiple']
+                percent = round((multiple / total * 100) if total > 0 else 0, 1)
+                summary_data.append([
+                    rank,
+                    total,
+                    multiple,
+                    f'{percent}%',
+                    '',
+                    ''
+                ])
+        
+        summary_data.append(['', '', '', '', '', ''])
+        
+        # 5. Количество платных участий по каждому разряду с процентами тех, кто выступал >1 раза
+        summary_data.append(['ПЛАТНЫЕ УЧАСТИЯ ПО РАЗРЯДАМ', '', '', '', '', ''])
+        summary_data.append(['Разряд', 'Всего', 'Выступали >1 раза', '%', '', ''])
+        
+        for rank in rank_order:
+            if rank in summary_stats['rank_paid_stats'] and rank not in excluded_ms_kms:
+                stats = summary_stats['rank_paid_stats'][rank]
+                total = stats['total']
+                multiple = stats['multiple']
+                percent = round((multiple / total * 100) if total > 0 else 0, 1)
+                summary_data.append([
+                    rank,
+                    total,
+                    multiple,
+                    f'{percent}%',
+                    '',
+                    ''
+                ])
+        
+        # Записываем данные
+        end_row = current_row + len(summary_data) - 1
+        worksheet7.update(f'A{current_row}:F{end_row}', summary_data)
+        
+        # Форматирование седьмого листа
+        format_requests7 = []
+        
+        # Заголовки секций и таблиц - определяем по содержимому
+        section_headers = []
+        section_table_headers = []
+        row_idx = current_row
+        
+        for row in summary_data:
+            if len(row) > 0 and row[0]:
+                row_text = str(row[0]).strip()
+                # Заголовки секций (все заглавные, содержат "УЧАСТИ" или "УНИКАЛЬНЫЕ" или "ОБЩЕЕ")
+                if row_text.isupper() and ('УЧАСТИ' in row_text or 'УНИКАЛЬНЫЕ' in row_text or 'ОБЩЕЕ' in row_text):
+                    section_headers.append(row_idx)
+                # Заголовки таблиц (содержат "Разряд" или пустая первая ячейка с "Всего" во второй)
+                elif row_text == 'Разряд' or (row_text == '' and len(row) > 1 and 'Всего' in str(row[1])):
+                    section_table_headers.append(row_idx)
+            row_idx += 1
+        
+        # Форматируем заголовки секций
+        for header_row in section_headers:
+            format_requests7.append({
+                'range': f'A{header_row}:F{header_row}',
+                'format': {
+                    'textFormat': {'bold': True, 'fontSize': 12},
+                    'horizontalAlignment': 'LEFT',
+                    'backgroundColor': {'red': 0.85, 'green': 0.92, 'blue': 0.83}
+                }
+            })
+        
+        # Форматируем заголовки таблиц
+        for table_header_row in section_table_headers:
+            format_requests7.append({
+                'range': f'A{table_header_row}:F{table_header_row}',
+                'format': {
+                    'textFormat': {'bold': True},
+                    'horizontalAlignment': 'CENTER',
+                    'backgroundColor': {'red': 0.8, 'green': 0.8, 'blue': 0.8}
+                }
+            })
+        
+        # Выравнивание числовых значений по центру
+        format_requests7.append({
+            'range': f'B{current_row + 2}:D{end_row}',
+            'format': {
+                'horizontalAlignment': 'CENTER'
+            }
+        })
+        
+        if format_requests7:
+            worksheet7.batch_format(format_requests7)
+        
+        # Ширина колонок седьмого листа
+        width_batch_requests7 = [
+            {
+                'updateDimensionProperties': {
+                    'range': {
+                        'sheetId': sheet_id7,
+                        'dimension': 'COLUMNS',
+                        'startIndex': 0,  # A - Разряд
+                        'endIndex': 1
+                    },
+                    'properties': {'pixelSize': 300},
+                    'fields': 'pixelSize'
+                }
+            },
+            {
+                'updateDimensionProperties': {
+                    'range': {
+                        'sheetId': sheet_id7,
+                        'dimension': 'COLUMNS',
+                        'startIndex': 1,  # B - Всего
+                        'endIndex': 2
+                    },
+                    'properties': {'pixelSize': 100},
+                    'fields': 'pixelSize'
+                }
+            },
+            {
+                'updateDimensionProperties': {
+                    'range': {
+                        'sheetId': sheet_id7,
+                        'dimension': 'COLUMNS',
+                        'startIndex': 2,  # C - Платно/Выступали >1 раза
+                        'endIndex': 3
+                    },
+                    'properties': {'pixelSize': 120},
+                    'fields': 'pixelSize'
+                }
+            },
+            {
+                'updateDimensionProperties': {
+                    'range': {
+                        'sheetId': sheet_id7,
+                        'dimension': 'COLUMNS',
+                        'startIndex': 3,  # D - Бесплатно/%
+                        'endIndex': 4
+                    },
+                    'properties': {'pixelSize': 120},
+                    'fields': 'pixelSize'
+                }
+            }
+        ]
+        
+        if width_batch_requests7:
+            spreadsheet.batch_update({'requests': width_batch_requests7})
+        
+        worksheet7.freeze(rows=1)
+        
+        logger.info("[OK] Седьмой лист 'сводная статистика' создан!")
+        logger.info("Экспорт завершен успешно!")
+        logger.info("Примерное количество API запросов: ~35-40")
+>>>>>>> 0ad5c8fdbf27d11e9354e3c0f7d3e79ec45ba482
         
         total_athletes = sum(len(athletes) for athletes in athletes_by_rank_stats.values())
         total_schools = len(schools_data)
@@ -2761,15 +3265,27 @@ def export_to_google_sheets(spreadsheet_id=None):
             'url': spreadsheet.url,
             'spreadsheet_id': spreadsheet.id,
             'message': (
+<<<<<<< HEAD
                 f'Экспорт завершен! Создано 6 листов: '
+=======
+                f'Экспорт завершен! Создано 7 листов: '
+>>>>>>> 0ad5c8fdbf27d11e9354e3c0f7d3e79ec45ba482
                 f'"Список спортсменов" ({total_athletes} спортсменов), '
                 f'"Анализ по школам" ({total_schools} школ), '
                 f'"Статистика" ({total_free} бесплатных участий), '
                 f'"Общая статистика" ({general_stats["total_events"]} турниров, {total_participants} участников), '
+<<<<<<< HEAD
                 f'"Статистика участий" ({participations_stats["total_participations"]} участий) и '
                 f'"Турниры: новички и повторяющиеся" ({len(first_timers_events)} турниров, '
                 f'{first_timers_totals["total_children"]} участий, '
                 f'{first_timers_totals["total_first_timers"]} новичков / {first_timers_totals["total_repeaters"]} повторяющихся).'
+=======
+                f'"Статистика участий" ({participations_stats["total_participations"]} участий), '
+                f'"Турниры: новички и повторяющиеся" ({len(first_timers_events)} турниров, '
+                f'{first_timers_totals["total_children"]} участий, '
+                f'{first_timers_totals["total_first_timers"]} новичков / {first_timers_totals["total_repeaters"]} повторяющихся) и '
+                f'"сводная статистика" (Общая сводка).'
+>>>>>>> 0ad5c8fdbf27d11e9354e3c0f7d3e79ec45ba482
             )
         }
         

@@ -1,4 +1,11 @@
+<<<<<<< HEAD
 RewriteEngine On
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^(.*)$ wsgi.py/$1 [QSA,L]
+=======
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ wsgi.py/$1 [QSA,L]
+>>>>>>> 0ad5c8fdbf27d11e9354e3c0f7d3e79ec45ba482

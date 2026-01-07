@@ -52,6 +52,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.bak
+<<<<<<< HEAD
 *.old
 
 
@@ -65,3 +66,6 @@ Thumbs.db
 
 
 
+=======
+*.old
+>>>>>>> 0ad5c8fdbf27d11e9354e3c0f7d3e79ec45ba482
