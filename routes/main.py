@@ -90,16 +90,22 @@ def events():
     
     # Применяем сортировку
     if sort_by == 'alphabetical':
-        events = query.order_by(Event.name.asc()).all()
+        query = query.order_by(Event.name.asc())
     elif sort_by == 'date':
-        events = query.order_by(Event.begin_date.desc()).all()
+        query = query.order_by(Event.begin_date.desc())
     elif sort_by == 'rank':
         # Сортируем по разряду (используем вес разряда)
-        events = query.join(Category, Event.id == Category.event_id).order_by(
+        query = query.join(Category, Event.id == Category.event_id).order_by(
             Category.normalized_name.asc()
-        ).distinct().all()
+        ).distinct()
     else:
-        events = query.order_by(Event.name.asc()).all()
+        query = query.order_by(Event.name.asc())
+    
+    # Пагинация
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    events_pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    events = events_pagination.items
     
     seasons = get_all_seasons_from_events(events)
     
