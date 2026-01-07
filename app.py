@@ -101,8 +101,19 @@ limiter.init_app(app)
 # Настройка CSRF защиты (только если включено в конфиге)
 if app.config.get('WTF_CSRF_ENABLED', True):
     csrf = CSRFProtect(app)
+    
+    # Добавляем функцию csrf_token в контекст шаблонов
+    @app.context_processor
+    def inject_csrf_token():
+        from flask_wtf.csrf import generate_csrf
+        return dict(csrf_token=lambda: generate_csrf())
 else:
     csrf = None
+    
+    # Если CSRF отключен, добавляем пустую функцию
+    @app.context_processor
+    def inject_csrf_token():
+        return dict(csrf_token=lambda: '')
 
 migrate = Migrate(app, db)
 CORS(app)

@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}Система управления турнирами по фигурному катанию{% endblock %}</title>
     
     <!-- Bootstrap CSS -->
@@ -149,6 +150,42 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Custom JS -->
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    
+    <!-- CSRF Token для AJAX запросов -->
+    <script>
+        // Получаем CSRF токен из мета-тега для использования в AJAX запросах
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        
+        // Переопределяем fetch для автоматического добавления CSRF токена
+        if (csrfToken) {
+            const originalFetch = window.fetch;
+            window.fetch = function(url, options = {}) {
+                // Добавляем CSRF токен только для POST, PUT, DELETE, PATCH запросов
+                if (options.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(options.method.toUpperCase())) {
+                    // Если это FormData, добавляем токен в форму
+                    if (options.body instanceof FormData) {
+                        options.body.append('csrf_token', csrfToken);
+                    } else {
+                        // Для JSON запросов добавляем в заголовки
+                        options.headers = options.headers || {};
+                        if (typeof options.body === 'string' && (options.headers['Content-Type'] || '').includes('application/json')) {
+                            try {
+                                const json = JSON.parse(options.body);
+                                json.csrf_token = csrfToken;
+                                options.body = JSON.stringify(json);
+                            } catch (e) {
+                                // Если не JSON, просто добавляем в заголовки
+                                options.headers['X-CSRFToken'] = csrfToken;
+                            }
+                        } else {
+                            options.headers['X-CSRFToken'] = csrfToken;
+                        }
+                    }
+                }
+                return originalFetch.call(this, url, options);
+            };
+        }
+    </script>
     
     {% block extra_js %}{% endblock %}
 </body>
