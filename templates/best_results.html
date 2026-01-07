@@ -1,0 +1,442 @@
+{% extends "base.html" %}
+
+{% block title %}Лучшие результаты - Система управления турнирами{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
+    <div>
+        <h2 class="mb-1">
+            <i class="fas fa-trophy me-2"></i>Лучшие результаты
+        </h2>
+        <p class="text-muted mb-0 small">
+            Всего разрядов: {{ rank_summary.total_ranks }} · Спортсменов: {{ rank_summary.total_athletes }}
+            {% if selected_rank_obj %}
+                <span class="d-block mt-1">
+                    Выбран разряд: <strong>{{ selected_rank_obj.display_name }}</strong>
+                </span>
+            {% endif %}
+        </p>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-center">
+            <div class="col-12 col-lg-6">
+                <label for="rankSelect" class="form-label">Выберите разряд:</label>
+                <select class="form-select" id="rankSelect" onchange="filterByRank()">
+                    <option value="">Все разряды</option>
+                    {% for rank in rank_groups %}
+                        <option value="{{ rank.display_name }}" {% if selected_rank == rank.display_name %}selected{% endif %}>
+                            {{ rank.display_name }} ({{ rank.athlete_count }} спортсменов)
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-lg-6">
+                <label for="athleteSearch" class="form-label">Поиск по фамилии:</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="search" id="athleteSearch" class="form-control" placeholder="Введите фамилию спортсмена">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<p id="resultsSummary" class="text-muted small mb-3"></p>
+
+<div id="ranksContainer">
+    {% if selected_rank_obj %}
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-layer-group me-2"></i>{{ selected_rank_obj.display_name }}
+                    <span class="badge bg-light text-dark ms-2">{{ selected_rank_obj.gender_label }}</span>
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if selected_rank_obj.athletes %}
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th style="width: 50px;">#</th>
+                                    <th>Спортсмен</th>
+                                    <th class="text-center" style="width: 100px;">Место</th>
+                                    <th class="text-center" style="width: 120px;">Баллы</th>
+                                    <th class="text-center" style="width: 120px;">Участий</th>
+                                    <th>Турнир</th>
+                                    <th class="text-center" style="width: 120px;">Дата</th>
+                                    <th>Школа</th>
+                                </tr>
+                            </thead>
+                            <tbody id="athletesTableBody">
+                                {% for athlete in selected_rank_obj.athletes %}
+                                <tr class="athlete-row" data-name="{{ athlete.name|lower }}">
+                                    <td class="text-muted">{{ loop.index }}</td>
+                                    <td>
+                                        <a href="/athlete/{{ athlete.id }}" class="text-decoration-none fw-semibold">
+                                            {{ athlete.name }}
+                                        </a>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge bg-{% if athlete.best_place == 1 %}success{% elif athlete.best_place <= 3 %}warning{% else %}secondary{% endif %}">
+                                            {{ athlete.best_place if athlete.best_place else '—' }}
+                                        </span>
+                                    </td>
+                                    <td class="text-center">
+                                        <strong>{{ "%.2f"|format(athlete.best_points) if athlete.best_points else '—' }}</strong>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge bg-info">{{ athlete.participations_count if athlete.participations_count else 0 }}</span>
+                                    </td>
+                                    <td>
+                                        <a href="/event/{{ athlete.event_id }}" class="text-decoration-none">
+                                            {{ athlete.event_name }}
+                                        </a>
+                                        {% if athlete.event_place %}
+                                            <small class="text-muted d-block">{{ athlete.event_place }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center text-muted small">
+                                        {{ athlete.event_date_display }}
+                                    </td>
+                                    <td class="text-muted small">
+                                        {{ athlete.club_name }}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-info-circle fa-2x mb-2"></i>
+                        <p>Нет результатов в этом разряде</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    {% else %}
+        <div id="ranksAccordion" class="accordion"></div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.rank-accordion-item .accordion-button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+@media (min-width: 768px) {
+    .rank-accordion-item .accordion-button {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+    }
+}
+
+.rank-header-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    font-size: 0.85rem;
+    color: var(--bs-secondary);
+}
+
+.rank-header-meta .badge {
+    font-size: 0.75rem;
+}
+
+.rank-accordion-item .accordion-body {
+    background-color: #fcfcfd;
+}
+
+.rank-empty {
+    text-align: center;
+    color: var(--bs-secondary);
+    padding: 2rem 1rem;
+    border: 1px dashed rgba(0, 0, 0, 0.1);
+    border-radius: 0.75rem;
+    background: #fff;
+}
+
+.rank-stat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 999px;
+    background: rgba(33, 37, 41, 0.05);
+    font-size: 0.8rem;
+}
+
+.rank-stat-pill i {
+    color: #0d6efd;
+}
+
+.rank-table thead th {
+    position: sticky;
+    top: 0;
+    background: #fff;
+    z-index: 1;
+}
+
+.rank-table tbody tr:hover {
+    background-color: rgba(13, 110, 253, 0.05);
+}
+
+.athlete-row.hidden {
+    display: none;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const rankGroups = {{ rank_groups_json | safe }};
+const expandedRanks = new Set();
+
+function filterByRank() {
+    const rankName = document.getElementById('rankSelect').value;
+    const url = new URL(window.location);
+    if (rankName) {
+        url.searchParams.set('rank', rankName);
+    } else {
+        url.searchParams.delete('rank');
+    }
+    window.location.href = url.toString();
+}
+
+function formatPoints(value) {
+    if (value === null || value === undefined) {
+        return '—';
+    }
+    return Number(value).toFixed(2);
+}
+
+function formatPlace(value) {
+    if (value === null || value === undefined) {
+        return '—';
+    }
+    return value;
+}
+
+function formatDate(dateStr) {
+    if (!dateStr) {
+        return '—';
+    }
+    const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) {
+        return dateStr;
+    }
+    return date.toLocaleDateString('ru-RU');
+}
+
+function getPlaceBadgeClass(place) {
+    if (place === 1) return 'success';
+    if (place <= 3) return 'warning';
+    return 'secondary';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const athleteSearchInput = document.getElementById('athleteSearch');
+    const athletesTableBody = document.getElementById('athletesTableBody');
+    const resultsSummary = document.getElementById('resultsSummary');
+    const ranksAccordion = document.getElementById('ranksAccordion');
+    
+    {% if selected_rank_obj %}
+    // Режим одного разряда - поиск по таблице
+    if (athleteSearchInput && athletesTableBody) {
+        function filterAthletes() {
+            const searchTerm = athleteSearchInput.value.trim().toLowerCase();
+            const rows = athletesTableBody.querySelectorAll('.athlete-row');
+            let visibleCount = 0;
+            
+            rows.forEach(row => {
+                const name = row.getAttribute('data-name') || '';
+                if (searchTerm === '' || name.includes(searchTerm)) {
+                    row.classList.remove('hidden');
+                    visibleCount++;
+                } else {
+                    row.classList.add('hidden');
+                }
+            });
+            
+            if (resultsSummary) {
+                resultsSummary.textContent = `Показано спортсменов: ${visibleCount} из {{ selected_rank_obj.athletes|length }}`;
+            }
+        }
+        
+        athleteSearchInput.addEventListener('input', filterAthletes);
+        
+        if (resultsSummary) {
+            resultsSummary.textContent = `Показано спортсменов: {{ selected_rank_obj.athletes|length }}`;
+        }
+    }
+    {% else %}
+    // Режим всех разрядов - аккордеон
+    function applyFilters() {
+        const searchTerm = athleteSearchInput.value.trim().toLowerCase();
+        const processed = [];
+        
+        rankGroups.forEach(rank => {
+            let athletes = rank.athletes.slice();
+            
+            if (searchTerm) {
+                athletes = athletes.filter(athlete => 
+                    athlete.name.toLowerCase().includes(searchTerm) ||
+                    rank.display_name.toLowerCase().includes(searchTerm)
+                );
+            }
+            
+            if (athletes.length === 0) {
+                return;
+            }
+            
+            processed.push({
+                ...rank,
+                athletes
+            });
+        });
+        
+        return processed;
+    }
+    
+    function updateSummary(data) {
+        const totalAthletes = data.reduce((acc, rank) => acc + rank.athletes.length, 0);
+        if (resultsSummary) {
+            resultsSummary.textContent = `Показано разрядов: ${data.length}. Спортсменов: ${totalAthletes}.`;
+        }
+    }
+    
+    function renderRanks() {
+        const data = applyFilters();
+        
+        if (expandedRanks.size === 0 && data.length > 0) {
+            expandedRanks.add(data[0].anchor);
+        }
+        
+        if (!ranksAccordion) return;
+        ranksAccordion.innerHTML = '';
+        
+        if (data.length === 0) {
+            ranksAccordion.innerHTML = '<div class="rank-empty">Ничего не найдено. Попробуйте изменить условия поиска.</div>';
+            updateSummary([]);
+            return;
+        }
+        
+        const fragment = document.createDocumentFragment();
+        
+        data.forEach(rank => {
+            const isExpanded = expandedRanks.has(rank.anchor);
+            const collapseId = `collapse-${rank.anchor}`;
+            const headingId = `heading-${rank.anchor}`;
+            
+            const accordionItem = document.createElement('div');
+            accordionItem.className = 'accordion-item rank-accordion-item mb-3 shadow-sm border-0';
+            
+            const topAthlete = rank.athletes[0];
+            const bestPlace = topAthlete ? formatPlace(topAthlete.best_place) : '—';
+            const bestPoints = topAthlete ? formatPoints(topAthlete.best_points) : '—';
+            
+            accordionItem.innerHTML = `
+                <h2 class="accordion-header" id="${headingId}">
+                    <button class="accordion-button ${isExpanded ? '' : 'collapsed'}" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="${isExpanded}" aria-controls="${collapseId}">
+                        <div>
+                            <span class="fw-semibold">${rank.display_name}</span>
+                            <span class="badge bg-light text-dark border ms-2">${rank.gender_label}</span>
+                        </div>
+                        <div class="rank-header-meta">
+                            <span class="rank-stat-pill"><i class="fas fa-users"></i>${rank.athletes.length}</span>
+                            <span class="rank-stat-pill"><i class="fas fa-trophy"></i>${bestPlace}</span>
+                            <span class="rank-stat-pill"><i class="fas fa-star"></i>${bestPoints}</span>
+                        </div>
+                    </button>
+                </h2>
+                <div id="${collapseId}" class="accordion-collapse collapse ${isExpanded ? 'show' : ''}" aria-labelledby="${headingId}" data-anchor="${rank.anchor}">
+                    <div class="accordion-body">
+                        <div class="table-responsive" style="max-height: 500px;">
+                            <table class="table table-sm align-middle rank-table mb-0">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 50px;">#</th>
+                                        <th>Спортсмен</th>
+                                        <th class="text-center" style="width: 100px;">Место</th>
+                                        <th class="text-center" style="width: 120px;">Баллы</th>
+                                        <th class="text-center" style="width: 120px;">Участий</th>
+                                        <th>Турнир</th>
+                                        <th class="text-center" style="width: 120px;">Дата</th>
+                                        <th>Школа</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${rank.athletes.map((athlete, idx) => {
+                                        const placeBadgeClass = getPlaceBadgeClass(athlete.best_place);
+                                        return `
+                                            <tr>
+                                                <td class="text-muted">${idx + 1}</td>
+                                                <td>
+                                                    <a href="/athlete/${athlete.id}" class="text-decoration-none">
+                                                        ${athlete.name}
+                                                    </a>
+                                                </td>
+                                                <td class="text-center">
+                                                    <span class="badge bg-${placeBadgeClass}">
+                                                        ${formatPlace(athlete.best_place)}
+                                                    </span>
+                                                </td>
+                                                <td class="text-center">
+                                                    <strong>${formatPoints(athlete.best_points)}</strong>
+                                                </td>
+                                                <td class="text-center">
+                                                    <span class="badge bg-info">${athlete.participations_count || 0}</span>
+                                                </td>
+                                                <td>
+                                                    <a href="/event/${athlete.event_id}" class="text-decoration-none">
+                                                        ${athlete.event_name}
+                                                    </a>
+                                                    ${athlete.event_place ? `<small class="text-muted d-block">${athlete.event_place}</small>` : ''}
+                                                </td>
+                                                <td class="text-center text-muted small">
+                                                    ${athlete.event_date_display || '—'}
+                                                </td>
+                                                <td class="text-muted small">
+                                                    ${athlete.club_name}
+                                                </td>
+                                            </tr>
+                                        `;
+                                    }).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            fragment.appendChild(accordionItem);
+        });
+        
+        ranksAccordion.appendChild(fragment);
+        
+        ranksAccordion.querySelectorAll('.accordion-collapse').forEach(collapseEl => {
+            const anchor = collapseEl.getAttribute('data-anchor');
+            collapseEl.addEventListener('shown.bs.collapse', () => expandedRanks.add(anchor));
+            collapseEl.addEventListener('hidden.bs.collapse', () => expandedRanks.delete(anchor));
+        });
+        
+        updateSummary(data);
+    }
+    
+    athleteSearchInput.addEventListener('input', () => renderRanks());
+    renderRanks();
+    {% endif %}
+});
+</script>
+{% endblock %}
+

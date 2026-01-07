@@ -1,0 +1,71 @@
+═══════════════════════════════════════════════════════════
+  УДАЛЕНИЕ ЛИШНИХ ПАПОК ИЗ GIT РЕПОЗИТОРИЯ
+═══════════════════════════════════════════════════════════
+
+Эти папки должны быть в .gitignore и не должны быть в git:
+- __pycache__/
+- backups/
+- instance/
+- logs/
+- uploads/
+- venv/ (если есть)
+
+═══════════════════════════════════════════════════════════
+  КОМАНДЫ ДЛЯ ВЫПОЛНЕНИЯ НА СЕРВЕРЕ:
+═══════════════════════════════════════════════════════════
+
+1. ПЕРЕЙТИ В ПАПКУ ПРОЕКТА:
+───────────────────────────────────────────────────────────
+cd /var/www/calc.figurebase.ru
+
+2. УДАЛИТЬ ВСЕ ЛИШНИЕ ПАПКИ ИЗ GIT (файлы останутся на диске):
+───────────────────────────────────────────────────────────
+git rm -r --cached __pycache__/
+git rm -r --cached backups/
+git rm -r --cached instance/
+git rm -r --cached logs/
+git rm -r --cached uploads/
+git rm -r --cached venv/ 2>/dev/null || true
+
+3. УДАЛИТЬ ЛИШНИЕ ФАЙЛЫ (если есть):
+───────────────────────────────────────────────────────────
+git rm --cached *.pyc 2>/dev/null || true
+find . -name "*.pyc" -exec git rm --cached {} \; 2>/dev/null || true
+git rm --cached *.db 2>/dev/null || true
+git rm --cached *.log 2>/dev/null || true
+
+4. ПРОВЕРИТЬ СТАТУС:
+───────────────────────────────────────────────────────────
+git status
+
+5. СОЗДАТЬ КОММИТ:
+───────────────────────────────────────────────────────────
+git commit -m "Remove ignored files and folders from git"
+
+6. ОТПРАВИТЬ НА GITHUB:
+───────────────────────────────────────────────────────────
+git push
+
+═══════════════════════════════════════════════════════════
+  БЫСТРАЯ КОМАНДА (все сразу):
+═══════════════════════════════════════════════════════════
+
+cd /var/www/calc.figurebase.ru && \
+git rm -r --cached __pycache__/ backups/ instance/ logs/ uploads/ venv/ 2>/dev/null; \
+git commit -m "Remove ignored files and folders from git" && \
+git push
+
+═══════════════════════════════════════════════════════════
+  АЛЬТЕРНАТИВНЫЙ ВАРИАНТ (удалить все, что в .gitignore):
+═══════════════════════════════════════════════════════════
+
+cd /var/www/calc.figurebase.ru
+
+# Удалить все файлы, которые соответствуют паттернам из .gitignore
+git ls-files | grep -E "(\.pyc$|__pycache__|\.db$|\.log$|venv/|instance/|backups/|logs/|uploads/)" | xargs git rm --cached
+
+git commit -m "Remove all ignored files from git"
+git push
+
+═══════════════════════════════════════════════════════════
+
