@@ -1,0 +1,70 @@
+# ============================================
+# КОНФИГУРАЦИЯ ПРИЛОЖЕНИЯ
+# ============================================
+# Скопируйте этот файл в .env и заполните значения
+
+# ============================================
+# ОБЯЗАТЕЛЬНЫЕ ПЕРЕМЕННЫЕ
+# ============================================
+
+# Секретный ключ для сессий Flask (сгенерируйте случайную строку)
+# Можно сгенерировать командой: python -c "import secrets; print(secrets.token_hex(32))"
+SECRET_KEY=your_secret_key_here
+
+# Имя пользователя администратора
+ADMIN_USERNAME=admin
+
+# Хеш пароля администратора
+# Для генерации хеша выполните:
+# python scripts/generate_password_hash.py your_password
+ADMIN_PASSWORD_HASH=your_password_hash_here
+
+# ============================================
+# БАЗА ДАННЫХ
+# ============================================
+
+# URL базы данных
+# Для SQLite: sqlite:///figure_skating.db
+# Для PostgreSQL: postgresql://user:password@localhost/dbname
+# Для MySQL: mysql://user:password@localhost/dbname
+DATABASE_URL=sqlite:///figure_skating.db
+
+# ============================================
+# НАСТРОЙКИ ПРИЛОЖЕНИЯ
+# ============================================
+
+# Папка для загрузки файлов
+UPLOAD_FOLDER=uploads
+
+# Максимальный размер загружаемого файла (в байтах)
+MAX_CONTENT_LENGTH=16777216
+
+# Время жизни сессии (в секундах)
+SESSION_TIMEOUT=3600
+
+# Уровень логирования (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+LOG_LEVEL=INFO
+
+# Путь к файлу лога
+LOG_FILE=logs/app.log
+
+# Лимит запросов в минуту
+RATE_LIMIT_PER_MINUTE=60
+
+# Режим отладки (true/false) - НЕ ИСПОЛЬЗУЙТЕ В ПРОДАКШЕНЕ!
+FLASK_DEBUG=False
+
+# Host и Port для запуска приложения
+FLASK_HOST=127.0.0.1
+FLASK_PORT=5001
+
+# CSRF Protection
+WTF_CSRF_ENABLED=True
+WTF_CSRF_TIME_LIMIT=3600
+
+# Connection Pooling для PostgreSQL (если используется)
+DB_POOL_SIZE=10
+DB_POOL_RECYCLE=3600
+DB_POOL_PRE_PING=True
+DB_MAX_OVERFLOW=20
+
