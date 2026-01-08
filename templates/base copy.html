@@ -20,7 +20,7 @@
     <!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
-            <a class="navbar-brand" href="{{ url_for('index') }}">
+            <a class="navbar-brand" href="{{ url_for('main.index') }}">
                 <i class="fas fa-skating"></i> Фигурное катание
             </a>
             
@@ -31,33 +31,33 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('index') }}">
+                        <a class="nav-link" href="{{ url_for('main.index') }}">
                             <i class="fas fa-home"></i> Главная
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('events') }}">
+                        <a class="nav-link" href="{{ url_for('main.events') }}">
                             <i class="fas fa-trophy"></i> Турниры
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('athletes') }}">
+                        <a class="nav-link" href="{{ url_for('main.athletes') }}">
                             <i class="fas fa-users"></i> Спортсмены
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('categories') }}">
+                        <a class="nav-link" href="{{ url_for('main.categories') }}">
                             <i class="fas fa-layer-group"></i> Разряды
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('clubs') }}">
+                        <a class="nav-link" href="{{ url_for('main.clubs') }}">
                             <i class="fas fa-school"></i> Школы
                         </a>
                     </li>
                     {% if session.admin_logged_in %}
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('upload_file') }}">
+                        <a class="nav-link" href="{{ url_for('upload.upload_file') }}">
                             <i class="fas fa-upload"></i> Загрузить файл
                         </a>
                     </li>
@@ -76,7 +76,7 @@
                 
                 <ul class="navbar-nav">
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('free_participation') }}">
+                        <a class="nav-link" href="{{ url_for('main.free_participation') }}">
                             <i class="fas fa-gift"></i> Бесплатное участие
                         </a>
                     </li>
