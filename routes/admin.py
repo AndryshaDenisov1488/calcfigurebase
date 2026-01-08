@@ -42,10 +42,17 @@ def rate_limit(limit_str):
         @wraps(f)
         def wrapper(*args, **kwargs):
             # Получаем limiter из current_app
-            limiter_instance = current_app.extensions.get('limiter')
-            if limiter_instance:
-                # Применяем rate limiting
-                return limiter_instance.limit(limit_str)(f)(*args, **kwargs)
+            # Flask-Limiter регистрируется в app.extensions['limiter'] как объект Limiter
+            try:
+                # Используем прямой доступ через [], а не get(), чтобы избежать проблем
+                limiter_instance = current_app.extensions['limiter']
+                # Проверяем, что это действительно объект Limiter (имеет метод limit)
+                if limiter_instance and hasattr(limiter_instance, 'limit'):
+                    # Применяем rate limiting
+                    return limiter_instance.limit(limit_str)(f)(*args, **kwargs)
+            except (KeyError, AttributeError, TypeError):
+                # Если limiter недоступен или произошла ошибка, вызываем функцию без rate limiting
+                pass
             return f(*args, **kwargs)
         
         return wrapper

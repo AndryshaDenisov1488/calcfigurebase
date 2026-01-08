@@ -542,8 +542,6 @@ def get_participations_statistics_data():
             }
         }
 
-<<<<<<< HEAD
-=======
 def get_summary_statistics_data():
     """Получает сводную статистику для нового листа 'сводная статистика'
     Включает:
@@ -713,7 +711,6 @@ def get_summary_statistics_data():
             'rank_paid_stats': rank_paid_stats
         }
 
->>>>>>> 0ad5c8fdbf27d11e9354e3c0f7d3e79ec45ba482
 def get_events_first_timers_report_data():
     """Формирует данные по турнирам с подсчетом новичков и повторяющихся по разрядам"""
     
@@ -911,7 +908,6 @@ def get_events_first_timers_report_data():
         # Сортируем турниры по дате (новые сверху)
         events_data.sort(key=lambda x: (x['event_date'] is None, x['event_date']), reverse=True)
         
-<<<<<<< HEAD
         # Подсчитываем общее количество участий (как в get_participations_statistics_data)
         # Используем тот же запрос для идентичности
         total_participations_count = len(participants_query)  # Это все участия без МС/КМС (должно быть 3321)
@@ -920,11 +916,6 @@ def get_events_first_timers_report_data():
         totals = {
             'total_children': total_participations_count,  # Общее количество участий (как в "Статистике участий" = 3321)
             'total_children_by_events': sum(event['total_children'] for event in events_data),  # Для проверки (должно совпадать)
-=======
-        # Подсчитываем итоги
-        totals = {
-            'total_children': sum(event['total_children'] for event in events_data),  # Количество участий (для столбца "Всего")
->>>>>>> 0ad5c8fdbf27d11e9354e3c0f7d3e79ec45ba482
             'unique_athletes': len(unique_athletes),  # Количество уникальных спортсменов (для унификации с листом "Статистика")
             'unique_first_timers': len(unique_first_timers),  # Количество уникальных спортсменов-новичков (для столбца "Новички")
             'free_children': sum(event['free_children'] for event in events_data),
@@ -2927,10 +2918,6 @@ def export_to_google_sheets(spreadsheet_id=None):
             logger.warning(f"Не удалось заморозить строки шестого листа: {freeze_error}")
         
         logger.info("[OK] Шестой лист 'Турниры: новички и повторяющиеся' создан!")
-<<<<<<< HEAD
-        logger.info("Экспорт завершен успешно!")
-        logger.info("Примерное количество API запросов: ~30-35 (удален 4-й лист)")
-=======
         
         # ========================================
         # СЕДЬМОЙ ЛИСТ: СВОДНАЯ СТАТИСТИКА
@@ -3254,7 +3241,6 @@ def export_to_google_sheets(spreadsheet_id=None):
         logger.info("[OK] Седьмой лист 'сводная статистика' создан!")
         logger.info("Экспорт завершен успешно!")
         logger.info("Примерное количество API запросов: ~35-40")
->>>>>>> 0ad5c8fdbf27d11e9354e3c0f7d3e79ec45ba482
         
         total_athletes = sum(len(athletes) for athletes in athletes_by_rank_stats.values())
         total_schools = len(schools_data)
@@ -3265,27 +3251,16 @@ def export_to_google_sheets(spreadsheet_id=None):
             'url': spreadsheet.url,
             'spreadsheet_id': spreadsheet.id,
             'message': (
-<<<<<<< HEAD
-                f'Экспорт завершен! Создано 6 листов: '
-=======
                 f'Экспорт завершен! Создано 7 листов: '
->>>>>>> 0ad5c8fdbf27d11e9354e3c0f7d3e79ec45ba482
                 f'"Список спортсменов" ({total_athletes} спортсменов), '
                 f'"Анализ по школам" ({total_schools} школ), '
                 f'"Статистика" ({total_free} бесплатных участий), '
                 f'"Общая статистика" ({general_stats["total_events"]} турниров, {total_participants} участников), '
-<<<<<<< HEAD
-                f'"Статистика участий" ({participations_stats["total_participations"]} участий) и '
-                f'"Турниры: новички и повторяющиеся" ({len(first_timers_events)} турниров, '
-                f'{first_timers_totals["total_children"]} участий, '
-                f'{first_timers_totals["total_first_timers"]} новичков / {first_timers_totals["total_repeaters"]} повторяющихся).'
-=======
                 f'"Статистика участий" ({participations_stats["total_participations"]} участий), '
                 f'"Турниры: новички и повторяющиеся" ({len(first_timers_events)} турниров, '
                 f'{first_timers_totals["total_children"]} участий, '
                 f'{first_timers_totals["total_first_timers"]} новичков / {first_timers_totals["total_repeaters"]} повторяющихся) и '
                 f'"сводная статистика" (Общая сводка).'
->>>>>>> 0ad5c8fdbf27d11e9354e3c0f7d3e79ec45ba482
             )
         }
         
