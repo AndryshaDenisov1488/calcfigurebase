@@ -10,12 +10,19 @@ import sys
 from collections import defaultdict
 from datetime import datetime
 
-# Добавляем текущую директорию в путь
-project_root = os.path.dirname(os.path.abspath(__file__))
+# Добавляем корень проекта в путь (на два уровня выше из scripts/)
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from app import app, db
+# Пробуем импортировать app, если не получается - используем app_factory
+try:
+    from app import app, db
+except ImportError:
+    from app_factory import create_app
+    from extensions import db
+    app = create_app()
+
 from models import Athlete, Participant, Event, Category, Club
 
 
