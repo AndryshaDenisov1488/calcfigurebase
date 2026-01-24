@@ -1,0 +1,543 @@
+{% extends "base.html" %}
+
+{% block title %}Инструменты админа - Система управления турнирами{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>
+        <i class="fas fa-tools me-2"></i>Инструменты админа
+    </h2>
+</div>
+
+<!-- Результаты выполнения скриптов -->
+{% for script_name_item, script_def_item in script_definitions.items() %}
+    {% set output_file_key = 'script_output_file_' + script_name_item %}
+    {% set output_time_key = 'script_output_time_' + script_name_item %}
+    {% set output_key = 'script_output_' + script_name_item %}
+    {% if session.get(output_file_key) or session.get(output_key) %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-terminal me-2"></i>Результаты выполнения: {{ script_def_item.name }}
+                        {% if session.get(output_time_key) %}
+                            <small class="ms-2">({{ session.get(output_time_key) }})</small>
+                        {% endif %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="output_{{ script_name_item }}" class="bg-light p-3 rounded" style="max-height: 500px; overflow-y: auto; font-size: 0.85rem; white-space: pre-wrap;">
+                        {% if session.get(output_key) %}
+                            {{ session.get(output_key, '') }}
+                        {% else %}
+                            <div class="text-center">
+                                <i class="fas fa-spinner fa-spin me-2"></i>Загрузка результатов...
+                            </div>
+                        {% endif %}
+                    </div>
+                    <form method="POST" class="mt-2">
+                        <input type="hidden" name="action" value="clear_script_output">
+                        <input type="hidden" name="script_name" value="{{ script_name_item }}">
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">Очистить</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        // Загружаем полный вывод из файла асинхронно
+        {% if session.get(output_file_key) and not session.get(output_key) %}
+        fetch('/admin/tools?action=get_script_output&script_name={{ script_name_item }}')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('output_{{ script_name_item }}').textContent = data.output;
+                } else {
+                    document.getElementById('output_{{ script_name_item }}').textContent = 'Ошибка загрузки: ' + data.error;
+                }
+            })
+            .catch(error => {
+                document.getElementById('output_{{ script_name_item }}').textContent = 'Ошибка загрузки результатов';
+            });
+        {% endif %}
+    </script>
+    {% endif %}
+{% endfor %}
+
+<div class="row">
+    <!-- Все скрипты по категориям -->
+    <div class="col-12 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-tools me-2"></i>Управление скриптами
+                </h5>
+            </div>
+            <div class="card-body">
+                <ul class="nav nav-tabs mb-3" id="scriptTabs" role="tablist">
+                    {% for category in ['check', 'delete', 'merge', 'update', 'import', 'backup', 'list'] %}
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link {% if loop.first %}active{% endif %}" 
+                                id="{{ category }}-tab" 
+                                data-bs-toggle="tab" 
+                                data-bs-target="#{{ category }}" 
+                                type="button" 
+                                role="tab">
+                            {% if category == 'check' %}
+                                <i class="fas fa-search me-1"></i>Проверка
+                            {% elif category == 'delete' %}
+                                <i class="fas fa-trash me-1"></i>Удаление
+                            {% elif category == 'merge' %}
+                                <i class="fas fa-compress me-1"></i>Объединение
+                            {% elif category == 'update' %}
+                                <i class="fas fa-sync me-1"></i>Обновление
+                            {% elif category == 'import' %}
+                                <i class="fas fa-upload me-1"></i>Импорт
+                            {% elif category == 'backup' %}
+                                <i class="fas fa-database me-1"></i>Резервные копии
+                            {% elif category == 'list' %}
+                                <i class="fas fa-list me-1"></i>Списки
+                            {% endif %}
+                        </button>
+                    </li>
+                    {% endfor %}
+                </ul>
+                
+                <div class="tab-content" id="scriptTabsContent">
+                    {% for category in ['check', 'delete', 'merge', 'update', 'import', 'backup', 'list'] %}
+                    <div class="tab-pane fade {% if loop.first %}show active{% endif %}" 
+                         id="{{ category }}" 
+                         role="tabpanel">
+                        <div class="row">
+                            {% if scripts_by_category.get(category) %}
+                                {% for script_item in scripts_by_category[category] %}
+                                {% set script_name = script_item.name %}
+                                {% set script_def = script_item.definition %}
+                                <div class="col-md-6 col-lg-4 mb-3">
+                                    <div class="card h-100">
+                                        <div class="card-body">
+                                            <h6 class="card-title">
+                                                {{ script_def.name }}
+                                                {% if script_def.requires_confirmation %}
+                                                    <span class="badge bg-warning text-dark ms-1" title="Требует подтверждения">
+                                                        <i class="fas fa-exclamation-triangle"></i>
+                                                    </span>
+                                                {% endif %}
+                                                {% if script_def.creates_backup %}
+                                                    <span class="badge bg-success ms-1" title="Создает резервную копию">
+                                                        <i class="fas fa-shield-alt"></i>
+                                                    </span>
+                                                {% endif %}
+                                            </h6>
+                                            <p class="card-text small text-muted">{{ script_def.description }}</p>
+                                            
+                                            {% if script_def.requires_params %}
+                                            <div class="mb-2">
+                                                {% for param in script_def.requires_params %}
+                                                <div class="mb-2">
+                                                    <label class="form-label small">{{ param.replace('_', ' ').title() }}:</label>
+                                                    <input type="text" 
+                                                           class="form-control form-control-sm" 
+                                                           name="{{ param }}" 
+                                                           id="{{ script_name }}_{{ param }}"
+                                                           placeholder="Введите {{ param.replace('_', ' ') }}">
+                                                </div>
+                                                {% endfor %}
+                                            </div>
+                                            {% endif %}
+                                            
+                                            <form method="POST" 
+                                                  class="script-form" 
+                                                  data-script-name="{{ script_name }}"
+                                                  id="form_{{ script_name }}"
+                                                  {% if script_def.requires_confirmation %}
+                                                  onsubmit="return confirm('Вы уверены, что хотите выполнить этот скрипт? Это действие может изменить данные в базе.');"
+                                                  {% endif %}>
+                                                <input type="hidden" name="action" value="run_script">
+                                                <input type="hidden" name="script_name" value="{{ script_name }}">
+                                                <input type="hidden" name="confirmed" value="true">
+                                                {% if script_def.requires_params %}
+                                                <div id="params_{{ script_name }}" class="mb-2">
+                                                    {% for param in script_def.requires_params %}
+                                                    <div class="mb-2">
+                                                        <label class="form-label small">{{ param.replace('_', ' ').title() }}:</label>
+                                                        <input type="text" 
+                                                               class="form-control form-control-sm" 
+                                                               name="{{ param }}" 
+                                                               id="{{ script_name }}_{{ param }}"
+                                                               placeholder="Введите {{ param.replace('_', ' ') }}"
+                                                               required>
+                                                    </div>
+                                                    {% endfor %}
+                                                </div>
+                                                {% endif %}
+                                                <button type="submit" 
+                                                        class="btn btn-sm {% if category == 'delete' %}btn-danger{% elif category == 'merge' %}btn-warning{% else %}btn-primary{% endif %} w-100">
+                                                    <i class="fas fa-play me-1"></i>Запустить
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                <div class="col-12">
+                                    <p class="text-muted text-center">Нет скриптов в этой категории</p>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Старые скрипты проверки (для обратной совместимости) -->
+    <div class="col-12 col-lg-6 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-search me-2"></i>Быстрые проверки (старый интерфейс)
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">Запуск скриптов для проверки целостности данных</p>
+                
+                <form method="POST" class="mb-3">
+                    <input type="hidden" name="action" value="check_duplicates">
+                    <button type="submit" class="btn btn-outline-primary w-100 mb-2">
+                        <i class="fas fa-copy me-2"></i>Проверить дубликаты спортсменов
+                    </button>
+                </form>
+                
+                <form method="POST" class="mb-3">
+                    <input type="hidden" name="action" value="check_zero_points">
+                    <button type="submit" class="btn btn-outline-primary w-100 mb-2">
+                        <i class="fas fa-exclamation-triangle me-2"></i>Проверить участников с нулевыми баллами
+                    </button>
+                </form>
+                
+                <form method="POST" class="mb-3">
+                    <input type="hidden" name="action" value="check_zero_athletes">
+                    <button type="submit" class="btn btn-outline-primary w-100 mb-2">
+                        <i class="fas fa-school me-2"></i>Проверить клубы без спортсменов
+                    </button>
+                </form>
+                
+                <form method="POST" class="mb-3">
+                    <input type="hidden" name="action" value="check_missing_clubs">
+                    <button type="submit" class="btn btn-outline-primary w-100 mb-2">
+                        <i class="fas fa-question-circle me-2"></i>Проверить отсутствующие клубы
+                    </button>
+                </form>
+                
+                <form method="POST" class="mb-3">
+                    <input type="hidden" name="action" value="check_athletes_without_starts">
+                    <button type="submit" class="btn btn-outline-primary w-100 mb-2">
+                        <i class="fas fa-user-slash me-2"></i>Проверить спортсменов без стартов
+                    </button>
+                </form>
+                
+                <form method="POST" class="mb-3">
+                    <input type="hidden" name="action" value="check_similar_clubs">
+                    <button type="submit" class="btn btn-outline-primary w-100 mb-2">
+                        <i class="fas fa-search me-2"></i>Проверить схожие названия клубов
+                    </button>
+                </form>
+                
+                <form method="POST" class="mb-3">
+                    <input type="hidden" name="action" value="check_remaining_pairs">
+                    <button type="submit" class="btn btn-outline-primary w-100 mb-2">
+                        <i class="fas fa-users me-2"></i>Проверить дубликаты пар
+                    </button>
+                </form>
+                
+                <form method="POST" class="mb-3">
+                    <input type="hidden" name="action" value="check_mafkk_schools">
+                    <button type="submit" class="btn btn-outline-primary w-100 mb-2">
+                        <i class="fas fa-school me-2"></i>Проверить школы МАФКК
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Удаление данных -->
+    <div class="col-12 col-lg-6 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-trash-alt me-2"></i>Удаление данных
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">
+                    <i class="fas fa-exclamation-triangle text-warning me-1"></i>
+                    <strong>Внимание!</strong> Эти операции необратимы. Все связанные данные будут удалены.
+                </p>
+                
+                <!-- Удаление турнира -->
+                <div class="mb-4">
+                    <h6 class="mb-3">Удалить турнир полностью</h6>
+                    <form method="POST" id="deleteEventForm" onsubmit="return confirm('Вы уверены? Это удалит турнир, все категории, участников и выступления. Действие необратимо!');">
+                        <input type="hidden" name="action" value="delete_event">
+                        <div class="mb-3">
+                            <label for="event_id" class="form-label">Выберите турнир:</label>
+                            <select class="form-select" name="event_id" id="event_id" required>
+                                <option value="">-- Выберите турнир --</option>
+                                {% for event in events %}
+                                <option value="{{ event.id }}">
+                                    {{ event.name }}
+                                    {% if event.begin_date %}
+                                        ({{ event.begin_date.strftime('%d.%m.%Y') }})
+                                    {% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-danger w-100">
+                            <i class="fas fa-trash me-2"></i>Удалить турнир полностью
+                        </button>
+                    </form>
+                </div>
+                
+                <hr>
+                
+                <!-- Удаление спортсмена без участий -->
+                <div class="mb-4">
+                    <h6 class="mb-3">Удалить спортсмена без участий</h6>
+                    
+                    <!-- Поиск спортсменов без участий -->
+                    <form method="GET" class="mb-3">
+                        <div class="mb-2">
+                            <label for="search_athlete_no_starts" class="form-label small">Поиск по спортсмену:</label>
+                            <input type="text" class="form-control form-control-sm" name="search_athlete_no_starts" id="search_athlete_no_starts" 
+                                   value="{{ search_athlete_no_starts }}" placeholder="Фамилия или имя">
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-outline-secondary w-100 mb-2">
+                            <i class="fas fa-search me-1"></i>Найти спортсменов без участий
+                        </button>
+                    </form>
+                    
+                    {% if athletes_no_starts %}
+                    <div class="mb-3">
+                        <small class="text-muted">Найдено спортсменов без участий: {{ athletes_no_starts|length }}</small>
+                        <div class="list-group" style="max-height: 300px; overflow-y: auto;">
+                            {% for athlete in athletes_no_starts %}
+                            <div class="list-group-item">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div class="flex-grow-1">
+                                        <strong>{{ athlete.full_name or (athlete.last_name + ' ' + athlete.first_name) }}</strong>
+                                        <br>
+                                        <small class="text-muted">
+                                            {% if athlete.birth_date %}
+                                                Дата рождения: {{ athlete.birth_date.strftime('%d.%m.%Y') }}
+                                            {% endif %}
+                                            {% if athlete.club %}
+                                                · Клуб: {{ athlete.club.name }}
+                                            {% endif %}
+                                        </small>
+                                    </div>
+                                    <form method="POST" class="ms-2" onsubmit="return confirm('Удалить этого спортсмена? Действие необратимо!');">
+                                        <input type="hidden" name="action" value="delete_athlete">
+                                        <input type="hidden" name="athlete_id" value="{{ athlete.id }}">
+                                        {% if search_athlete_no_starts %}
+                                        <input type="hidden" name="search_athlete_no_starts" value="{{ search_athlete_no_starts }}">
+                                        {% endif %}
+                                        <button type="submit" class="btn btn-sm btn-danger">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <hr>
+                
+                <!-- Удаление спортсмена без участий -->
+                <div class="mb-4">
+                    <h6 class="mb-3">Удалить спортсмена без участий</h6>
+                    
+                    <!-- Поиск спортсменов без участий -->
+                    <form method="GET" class="mb-3">
+                        <div class="mb-2">
+                            <label for="search_athlete_no_starts" class="form-label small">Поиск по спортсмену:</label>
+                            <input type="text" class="form-control form-control-sm" name="search_athlete_no_starts" id="search_athlete_no_starts" 
+                                   value="{{ search_athlete_no_starts }}" placeholder="Фамилия или имя">
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-outline-secondary w-100 mb-2">
+                            <i class="fas fa-search me-1"></i>Найти спортсменов без участий
+                        </button>
+                    </form>
+                    
+                    {% if athletes_no_starts %}
+                    <div class="mb-3">
+                        <small class="text-muted">Найдено спортсменов без участий: {{ athletes_no_starts|length }}</small>
+                        <div class="list-group" style="max-height: 300px; overflow-y: auto;">
+                            {% for athlete in athletes_no_starts %}
+                            <div class="list-group-item">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div class="flex-grow-1">
+                                        <strong>{{ athlete.full_name or (athlete.last_name + ' ' + athlete.first_name) }}</strong>
+                                        <br>
+                                        <small class="text-muted">
+                                            {% if athlete.birth_date %}
+                                                Дата рождения: {{ athlete.birth_date.strftime('%d.%m.%Y') }}
+                                            {% endif %}
+                                            {% if athlete.club %}
+                                                · Клуб: {{ athlete.club.name }}
+                                            {% endif %}
+                                        </small>
+                                    </div>
+                                    <form method="POST" class="ms-2" onsubmit="return confirm('Удалить этого спортсмена? Действие необратимо!');">
+                                        <input type="hidden" name="action" value="delete_athlete">
+                                        <input type="hidden" name="athlete_id" value="{{ athlete.id }}">
+                                        {% if search_athlete_no_starts %}
+                                        <input type="hidden" name="search_athlete_no_starts" value="{{ search_athlete_no_starts }}">
+                                        {% endif %}
+                                        <button type="submit" class="btn btn-sm btn-danger">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <hr>
+                
+                <!-- Удаление участия -->
+                <div>
+                    <h6 class="mb-3">Удалить участие спортсмена</h6>
+                    
+                    <!-- Поиск участий -->
+                    <form method="GET" class="mb-3">
+                        <div class="mb-2">
+                            <label for="search_athlete" class="form-label small">Поиск по спортсмену:</label>
+                            <input type="text" class="form-control form-control-sm" name="search_athlete" id="search_athlete" 
+                                   value="{{ search_athlete }}" placeholder="Фамилия или имя">
+                        </div>
+                        <div class="mb-2">
+                            <label for="search_event" class="form-label small">Турнир:</label>
+                            <select class="form-select form-select-sm" name="search_event" id="search_event">
+                                <option value="">-- Все турниры --</option>
+                                {% for event in events %}
+                                <option value="{{ event.id }}" {% if search_event == event.id %}selected{% endif %}>
+                                    {{ event.name }}{% if event.begin_date %} ({{ event.begin_date.strftime('%d.%m.%Y') }}){% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-outline-secondary w-100 mb-2">
+                            <i class="fas fa-search me-1"></i>Найти участия
+                        </button>
+                    </form>
+                    
+                    {% if participants %}
+                    <div class="mb-3">
+                        <small class="text-muted">Найдено участий: {{ participants|length }}</small>
+                        <div class="list-group" style="max-height: 300px; overflow-y: auto;">
+                            {% for participant, athlete, event, category in participants %}
+                            <div class="list-group-item">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div class="flex-grow-1">
+                                        <strong>{{ athlete.full_name or (athlete.last_name + ' ' + athlete.first_name) }}</strong>
+                                        <br>
+                                        <small class="text-muted">
+                                            {{ event.name }}{% if event.begin_date %} ({{ event.begin_date.strftime('%d.%m.%Y') }}){% endif %}
+                                            <br>
+                                            {{ category.name }}
+                                            {% if participant.total_place %}
+                                                · Место: {{ participant.total_place }}
+                                            {% endif %}
+                                            {% if participant.total_points %}
+                                                · Баллы: {{ "%.2f"|format(participant.total_points / 100 if participant.total_points > 1000 else participant.total_points) }}
+                                            {% endif %}
+                                        </small>
+                                    </div>
+                                    <form method="POST" class="ms-2" onsubmit="return confirm('Удалить это участие? Действие необратимо!');">
+                                        <input type="hidden" name="action" value="delete_participant">
+                                        <input type="hidden" name="participant_id" value="{{ participant.id }}">
+                                        {% if search_athlete %}
+                                        <input type="hidden" name="search_athlete" value="{{ search_athlete }}">
+                                        {% endif %}
+                                        {% if search_event %}
+                                        <input type="hidden" name="search_event" value="{{ search_event }}">
+                                        {% endif %}
+                                        <button type="submit" class="btn btn-sm btn-danger">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <!-- Прямой ввод ID -->
+                    <hr>
+                    <form method="POST" id="deleteParticipantForm" onsubmit="return confirm('Вы уверены? Это удалит участие спортсмена в турнире и все его выступления. Действие необратимо!');">
+                        <input type="hidden" name="action" value="delete_participant">
+                        <div class="mb-3">
+                            <label for="participant_id_direct" class="form-label">Или введите ID участия напрямую:</label>
+                            <input type="number" class="form-control" name="participant_id" id="participant_id_direct" placeholder="ID участия">
+                            <small class="form-text text-muted">ID участия можно найти на странице спортсмена или турнира</small>
+                        </div>
+                        <button type="submit" class="btn btn-danger w-100">
+                            <i class="fas fa-user-times me-2"></i>Удалить участие по ID
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Информация -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Информация
+                </h5>
+            </div>
+            <div class="card-body">
+                <h6>О скриптах проверки:</h6>
+                <ul class="mb-3">
+                    <li><strong>Проверка дубликатов:</strong> Находит спортсменов с одинаковой датой рождения и фамилией</li>
+                    <li><strong>Проверка нулевых баллов:</strong> Находит участников с NULL или нулевыми баллами</li>
+                    <li><strong>Проверка клубов без спортсменов:</strong> Находит клубы, у которых нет ни одного спортсмена</li>
+                    <li><strong>Проверка отсутствующих клубов:</strong> Находит спортсменов, у которых указан несуществующий клуб</li>
+                    <li><strong>Проверка спортсменов без стартов:</strong> Находит спортсменов, которые никогда не участвовали в турнирах</li>
+                    <li><strong>Проверка схожих названий клубов:</strong> Находит клубы с похожими названиями, которые могут быть дубликатами</li>
+                    <li><strong>Проверка дубликатов пар:</strong> Находит дубликаты парных спортсменов</li>
+                    <li><strong>Проверка школ МАФКК:</strong> Проверяет наличие и объединение школ МАФКК</li>
+                </ul>
+                
+                <h6>О удалении:</h6>
+                <ul>
+                    <li><strong>Удаление турнира:</strong> Удаляет турнир, все его категории, всех участников и все выступления. Действие необратимо!</li>
+                    <li><strong>Удаление участия:</strong> Удаляет конкретное участие спортсмена в турнире и все его выступления. Действие необратимо!</li>
+                </ul>
+                
+                <div class="alert alert-warning mt-3 mb-0">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>Важно:</strong> Перед удалением рекомендуется создать резервную копию базы данных.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

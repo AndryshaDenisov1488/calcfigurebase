@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# Flask
+instance/
+.webassets-cache
+
+# Базы данных
+*.db
+*.sqlite
+*.sqlite3
+
+# Резервные копии
+backups/
+*.backup
+
+# Логи
+logs/
+*.log
+
+# Загруженные файлы
+uploads/
+*.XML
+
+# Конфиденциальные данные
+google_credentials.json
+.env
+*.key
+*.pem
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Временные файлы
+*.tmp
+*.temp
+id.txt

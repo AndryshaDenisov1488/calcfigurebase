@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}Нормализация категорий - Система управления турнирами{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-tags"></i> Нормализация категорий</h2>
+                <div class="text-muted">
+                    <small>Найдено {{ categories_analysis|length }} категорий</small>
+                </div>
+            </div>
+
+            <!-- Информация о парсинге -->
+            <div class="alert alert-info">
+                <h5><i class="fas fa-info-circle"></i> Информация о загруженном файле</h5>
+                <div class="row">
+                    <div class="col-md-2"><strong>События:</strong> {{ parser_summary.events }}</div>
+                    <div class="col-md-2"><strong>Категории:</strong> {{ parser_summary.categories }}</div>
+                    <div class="col-md-2"><strong>Сегменты:</strong> {{ parser_summary.segments }}</div>
+                    <div class="col-md-2"><strong>Персоны:</strong> {{ parser_summary.persons }}</div>
+                    <div class="col-md-2"><strong>Клубы:</strong> {{ parser_summary.clubs }}</div>
+                    <div class="col-md-2"><strong>Участники:</strong> {{ parser_summary.participants }}</div>
+                </div>
+            </div>
+
+            <form method="POST">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-list"></i> Проверка и нормализация категорий</h5>
+                        <p class="mb-0 text-muted">Проверьте и при необходимости исправьте разряд для каждой категории. Это гарантирует качество данных в системе.</p>
+                    </div>
+                    <div class="card-body">
+                        {% for category in categories_analysis %}
+                        <div class="row mb-3 p-3 border rounded border-warning bg-light">
+                            <div class="col-md-4">
+                                <strong>Оригинальное название:</strong><br>
+                                <span class="text-primary">{{ category.original_name }}</span>
+                            </div>
+                            <div class="col-md-2">
+                                <strong>Пол:</strong><br>
+                                <span class="badge {% if category.gender == 'F' %}bg-pink{% elif category.gender == 'M' %}bg-blue{% else %}bg-secondary{% endif %}">
+                                    {% if category.gender == 'F' %}Женский{% elif category.gender == 'M' %}Мужской{% else %}Не указан{% endif %}
+                                </span>
+                            </div>
+                            <div class="col-md-4">
+                                <strong>Нормализованное название:</strong><br>
+                                {% if category.needs_manual %}
+                                <select name="normalize_{{ loop.index0 }}" class="form-select" required>
+                                    <option value="">Выберите разряд...</option>
+                                    {% for rank in all_ranks %}
+                                    <option value="{{ rank }}" {% if category.normalized == rank %}selected{% endif %}>{{ rank }}</option>
+                                    {% endfor %}
+                                </select>
+                                {% else %}
+                                <span class="text-success">{{ category.normalized }}</span>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-2">
+                                <strong>Статус:</strong><br>
+                                {% if category.needs_manual %}
+                                <span class="badge bg-warning">Требует нормализации</span>
+                                {% else %}
+                                <span class="badge bg-success">Нормализовано</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="card-footer">
+                        <div class="d-flex justify-content-between">
+                            <a href="{{ url_for('upload_file') }}" class="btn btn-secondary">
+                                <i class="fas fa-arrow-left"></i> Назад к загрузке
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> Сохранить и обработать файл
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </form>
+
+            <!-- Справочная информация -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5><i class="fas fa-book"></i> Справочник разрядов</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <h6>Мастерские разряды:</h6>
+                            <ul class="list-unstyled">
+                                <li><span class="badge bg-gold">МС, Женщины</span></li>
+                                <li><span class="badge bg-gold">МС, Мужчины</span></li>
+                                <li><span class="badge bg-silver">КМС, Девушки</span></li>
+                                <li><span class="badge bg-silver">КМС, Юноши</span></li>
+                            </ul>
+                        </div>
+                        <div class="col-md-4">
+                            <h6>Спортивные разряды:</h6>
+                            <ul class="list-unstyled">
+                                <li><span class="badge bg-bronze">1 Спортивный, Девочки</span></li>
+                                <li><span class="badge bg-bronze">1 Спортивный, Мальчики</span></li>
+                                <li><span class="badge bg-bronze">2 Спортивный, Девочки</span></li>
+                                <li><span class="badge bg-bronze">2 Спортивный, Мальчики</span></li>
+                                <li><span class="badge bg-bronze">3 Спортивный, Девочки</span></li>
+                                <li><span class="badge bg-bronze">3 Спортивный, Мальчики</span></li>
+                            </ul>
+                        </div>
+                        <div class="col-md-4">
+                            <h6>Юношеские разряды:</h6>
+                            <ul class="list-unstyled">
+                                <li><span class="badge bg-info">1 Юношеский, Девочки</span></li>
+                                <li><span class="badge bg-info">1 Юношеский, Мальчики</span></li>
+                                <li><span class="badge bg-info">2 Юношеский, Девочки</span></li>
+                                <li><span class="badge bg-info">2 Юношеский, Мальчики</span></li>
+                                <li><span class="badge bg-info">3 Юношеский, Девочки</span></li>
+                                <li><span class="badge bg-info">3 Юношеский, Мальчики</span></li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="row mt-3">
+                        <div class="col-md-4">
+                            <h6>Начальные разряды:</h6>
+                            <ul class="list-unstyled">
+                                <li><span class="badge bg-success">Юный Фигурист, Девочки</span></li>
+                                <li><span class="badge bg-success">Юный Фигурист, Мальчики</span></li>
+                                <li><span class="badge bg-success">Дебют, Девочки</span></li>
+                                <li><span class="badge bg-success">Дебют, Мальчики</span></li>
+                                <li><span class="badge bg-success">Новичок, Девочки</span></li>
+                                <li><span class="badge bg-success">Новичок, Мальчики</span></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.bg-pink { background-color: #ff69b4 !important; }
+.bg-blue { background-color: #007bff !important; }
+.bg-gold { background-color: #ffd700 !important; color: #000 !important; }
+.bg-silver { background-color: #c0c0c0 !important; color: #000 !important; }
+.bg-bronze { background-color: #cd7f32 !important; }
+</style>
+{% endblock %}

@@ -1,0 +1,421 @@
+{% extends "base.html" %}
+
+{% block title %}Загрузка файла - Система управления турнирами{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Мобильная адаптация для страницы загрузки */
+    @media (max-width: 768px) {
+        .col-lg-8 {
+            padding: 0 0.5rem;
+        }
+        
+        .d-flex.gap-2 {
+            flex-direction: column;
+            gap: 0.75rem !important;
+        }
+        
+        .btn {
+            width: 100%;
+        }
+        
+        .btn-lg {
+            padding: 0.75rem 1rem;
+            font-size: 1rem;
+        }
+        
+        .alert {
+            font-size: 0.875rem;
+            padding: 0.75rem;
+        }
+        
+        .form-control {
+            font-size: 0.875rem;
+        }
+        
+        .form-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        
+        .form-text {
+            font-size: 0.8rem;
+        }
+        
+        .progress {
+            height: 1rem;
+        }
+        
+        .progress-bar {
+            font-size: 0.8rem;
+        }
+    }
+    
+    @media (max-width: 576px) {
+        .card-body {
+            padding: 0.75rem;
+        }
+        
+        .card-header {
+            padding: 0.75rem;
+        }
+        
+        .btn-lg {
+            padding: 0.625rem 0.875rem;
+            font-size: 0.9rem;
+        }
+        
+        .alert {
+            padding: 0.625rem;
+            font-size: 0.8rem;
+        }
+        
+        .form-control {
+            font-size: 0.8rem;
+        }
+        
+        .form-label {
+            font-size: 0.85rem;
+        }
+        
+        .form-text {
+            font-size: 0.75rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="fas fa-upload"></i> Загрузка XML файла турнира</h4>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    <strong>Информация:</strong> Загрузите XML файл, экспортированный из ISUCalcFS. 
+                    Система автоматически распарсит данные и добавит спортсменов в базу данных.
+                </div>
+                
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <div class="mb-4">
+                        <label for="file" class="form-label">Выберите XML файл</label>
+                        <input type="file" class="form-control" id="file" name="file" accept=".xml,.XML" required>
+                        <div class="form-text">
+                            Поддерживаются только файлы в формате XML (.xml, .XML) - максимум 16 МБ
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-outline-primary btn-lg" id="analyzeBtn">
+                            <i class="fas fa-search"></i> Обработать XML
+                        </button>
+                        <button type="submit" class="btn btn-primary btn-lg" id="uploadBtn" style="display: none;">
+                            <i class="fas fa-database"></i> Загрузить на сервер
+                        </button>
+                    </div>
+                </form>
+                
+                <!-- Прогресс бар -->
+                <div id="progressContainer" class="mt-4" style="display: none;">
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" style="width: 0%"></div>
+                    </div>
+                    <div class="text-center mt-2">
+                        <small class="text-muted" id="progressText">Обработка файла...</small>
+                    </div>
+                </div>
+                
+                <!-- Анализ категорий -->
+                <div id="analysisContainer" class="mt-4" style="display: none;">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5><i class="fas fa-list"></i> Анализ категорий</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="analysisContent"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Результат -->
+                <div id="resultContainer" class="mt-4" style="display: none;">
+                    <div class="alert" id="resultAlert">
+                        <div id="resultMessage"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Инструкции -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5><i class="fas fa-question-circle"></i> Как получить XML файл?</h5>
+            </div>
+            <div class="card-body">
+                <ol>
+                    <li>Откройте программу ISUCalcFS</li>
+                    <li>Загрузите турнир, который хотите импортировать</li>
+                    <li>Перейдите в меню "Файл" → "Экспорт" → "XML"</li>
+                    <li>Сохраните файл и загрузите его здесь</li>
+                </ol>
+                
+                <div class="alert alert-warning mt-3">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>Важно:</strong> Убедитесь, что турнир полностью завершен и все результаты подсчитаны.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Обработка кнопки "Обработать XML"
+document.getElementById('analyzeBtn').addEventListener('click', function() {
+    const fileInput = document.getElementById('file');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const progressContainer = document.getElementById('progressContainer');
+    const analysisContainer = document.getElementById('analysisContainer');
+    const resultContainer = document.getElementById('resultContainer');
+    const progressBar = document.querySelector('.progress-bar');
+    const progressText = document.getElementById('progressText');
+    const analysisContent = document.getElementById('analysisContent');
+    
+    if (!fileInput.files[0]) {
+        alert('Пожалуйста, выберите файл');
+        return;
+    }
+    
+    // Показываем прогресс
+    analyzeBtn.disabled = true;
+    analyzeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Анализ...';
+    progressContainer.style.display = 'block';
+    analysisContainer.style.display = 'none';
+    resultContainer.style.display = 'none';
+    
+    // Симуляция прогресса
+    let progress = 0;
+    const progressInterval = setInterval(() => {
+        progress += Math.random() * 15;
+        if (progress > 90) progress = 90;
+        progressBar.style.width = progress + '%';
+        progressText.textContent = `Анализ файла... ${Math.round(progress)}%`;
+    }, 200);
+    
+    // Отправляем файл на анализ
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    
+    fetch('/analyze-xml', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        clearInterval(progressInterval);
+        progressBar.style.width = '100%';
+        progressText.textContent = 'Анализ завершен!';
+        
+        setTimeout(() => {
+            progressContainer.style.display = 'none';
+            
+            if (data.success) {
+                // Показываем анализ категорий
+                displayCategoriesAnalysis(data.categories_analysis, data.parser_summary);
+                analysisContainer.style.display = 'block';
+                
+                // ВСЕГДА перенаправляем на страницу нормализации для ручной проверки
+                // Это гарантирует качество данных и отсутствие записей с "Другой"
+                setTimeout(() => {
+                    window.location.href = '/normalize-categories';
+                }, 2000);
+                
+                // Блокируем повторный анализ
+                analyzeBtn.disabled = true;
+                analyzeBtn.innerHTML = '<i class="fas fa-check"></i> Проанализировано';
+            } else {
+                resultContainer.style.display = 'block';
+                document.getElementById('resultAlert').className = 'alert alert-danger';
+                document.getElementById('resultMessage').innerHTML = `
+                    <i class="fas fa-exclamation-circle"></i>
+                    <strong>Ошибка:</strong> ${data.error}
+                `;
+            }
+        }, 1000);
+    })
+    .catch(error => {
+        clearInterval(progressInterval);
+        progressContainer.style.display = 'none';
+        resultContainer.style.display = 'block';
+        
+        document.getElementById('resultAlert').className = 'alert alert-danger';
+        document.getElementById('resultMessage').innerHTML = `
+            <i class="fas fa-exclamation-circle"></i>
+            <strong>Ошибка:</strong> Произошла ошибка при анализе файла
+        `;
+        
+        analyzeBtn.disabled = false;
+        analyzeBtn.innerHTML = '<i class="fas fa-search"></i> Обработать XML';
+    });
+});
+
+// Обработка кнопки "Загрузить на сервер"
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const uploadBtn = document.getElementById('uploadBtn');
+    const progressContainer = document.getElementById('progressContainer');
+    const resultContainer = document.getElementById('resultContainer');
+    const progressBar = document.querySelector('.progress-bar');
+    const progressText = document.getElementById('progressText');
+    const resultAlert = document.getElementById('resultAlert');
+    const resultMessage = document.getElementById('resultMessage');
+    
+    // Показываем прогресс
+    uploadBtn.disabled = true;
+    uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Загрузка...';
+    progressContainer.style.display = 'block';
+    resultContainer.style.display = 'none';
+    
+    // Симуляция прогресса
+    let progress = 0;
+    const progressInterval = setInterval(() => {
+        progress += Math.random() * 15;
+        if (progress > 90) progress = 90;
+        progressBar.style.width = progress + '%';
+        progressText.textContent = `Загрузка в базу... ${Math.round(progress)}%`;
+    }, 200);
+    
+    // Отправляем запрос на загрузку
+    fetch('/upload-to-database', {
+        method: 'POST'
+    })
+    .then(response => response.json())
+    .then(data => {
+        clearInterval(progressInterval);
+        progressBar.style.width = '100%';
+        progressText.textContent = 'Завершено!';
+        
+        setTimeout(() => {
+            progressContainer.style.display = 'none';
+            resultContainer.style.display = 'block';
+            
+            if (data.success) {
+                resultAlert.className = 'alert alert-success';
+                resultMessage.innerHTML = `
+                    <i class="fas fa-check-circle"></i>
+                    <strong>Успешно!</strong> ${data.message}
+                `;
+                
+                // Перенаправляем на главную через 3 секунды
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 3000);
+            } else {
+                resultAlert.className = 'alert alert-danger';
+                resultMessage.innerHTML = `
+                    <i class="fas fa-exclamation-circle"></i>
+                    <strong>Ошибка:</strong> ${data.error}
+                `;
+            }
+            
+            // Восстанавливаем кнопку
+            uploadBtn.disabled = false;
+            uploadBtn.innerHTML = '<i class="fas fa-database"></i> Загрузить на сервер';
+        }, 1000);
+    })
+    .catch(error => {
+        clearInterval(progressInterval);
+        progressContainer.style.display = 'none';
+        resultContainer.style.display = 'block';
+        
+        resultAlert.className = 'alert alert-danger';
+        resultMessage.innerHTML = `
+            <i class="fas fa-exclamation-circle"></i>
+            <strong>Ошибка:</strong> Произошла ошибка при загрузке в базу
+        `;
+        
+        uploadBtn.disabled = false;
+        uploadBtn.innerHTML = '<i class="fas fa-database"></i> Загрузить на сервер';
+    });
+});
+
+// Функция отображения анализа категорий
+function displayCategoriesAnalysis(categories, summary) {
+    const analysisContent = document.getElementById('analysisContent');
+    
+    let html = `
+        <div class="alert alert-info mb-3">
+            <h6><i class="fas fa-info-circle"></i> Информация о файле</h6>
+            <div class="row">
+                <div class="col-md-2"><strong>События:</strong> ${summary.events}</div>
+                <div class="col-md-2"><strong>Категории:</strong> ${summary.categories}</div>
+                <div class="col-md-2"><strong>Сегменты:</strong> ${summary.segments}</div>
+                <div class="col-md-2"><strong>Персоны:</strong> ${summary.persons}</div>
+                <div class="col-md-2"><strong>Клубы:</strong> ${summary.clubs}</div>
+                <div class="col-md-2"><strong>Участники:</strong> ${summary.participants}</div>
+            </div>
+        </div>
+        
+        <h6><i class="fas fa-list"></i> Найденные категории:</h6>
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Оригинальное название</th>
+                        <th>Пол</th>
+                        <th>Нормализованное название</th>
+                        <th>Статус</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    
+    categories.forEach((category, index) => {
+        const genderBadge = category.gender === 'F' ? 
+            '<span class="badge bg-pink">Женский</span>' : 
+            category.gender === 'M' ? 
+            '<span class="badge bg-blue">Мужской</span>' : 
+            '<span class="badge bg-secondary">Не указан</span>';
+        
+        const statusBadge = category.needs_manual ? 
+            '<span class="badge bg-warning">Требует нормализации</span>' : 
+            '<span class="badge bg-success">Нормализовано</span>';
+        
+        html += `
+            <tr class="${category.needs_manual ? 'table-warning' : 'table-success'}">
+                <td><strong>${category.original_name}</strong></td>
+                <td>${genderBadge}</td>
+                <td>${category.normalized}</td>
+                <td>${statusBadge}</td>
+            </tr>
+        `;
+    });
+    
+    html += `
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle"></i>
+            <strong>Внимание:</strong> Если есть категории, требующие нормализации, 
+            система автоматически перенаправит вас на страницу ручной настройки.
+        </div>
+    `;
+    
+    analysisContent.innerHTML = html;
+}
+</script>
+
+<style>
+.bg-pink { background-color: #ff69b4 !important; }
+.bg-blue { background-color: #007bff !important; }
+</style>
+{% endblock %}

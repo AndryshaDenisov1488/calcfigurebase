@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+
+{% block title %}Экспорт в Google Таблицы{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>📊 Экспорт в Google Таблицы</h2>
+    
+    <div class="card mt-4">
+        <div class="card-body">
+            <h5 class="card-title">Синхронизация с Google Sheets</h5>
+            <p class="card-text">
+                Экспортирует всех спортсменов, сгруппированных по разрядам, в Google Таблицу.
+            </p>
+            
+            <!-- Проверка наличия credentials -->
+            {% if not credentials_exists %}
+            <div class="alert alert-warning" role="alert">
+                <strong>⚠️ Внимание!</strong> Файл <code>google_credentials.json</code> не найден.
+                <br>Для работы экспорта необходимо:
+                <ol>
+                    <li>Создать Service Account в Google Cloud Console</li>
+                    <li>Скачать JSON ключ</li>
+                    <li>Переименовать в <code>google_credentials.json</code></li>
+                    <li>Загрузить в корень проекта</li>
+                </ol>
+                <a href="#" data-bs-toggle="modal" data-bs-target="#instructionsModal" class="btn btn-sm btn-info">
+                    📖 Подробная инструкция
+                </a>
+            </div>
+            {% else %}
+            <div class="alert alert-success" role="alert">
+                <strong>✅ Credentials найдены!</strong> Файл <code>google_credentials.json</code> на месте.
+            </div>
+            {% endif %}
+            
+            <!-- ID таблицы (вшит в код) -->
+            <div class="mt-3">
+                <label for="spreadsheetId" class="form-label">ID Google Таблицы (вшит в код)</label>
+                <input type="text" 
+                       class="form-control" 
+                       id="spreadsheetId" 
+                       value="{{ spreadsheet_id or '' }}"
+                       readonly
+                       style="background-color: #f8f9fa;">
+                <small class="form-text text-muted">
+                    <i class="fas fa-info-circle"></i> ID таблицы жёстко вшит в код для удобства. Всегда используется одна и та же таблица.
+                    <br><a href="https://docs.google.com/spreadsheets/d/{{ spreadsheet_id }}/edit" target="_blank" class="btn btn-sm btn-link p-0">
+                        <i class="fas fa-external-link-alt"></i> Открыть таблицу
+                    </a>
+                </small>
+            </div>
+            
+            <!-- Кнопка экспорта -->
+            <div class="mt-4">
+                <button type="button" 
+                        class="btn btn-primary btn-lg" 
+                        id="exportBtn"
+                        {% if not credentials_exists %}disabled{% endif %}>
+                    <span id="exportBtnText">
+                        <i class="fas fa-upload"></i> Экспортировать в Google Sheets
+                    </span>
+                    <span id="exportBtnLoading" style="display: none;">
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        Экспорт...
+                    </span>
+                </button>
+            </div>
+            
+            <!-- Результат -->
+            <div id="exportResult" class="mt-4" style="display: none;"></div>
+        </div>
+    </div>
+    
+    <!-- Информация -->
+    <div class="card mt-4">
+        <div class="card-body">
+            <h5 class="card-title">ℹ️ Что будет экспортировано</h5>
+            <p><strong>Лист 1: "Спортсмены по разрядам"</strong></p>
+            <ul>
+                <li>Все спортсмены, сгруппированные по разрядам</li>
+                <li>ФИО, дата рождения, пол, школа</li>
+                <li>Список турниров, в которых участвовал спортсмен</li>
+                <li>Количество участий (всего и бесплатных)</li>
+                <li>Цветовая подсветка для спортсменов с бесплатными участиями</li>
+            </ul>
+            <p><strong>Лист 2: "Анализ по школам"</strong></p>
+            <ul>
+                <li>Все школы с их спортсменами</li>
+                <li>Статистика по каждой школе: всего детей, участий, бесплатно/платно</li>
+                <li>Группировка по разрядам внутри каждой школы (с отдельными заголовками)</li>
+                <li>Для каждого спортсмена: турниры, количество участий, бесплатные участия</li>
+                <li>Цветовая подсветка (зелёный фон) для спортсменов с бесплатными участиями</li>
+            </ul>
+            
+            <h5 class="card-title mt-3">🎨 Точечное форматирование</h5>
+            <ul>
+                <li><strong>[БЕСПЛАТНО]</strong> <span style="background: #D9F2D9; color: #007F00; padding: 2px 6px;">текст перед турнирами</span> - отмечены бесплатные турниры</li>
+                <li><span style="background: #7FBF7F; padding: 2px 8px; color: white; font-weight: bold;">4+</span> <span style="background: #A8D5AA; padding: 2px 8px; font-weight: bold;">2-3</span> <span style="background: #C9E4CA; padding: 2px 8px; font-weight: bold;">1</span> - количество бесплатных участий (разные оттенки зелёного)</li>
+                <li><span style="background: #D9F2D9; color: #007F00; padding: 2px 8px; border: 1px solid #aaa;">Зелёный фон + зелёный текст</span> - ячейка с турнирами, если есть бесплатные</li>
+                <li><strong>Колонка "Пол"</strong> - удалена (пол указан в разряде)</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно с инструкцией -->
+<div class="modal fade" id="instructionsModal" tabindex="-1" aria-labelledby="instructionsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="instructionsModalLabel">📖 Инструкция по настройке Google Sheets API</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <h6>Шаг 1: Создать проект в Google Cloud Console</h6>
+                <ol>
+                    <li>Откройте <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a></li>
+                    <li>Создайте новый проект</li>
+                    <li>Включите Google Sheets API и Google Drive API</li>
+                </ol>
+                
+                <h6>Шаг 2: Создать Service Account</h6>
+                <ol>
+                    <li>Перейдите в "IAM и администрирование" → "Сервисные аккаунты"</li>
+                    <li>Создайте новый сервисный аккаунт</li>
+                    <li>Дайте ему роль "Редактор" или "Владелец"</li>
+                </ol>
+                
+                <h6>Шаг 3: Скачать ключ</h6>
+                <ol>
+                    <li>Откройте созданный Service Account</li>
+                    <li>Перейдите на вкладку "Ключи"</li>
+                    <li>Создайте новый ключ (тип JSON)</li>
+                    <li>Файл автоматически скачается</li>
+                </ol>
+                
+                <h6>Шаг 4: Загрузить ключ</h6>
+                <ol>
+                    <li>Переименуйте скачанный файл в <code>google_credentials.json</code></li>
+                    <li>Загрузите его в корень проекта</li>
+                </ol>
+                
+                <h6>Шаг 5: Настроить доступ к таблице</h6>
+                <ol>
+                    <li>Создайте Google Таблицу</li>
+                    <li>Поделитесь ей с email Service Account (из шага 2)</li>
+                    <li>Дайте права "Редактор"</li>
+                </ol>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('exportBtn').addEventListener('click', function() {
+    const btn = this;
+    const btnText = document.getElementById('exportBtnText');
+    const btnLoading = document.getElementById('exportBtnLoading');
+    const resultDiv = document.getElementById('exportResult');
+    const spreadsheetId = document.getElementById('spreadsheetId').value.trim();
+    
+    // Показываем загрузку
+    btn.disabled = true;
+    btnText.style.display = 'none';
+    btnLoading.style.display = 'inline-block';
+    resultDiv.style.display = 'none';
+    
+    // Отправляем запрос (ID таблицы вшит в код на сервере)
+    fetch('/admin/export-google-sheets', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({})
+    })
+    .then(response => {
+        // Проверяем что получили JSON, а не HTML
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            throw new Error('Сервер вернул не JSON. Возможно требуется повторная авторизация.');
+        }
+        return response.json();
+    })
+    .then(data => {
+        // Скрываем загрузку
+        btn.disabled = false;
+        btnText.style.display = 'inline-block';
+        btnLoading.style.display = 'none';
+        
+        // Показываем результат
+        resultDiv.style.display = 'block';
+        
+        if (data.success) {
+            resultDiv.innerHTML = `
+                <div class="alert alert-success" role="alert">
+                    <h5>✅ ${data.message}</h5>
+                    <hr>
+                    <p class="mb-0">
+                        <a href="${data.url}" target="_blank" class="btn btn-success">
+                            <i class="fas fa-external-link-alt"></i> Открыть таблицу
+                        </a>
+                    </p>
+                </div>
+            `;
+        } else {
+            // Если есть редирект (авторизация) - перенаправляем
+            if (data.redirect) {
+                window.location.href = data.redirect;
+                return;
+            }
+            
+            resultDiv.innerHTML = `
+                <div class="alert alert-danger" role="alert">
+                    <strong>❌ Ошибка:</strong> ${data.message}
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        // Скрываем загрузку
+        btn.disabled = false;
+        btnText.style.display = 'inline-block';
+        btnLoading.style.display = 'none';
+        
+        // Показываем ошибку
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = `
+            <div class="alert alert-danger" role="alert">
+                <strong>❌ Ошибка:</strong> ${error.message}
+            </div>
+        `;
+    });
+});
+</script>
+{% endblock %}
+
