@@ -744,7 +744,9 @@ def api_clubs():
         db.func.count(Participant.id).label('participation_count')
     ).outerjoin(Athlete, Club.id == Athlete.club_id).outerjoin(
         Participant, Athlete.id == Participant.athlete_id
-    ).group_by(Club.id, Club.name, Club.country, Club.city).order_by(
+    ).group_by(Club.id, Club.name, Club.country, Club.city).having(
+        db.func.count(db.distinct(Athlete.id)) > 0
+    ).order_by(
         db.func.count(db.distinct(Athlete.id)).desc()
     ).all()
     
