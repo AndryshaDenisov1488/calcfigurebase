@@ -398,7 +398,7 @@ function renderParticipantsTable(participants, categoryId) {
                             </td>
                             <td>
                                 <a href="/athlete/${p.athlete.id}" class="text-decoration-none">
-                                    ${p.athlete.last_name} ${p.athlete.first_name}${p.athlete.patronymic ? ' ' + p.athlete.patronymic : ''}
+                                    ${p.athlete.full_name || ''}
                                 </a>
                                 ${isWithdrawn ? '<span class="badge bg-warning text-dark ms-2" title="Снята с соревнований"><i class="fas fa-ban"></i> Снята</span>' : ''}
                                 ${p.free ? '<span class="badge bg-success ms-2">БЕСП</span>' : ''}
@@ -461,7 +461,7 @@ function filterAndSortCategories() {
 
         // Поиск по спортсменам
         return group.participants.some(p => {
-            const fullName = `${p.athlete.last_name} ${p.athlete.first_name} ${p.athlete.patronymic || ''}`;
+            const fullName = p.athlete.full_name || '';
             return matchesSearch(fullName, searchTerm);
         });
     });
