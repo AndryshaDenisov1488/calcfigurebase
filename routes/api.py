@@ -395,6 +395,26 @@ def api_free_participation():
             # Оставляем только спортсменов с бесплатным участием
             free_athletes = [a for a in group.get('athletes', []) if a.get('has_free_participation', False)]
             if free_athletes:
+                # Добавляем информацию о турнирах для каждого спортсмена из уже загруженных данных
+                for athlete in free_athletes:
+                    athlete_id = athlete.get('id')
+                    if athlete_id and athlete_id in athletes_data:
+                        # Добавляем поле events из athletes_data (только бесплатные участия)
+                        athlete['events'] = athletes_data[athlete_id].get('events', [])
+                        # Добавляем last_event_display для отображения (форматированная дата последнего турнира)
+                        if athlete['events']:
+                            # События уже отсортированы по дате desc, первое - самое последнее
+                            last_event = athlete['events'][0]
+                            athlete['last_event_display'] = last_event.get('event_date', '—')
+                        else:
+                            athlete['last_event_display'] = '—'
+                        # Убеждаемся, что events_count соответствует количеству уникальных турниров
+                        if athlete['events']:
+                            unique_events = set()
+                            for event in athlete['events']:
+                                unique_events.add(event.get('event_name', ''))
+                            athlete['events_count'] = len(unique_events)
+                
                 group_copy = group.copy()
                 group_copy['athletes'] = free_athletes
                 group_copy['athlete_count'] = len(free_athletes)
