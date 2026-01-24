@@ -446,15 +446,40 @@ def admin_logout():
 @admin_required
 def admin_export_google_sheets():
     """Экспорт данных в Google Sheets"""
-    from google_sheets_sync import export_to_google_sheets
+    from google_sheets_sync import export_to_google_sheets, DEFAULT_SPREADSHEET_ID
+    
+    # Проверяем наличие файла credentials (используем тот же способ, что и в google_sheets_sync.py)
+    import os
+    # Определяем корень проекта так же, как в google_sheets_sync.py
+    # Если google_sheets_sync.py в корне проекта, используем его директорию
+    try:
+        import google_sheets_sync
+        base_dir = os.path.dirname(os.path.abspath(google_sheets_sync.__file__))
+    except:
+        # Fallback: определяем корень проекта относительно текущего файла
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    credentials_path = os.environ.get('GOOGLE_CREDENTIALS_PATH') or os.path.join(base_dir, 'google_credentials.json')
+    credentials_exists = os.path.exists(credentials_path) and os.access(credentials_path, os.R_OK)
+    
     if request.method == 'POST':
+        if not credentials_exists:
+            flash('Файл google_credentials.json не найден или недоступен для чтения', 'error')
+            return render_template('admin_export_google_sheets.html', 
+                                 credentials_exists=credentials_exists,
+                                 spreadsheet_id=DEFAULT_SPREADSHEET_ID)
         try:
-            export_to_google_sheets()
-            flash('Данные успешно экспортированы в Google Sheets!', 'success')
+            result = export_to_google_sheets()
+            if result.get('success'):
+                flash('Данные успешно экспортированы в Google Sheets!', 'success')
+            else:
+                flash(f'Ошибка экспорта: {result.get("message", "Неизвестная ошибка")}', 'error')
         except Exception as e:
-            logger.error(f"Ошибка экспорта в Google Sheets: {e}")
-            flash(f'Ошибка экспорта: {e}', 'error')
-    return render_template('admin_export_google_sheets.html')
+            logger.error(f"Ошибка экспорта в Google Sheets: {e}", exc_info=True)
+            flash(f'Ошибка экспорта: {str(e)}', 'error')
+    
+    return render_template('admin_export_google_sheets.html', 
+                         credentials_exists=credentials_exists,
+                         spreadsheet_id=DEFAULT_SPREADSHEET_ID)
 
 @admin_bp.route('/admin/free-participation', methods=['GET', 'POST'])
 @admin_required
