@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+
+{% block title %}Разряды и категории - Система управления турнирами{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-layer-group"></i> Разряды и категории</h2>
+    <div class="d-flex gap-2">
+        {% if selected_category %}
+            <a href="{{ url_for('public.categories') }}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left"></i> Все разряды
+            </a>
+        {% else %}
+            <select class="form-select" id="eventFilter" onchange="filterByEvent()">
+                <option value="">Все турниры</option>
+                {% for event in events %}
+                    <option value="{{ event.id }}" {% if selected_event == event.id %}selected{% endif %}>{{ event.name }}</option>
+                {% endfor %}
+            </select>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row">
+    {% for category in categories %}
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-medal"></i> {{ category.name }}
+                </h5>
+                <span class="badge bg-primary">{{ category.participants|length }} участников</span>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <small class="text-muted">Турнир:</small><br>
+                        <strong>{{ category.event.name }}</strong>
+                    </div>
+                    <div class="col-6">
+                        <small class="text-muted">Тип:</small><br>
+                        {% if category.category_type == 'S' %}
+                            <span class="badge bg-success">Одиночное</span>
+                        {% elif category.category_type == 'P' %}
+                            <span class="badge bg-warning">Парное</span>
+                        {% else %}
+                            <span class="text-muted">{{ category.category_type or 'Не указан' }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <small class="text-muted">Пол:</small><br>
+                        {% if category.gender == 'F' %}
+                            <span class="badge bg-pink">Женский</span>
+                        {% elif category.gender == 'M' %}
+                            <span class="badge bg-blue">Мужской</span>
+                        {% else %}
+                            <span class="text-muted">Смешанный</span>
+                        {% endif %}
+                    </div>
+                    <div class="col-6">
+                        <small class="text-muted">Тип:</small><br>
+                        {% if category.category_type == 'S' %}
+                            <span class="badge bg-success">Одиночное</span>
+                        {% elif category.category_type == 'P' %}
+                            <span class="badge bg-warning">Парное</span>
+                        {% else %}
+                            <span class="text-muted">{{ category.category_type or 'Не указан' }}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <!-- Сегменты (программы) -->
+                <div class="mb-3">
+                    <small class="text-muted">Программы:</small><br>
+                    {% for segment in category.segments %}
+                        <span class="badge bg-secondary me-1">{{ segment.name }}</span>
+                    {% endfor %}
+                </div>
+                
+                <!-- Топ-3 спортсмена -->
+                {% if category.participants %}
+                <div class="mb-3">
+                    <small class="text-muted">Топ-3:</small><br>
+                    {% set top_participants = category.participants|selectattr('total_place')|sort(attribute='total_place')|list %}
+                    {% for participant in top_participants[:3] %}
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <div>
+                                <span class="badge bg-{{ 'success' if participant.total_place == 1 else 'warning' if participant.total_place == 2 else 'danger' if participant.total_place == 3 else 'secondary' }}">
+                                    {{ participant.total_place }}
+                                </span>
+                                {{ participant.athlete.last_name }} {{ participant.athlete.first_name }}
+                            </div>
+                            <small class="text-muted">
+                                {{ (participant.total_points)|round(2) if participant.total_points else 0 }}
+                            </small>
+                        </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                
+                <div class="d-grid">
+                    <button class="btn btn-outline-primary btn-sm" onclick="showCategoryDetails({{ category.id }})">
+                        <i class="fas fa-eye"></i> Подробнее
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Модальное окно с деталями категории -->
+<div class="modal fade" id="categoryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-medal"></i> <span id="modalCategoryName"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="categoryDetails">
+                    <!-- Детали будут загружены через AJAX -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.bg-pink {
+    background-color: #e91e63 !important;
+    color: white;
+}
+
+.bg-blue {
+    background-color: #2196f3 !important;
+    color: white;
+}
+
+.card {
+    transition: transform 0.2s ease-in-out;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function filterByEvent() {
+    const eventId = document.getElementById('eventFilter').value;
+    const url = new URL(window.location);
+    
+    if (eventId) {
+        url.searchParams.set('event', eventId);
+    } else {
+        url.searchParams.delete('event');
+    }
+    
+    window.location.href = url.toString();
+}
+
+function showCategoryDetails(categoryId) {
+    // Загружаем детали категории через AJAX
+    fetch(`/api/category/${categoryId}`)
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('modalCategoryName').textContent = data.name;
+            document.getElementById('categoryDetails').innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Информация</h6>
+                        <p><strong>Турнир:</strong> ${data.event_name}</p>
+                        <p><strong>Пол:</strong> ${data.gender}</p>
+                        <p><strong>Участников:</strong> ${data.participants_count}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Программы</h6>
+                        ${data.segments.map(segment => `<span class="badge bg-secondary me-1">${segment.name}</span>`).join('')}
+                    </div>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Топ-3:</h6>
+                        <div class="list-group list-group-flush">
+                            ${data.participants.slice(0, 3).map(p => `
+                                <div class="list-group-item d-flex justify-content-between align-items-center px-0">
+                                    <div>
+                                        <span class="badge bg-${p.place === 1 ? 'success' : p.place === 2 ? 'warning' : 'danger'} me-2">${p.place}</span>
+                                        <a href="/athlete/${p.athlete_id}" class="text-decoration-none">${p.athlete_name}</a>
+                                    </div>
+                                    <strong>${(p.points).toFixed(2)}</strong>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Все результаты</h6>
+                        <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                            <table class="table table-sm">
+                                <thead class="sticky-top bg-white">
+                                    <tr>
+                                        <th>Место</th>
+                                        <th>Спортсмен</th>
+                                        <th>Баллы</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${data.participants.map(p => `
+                                        <tr>
+                                            <td><span class="badge bg-${p.place <= 3 ? 'success' : 'secondary'}">${p.place}</span></td>
+                                            <td><a href="/athlete/${p.athlete_id}" class="text-decoration-none">${p.athlete_name}</a></td>
+                                            <td>${(p.points).toFixed(2)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            const modal = new bootstrap.Modal(document.getElementById('categoryModal'));
+            modal.show();
+        })
+        .catch(error => {
+            console.error('Ошибка загрузки деталей:', error);
+            alert('Ошибка загрузки деталей категории');
+        });
+}
+</script>
+{% endblock %}

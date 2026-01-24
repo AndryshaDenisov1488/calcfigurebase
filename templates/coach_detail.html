@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+
+{% block title %}{{ coach.name }} - Тренер - Система управления турнирами{% endblock %}
+
+{% block extra_css %}
+<style>
+    .rank-section {
+        margin-bottom: 2rem;
+    }
+    
+    .athlete-card {
+        transition: all 0.3s ease;
+        border-left: 4px solid transparent;
+    }
+    
+    .athlete-card:hover {
+        transform: translateX(4px);
+        border-left-color: #007bff;
+        box-shadow: 0 4px 12px rgba(0, 123, 255, 0.15);
+    }
+    
+    .transition-badge {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <!-- Информация о тренере -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h4><i class="fas fa-user-tie"></i> {{ coach.name }}</h4>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-4 mb-3">
+                        <div class="stat-item">
+                            <h4 class="text-primary">{{ total_athletes }}</h4>
+                            <small class="text-muted">Текущих спортсменов</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="stat-item">
+                            <h4 class="text-success">{{ total_assignments }}</h4>
+                            <small class="text-muted">Всего назначений</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <div class="stat-item">
+                            <h4 class="text-info">{{ athletes_by_rank|length }}</h4>
+                            <small class="text-muted">Разрядов</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Спортсмены по разрядам -->
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-users"></i> Спортсмены по разрядам</h5>
+            </div>
+            <div class="card-body">
+                {% if athletes_by_rank %}
+                    {% set rank_items = athletes_by_rank.items()|list %}
+                    {% for rank, athletes_list in rank_items %}
+                    <div class="rank-section">
+                        <h6 class="mb-3">
+                            <span class="badge bg-info">{{ rank }}</span>
+                            <span class="text-muted">({{ athletes_list|length }} спортсменов)</span>
+                        </h6>
+                        <div class="row">
+                            {% for item in athletes_list %}
+                            <div class="col-md-6 col-lg-4 mb-3">
+                                <div class="card athlete-card">
+                                    <div class="card-body">
+                                        <h6 class="card-title">
+                                            <a href="{{ url_for('public.athlete_detail', athlete_id=item.athlete.id) }}" class="text-decoration-none">
+                                                {{ item.athlete.full_name }}
+                                            </a>
+                                        </h6>
+                                        <p class="card-text mb-1">
+                                            <small class="text-muted">
+                                                <i class="fas fa-calendar"></i> 
+                                                С {{ item.start_date.strftime('%d.%m.%Y') if item.start_date else 'неизвестно' }}
+                                            </small>
+                                        </p>
+                                        {% if item.athlete.club %}
+                                        <p class="card-text mb-0">
+                                            <small class="text-muted">
+                                                <i class="fas fa-building"></i> 
+                                                <a href="{{ url_for('public.club_detail', club_id=item.athlete.club.id) }}" class="text-decoration-none">
+                                                    {{ item.athlete.club.name }}
+                                                </a>
+                                            </small>
+                                        </p>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% if not loop.last %}
+                    <hr>
+                    {% endif %}
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-users fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">Нет текущих спортсменов</h5>
+                        <p class="text-muted">У этого тренера пока нет активных спортсменов</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <!-- История переходов -->
+        {% if all_assignments|length > total_athletes %}
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5><i class="fas fa-history"></i> История переходов</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Спортсмен</th>
+                                <th>Дата начала</th>
+                                <th>Дата окончания</th>
+                                <th>Статус</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for assignment in all_assignments %}
+                            <tr>
+                                <td>
+                                    <a href="{{ url_for('public.athlete_detail', athlete_id=assignment.athlete.id) }}" class="text-decoration-none">
+                                        {{ assignment.athlete.full_name }}
+                                    </a>
+                                </td>
+                                <td>{{ assignment.start_date.strftime('%d.%m.%Y') if assignment.start_date else '-' }}</td>
+                                <td>
+                                    {% if assignment.end_date %}
+                                        {{ assignment.end_date.strftime('%d.%m.%Y') }}
+                                        <br><small class="text-muted">Перешел к другому тренеру</small>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if assignment.is_current %}
+                                        <span class="badge bg-success">Текущий</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">Завершено</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

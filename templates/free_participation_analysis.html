@@ -1,0 +1,648 @@
+{% extends "base.html" %}
+
+{% block title %}Анализ бесплатного участия - Система управления турнирами{% endblock %}
+
+{% block extra_css %}
+<style>
+    .filter-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 15px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    }
+    
+    .stats-card {
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        border-radius: 15px;
+        border: none;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    }
+    
+    .stats-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+    }
+    
+    .athlete-card {
+        transition: all 0.3s ease;
+        border-radius: 15px;
+        border: none;
+        box-shadow: 0 2px 15px rgba(0, 0, 0, 0.08);
+        margin-bottom: 1rem;
+    }
+    
+    .athlete-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+    }
+    
+    .participation-badge {
+        font-size: 0.9em;
+        padding: 0.5em 0.8em;
+        border-radius: 20px;
+    }
+    
+    .event-timeline {
+        position: relative;
+        padding-left: 2rem;
+    }
+    
+    .event-timeline::before {
+        content: '';
+        position: absolute;
+        left: 0.75rem;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: linear-gradient(to bottom, #28a745, #20c997);
+    }
+    
+    .event-item {
+        position: relative;
+        margin-bottom: 1.5rem;
+        padding: 1rem;
+        background: #f8f9fa;
+        border-radius: 10px;
+        border-left: 4px solid #28a745;
+    }
+    
+    .event-item::before {
+        content: '';
+        position: absolute;
+        left: -1.75rem;
+        top: 1.5rem;
+        width: 12px;
+        height: 12px;
+        background: #28a745;
+        border-radius: 50%;
+        border: 3px solid white;
+        box-shadow: 0 0 0 2px #28a745;
+    }
+    
+    .filter-section {
+        background: white;
+        border-radius: 15px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        margin-bottom: 2rem;
+    }
+    
+    .btn-filter {
+        background: linear-gradient(45deg, #667eea, #764ba2);
+        border: none;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border-radius: 25px;
+        transition: all 0.3s ease;
+        font-weight: 500;
+    }
+    
+    .btn-filter:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        color: white;
+    }
+    
+    .btn-reset {
+        background: linear-gradient(45deg, #6c757d, #495057);
+        border: none;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border-radius: 25px;
+        transition: all 0.3s ease;
+        font-weight: 500;
+    }
+    
+    .btn-reset:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(108, 117, 125, 0.4);
+        color: white;
+    }
+    
+    .btn-success {
+        background: linear-gradient(45deg, #28a745, #20c997);
+        border: none;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border-radius: 25px;
+        transition: all 0.3s ease;
+        font-weight: 500;
+    }
+    
+    .btn-success:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(40, 167, 69, 0.4);
+        color: white;
+    }
+    
+    .btn-success:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+    
+    .alert-info {
+        background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%);
+        border: none;
+        border-radius: 15px;
+        color: #0c5460;
+    }
+    
+    .chart-container {
+        background: white;
+        border-radius: 15px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        margin-bottom: 2rem;
+    }
+    
+    /* Мобильная адаптация */
+    @media (max-width: 768px) {
+        .filter-section {
+            padding: 1rem;
+        }
+        
+        .stats-card {
+            margin-bottom: 1rem;
+        }
+        
+        .event-timeline {
+            padding-left: 1.5rem;
+        }
+        
+        .event-item {
+            padding: 0.75rem;
+        }
+        
+        .btn-filter, .btn-reset, .btn-success {
+            width: 100%;
+            margin-bottom: 0.5rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-12">
+            <!-- Заголовок -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h2><i class="fas fa-chart-line text-primary"></i> Анализ бесплатного участия</h2>
+                    <p class="text-muted mb-0">Отслеживание спортсменов с множественными бесплатными участиями</p>
+                </div>
+                <div>
+                    <a href="{{ url_for('analytics.free_participation') }}" class="btn btn-outline-secondary me-2">
+                        <i class="fas fa-gift"></i> Все бесплатные участия
+                    </a>
+                    <a href="{{ url_for('analytics.analytics') }}" class="btn btn-outline-primary">
+                        <i class="fas fa-arrow-left"></i> Назад к аналитике
+                    </a>
+                </div>
+            </div>
+
+            <!-- Фильтры -->
+            <div class="filter-section">
+                <h5><i class="fas fa-filter text-primary"></i> Фильтры</h5>
+                <div class="row">
+                    <div class="col-md-3">
+                        <label for="minParticipations" class="form-label">Минимум участий</label>
+                        <input type="number" class="form-control" id="minParticipations" value="2" min="1" max="50">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="maxParticipations" class="form-label">Максимум участий</label>
+                        <input type="number" class="form-control" id="maxParticipations" value="999" min="1" max="999">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="seasonFilter" class="form-label">Сезон</label>
+                        <select class="form-select" id="seasonFilter">
+                            <option value="">Все сезоны</option>
+                            <option value="current">Текущий сезон</option>
+                            <option value="2024/25">2024/25</option>
+                            <option value="2023/24">2023/24</option>
+                            <option value="2022/23">2022/23</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end">
+                        <div class="d-grid gap-2 d-md-flex">
+                            <button class="btn btn-filter" onclick="applyFilters()">
+                                <i class="fas fa-search"></i> Применить
+                            </button>
+                            <button class="btn btn-reset" onclick="resetFilters()">
+                                <i class="fas fa-undo"></i> Сбросить
+                            </button>
+                            <button class="btn btn-success" onclick="exportToExcel()" id="exportBtn">
+                                <i class="fas fa-file-excel"></i> Excel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Статистика -->
+            <div class="row mb-4" id="statisticsSection">
+                <div class="col-md-3">
+                    <div class="card stats-card bg-primary text-white">
+                        <div class="card-body text-center">
+                            <i class="fas fa-users fa-2x mb-2"></i>
+                            <h3 id="totalAthletes">-</h3>
+                            <p class="mb-0">Спортсменов</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card stats-card bg-success text-white">
+                        <div class="card-body text-center">
+                            <i class="fas fa-gift fa-2x mb-2"></i>
+                            <h3 id="totalParticipations">-</h3>
+                            <p class="mb-0">Бесплатных участий</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card stats-card bg-info text-white">
+                        <div class="card-body text-center">
+                            <i class="fas fa-chart-line fa-2x mb-2"></i>
+                            <h3 id="avgParticipations">-</h3>
+                            <p class="mb-0">Среднее участие</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card stats-card bg-warning text-white">
+                        <div class="card-body text-center">
+                            <i class="fas fa-exclamation-triangle fa-2x mb-2"></i>
+                            <h3 id="problemAthletes">-</h3>
+                            <p class="mb-0">С превышением</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Диаграмма распределения -->
+            <div class="chart-container" id="chartContainer" style="display: none;">
+                <h5><i class="fas fa-chart-pie text-primary"></i> Распределение по количеству участий</h5>
+                <canvas id="participationChart" width="400" height="200"></canvas>
+            </div>
+
+            <!-- Список спортсменов -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5><i class="fas fa-list"></i> Результаты анализа</h5>
+                    <div>
+                        <span class="badge bg-primary" id="resultsCount">0 результатов</span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="athletesList">
+                        <div class="text-center py-5">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Загрузка...</span>
+                            </div>
+                            <p class="mt-3 text-muted">Загрузка данных...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно для детального просмотра -->
+<div class="modal fade" id="athleteModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="athleteModalTitle">Детальная информация</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="athleteModalBody">
+                <!-- Контент будет загружен динамически -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
+                <a href="#" class="btn btn-primary" id="athleteProfileLink">
+                    <i class="fas fa-user"></i> Профиль спортсмена
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+let participationChart = null;
+
+// Загрузка данных
+function loadAnalysisData() {
+    const minParticipations = document.getElementById('minParticipations').value;
+    const maxParticipations = document.getElementById('maxParticipations').value;
+    const season = document.getElementById('seasonFilter').value;
+    
+    const url = `/api/analytics/free-participation-analysis?min_participations=${minParticipations}&max_participations=${maxParticipations}&season=${season}`;
+    
+    console.log('Загружаем данные с URL:', url);
+    
+    fetch(url)
+        .then(response => {
+            console.log('Ответ сервера:', response.status, response.statusText);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Получены данные:', data);
+            updateStatistics(data.statistics);
+            updateChart(data.statistics.participation_groups);
+            displayAthletes(data.athletes);
+            updateResultsCount(data.athletes.length);
+        })
+        .catch(error => {
+            console.error('Ошибка загрузки данных:', error);
+            showError(`Ошибка загрузки данных: ${error.message}. Проверьте консоль браузера для подробностей.`);
+        });
+}
+
+// Обновление статистики
+function updateStatistics(stats) {
+    document.getElementById('totalAthletes').textContent = stats.total_athletes;
+    document.getElementById('totalParticipations').textContent = stats.total_participations;
+    document.getElementById('avgParticipations').textContent = stats.avg_participations;
+    
+    // Подсчитываем спортсменов с превышением (более 2 участий)
+    const problemAthletes = Object.entries(stats.participation_groups)
+        .filter(([count, athletes]) => parseInt(count) > 2)
+        .reduce((sum, [count, athletes]) => sum + athletes, 0);
+    
+    document.getElementById('problemAthletes').textContent = problemAthletes;
+}
+
+// Обновление диаграммы
+function updateChart(participationGroups) {
+    const ctx = document.getElementById('participationChart').getContext('2d');
+    
+    if (participationChart) {
+        participationChart.destroy();
+    }
+    
+    const labels = Object.keys(participationGroups).sort((a, b) => parseInt(a) - parseInt(b));
+    const data = labels.map(label => participationGroups[label]);
+    
+    // Показываем контейнер диаграммы
+    document.getElementById('chartContainer').style.display = 'block';
+    
+    participationChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels.map(label => `${label} участи${getParticipationSuffix(parseInt(label))}`),
+            datasets: [{
+                label: 'Количество спортсменов',
+                data: data,
+                backgroundColor: labels.map(label => {
+                    const count = parseInt(label);
+                    if (count <= 2) return '#28a745'; // Зеленый для нормальных
+                    if (count <= 4) return '#ffc107'; // Желтый для повышенных
+                    return '#dc3545'; // Красный для критических
+                }),
+                borderColor: labels.map(label => {
+                    const count = parseInt(label);
+                    if (count <= 2) return '#1e7e34';
+                    if (count <= 4) return '#e0a800';
+                    return '#c82333';
+                }),
+                borderWidth: 2,
+                borderRadius: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.parsed.y} спортсмен${getAthleteSuffix(context.parsed.y)}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
+                }
+            }
+        }
+    });
+}
+
+
+// Показать детали спортсмена
+function showAthleteDetails(athleteId) {
+    // Находим данные спортсмена
+    const athletes = window.currentAthletes || [];
+    const athlete = athletes.find(a => a.id === athleteId);
+    
+    if (!athlete) return;
+    
+    document.getElementById('athleteModalTitle').textContent = `Детали: ${athlete.name}`;
+    document.getElementById('athleteProfileLink').href = `/athlete/${athlete.id}`;
+    
+    const modalBody = document.getElementById('athleteModalBody');
+    modalBody.innerHTML = `
+        <div class="row">
+            <div class="col-md-6">
+                <h6><i class="fas fa-info-circle text-primary"></i> Информация о спортсмене</h6>
+                <table class="table table-sm">
+                    <tr><td><strong>Имя:</strong></td><td>${athlete.name}</td></tr>
+                    <tr><td><strong>Дата рождения:</strong></td><td>${athlete.birth_date}</td></tr>
+                    <tr><td><strong>Пол:</strong></td><td>${athlete.gender}</td></tr>
+                    <tr><td><strong>Клуб:</strong></td><td>${athlete.club_name}</td></tr>
+                    <tr><td><strong>Сезоны:</strong></td><td>${athlete.seasons.join(', ')}</td></tr>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <h6><i class="fas fa-chart-bar text-success"></i> Статистика участий</h6>
+                <div class="text-center">
+                    <div class="display-4 text-primary">${athlete.free_participations}</div>
+                    <p class="text-muted">бесплатных участий</p>
+                </div>
+            </div>
+        </div>
+        <hr>
+        <h6><i class="fas fa-trophy text-warning"></i> Турниры с бесплатным участием</h6>
+        <div class="event-timeline">
+            ${athlete.events.map(event => `
+                <div class="event-item">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>${event.event_name}</strong>
+                            <br><small class="text-muted">
+                                <i class="fas fa-calendar"></i> ${event.event_date}
+                                ${event.event_end_date ? ` - ${event.event_end_date}` : ''}
+                                <br><i class="fas fa-layer-group"></i> ${event.category_name}
+                                <br><i class="fas fa-medal"></i> ${event.rank}
+                                <br><i class="fas fa-tag"></i> Сезон: ${event.season}
+                            </small>
+                        </div>
+                        <div class="text-end">
+                            ${event.place ? `<span class="badge bg-warning">${event.place} место</span>` : ''}
+                            ${event.points ? `<br><small class="text-muted">${event.points} баллов</small>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+    
+    new bootstrap.Modal(document.getElementById('athleteModal')).show();
+}
+
+// Вспомогательные функции
+function getParticipationSuffix(count) {
+    if (count === 1) return 'е';
+    if (count >= 2 && count <= 4) return 'я';
+    return 'й';
+}
+
+function getAthleteSuffix(count) {
+    if (count === 1) return '';
+    if (count >= 2 && count <= 4) return 'а';
+    return 'ов';
+}
+
+function getParticipationBadgeClass(count) {
+    if (count <= 2) return 'bg-success';
+    if (count <= 4) return 'bg-warning';
+    return 'bg-danger';
+}
+
+function updateResultsCount(count) {
+    document.getElementById('resultsCount').textContent = `${count} результат${getAthleteSuffix(count)}`;
+}
+
+function applyFilters() {
+    loadAnalysisData();
+}
+
+function resetFilters() {
+    document.getElementById('minParticipations').value = '2';
+    document.getElementById('maxParticipations').value = '999';
+    document.getElementById('seasonFilter').value = '';
+    loadAnalysisData();
+}
+
+function exportToExcel() {
+    const exportBtn = document.getElementById('exportBtn');
+    const originalText = exportBtn.innerHTML;
+    
+    // Показываем индикатор загрузки
+    exportBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Экспорт...';
+    exportBtn.disabled = true;
+    
+    // Получаем текущие параметры фильтрации
+    const minParticipations = document.getElementById('minParticipations').value;
+    const maxParticipations = document.getElementById('maxParticipations').value;
+    const seasonFilter = document.getElementById('seasonFilter').value;
+    
+    // Формируем URL для экспорта
+    const exportUrl = `/api/analytics/free-participation-analysis/export?` +
+        `min_participations=${minParticipations}&` +
+        `max_participations=${maxParticipations}&` +
+        `season=${encodeURIComponent(seasonFilter)}`;
+    
+    // Создаем временную ссылку для скачивания
+    const link = document.createElement('a');
+    link.href = exportUrl;
+    link.download = `free_participation_analysis_${new Date().toISOString().slice(0,10)}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Восстанавливаем кнопку
+    setTimeout(() => {
+        exportBtn.innerHTML = originalText;
+        exportBtn.disabled = false;
+    }, 2000);
+}
+
+function showError(message) {
+    document.getElementById('athletesList').innerHTML = `
+        <div class="alert alert-danger">
+            <i class="fas fa-exclamation-triangle"></i>
+            ${message}
+        </div>
+    `;
+}
+
+// Сохраняем текущих спортсменов для модального окна
+function displayAthletes(athletes) {
+    window.currentAthletes = athletes;
+    
+    const container = document.getElementById('athletesList');
+    
+    if (athletes.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-5">
+                <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                <h4 class="text-muted">Нет результатов</h4>
+                <p class="text-muted">По выбранным фильтрам спортсменов не найдено.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = athletes.map((athlete, index) => `
+        <div class="card athlete-card">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <div class="d-flex align-items-center">
+                            <span class="badge bg-primary me-3">${index + 1}</span>
+                            <div>
+                                <h5 class="mb-1">${athlete.name}</h5>
+                                <div class="text-muted small">
+                                    <i class="fas fa-birthday-cake me-1"></i> ${athlete.birth_date} |
+                                    <i class="fas fa-venus-mars me-1"></i> ${athlete.gender} |
+                                    <i class="fas fa-building me-1"></i> ${athlete.club_name}
+                                </div>
+                                <div class="mt-1">
+                                    <span class="badge bg-info me-1">
+                                        <i class="fas fa-calendar-alt me-1"></i> Сезоны: ${athlete.seasons.join(', ')}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <div class="mb-2">
+                            <span class="participation-badge badge ${getParticipationBadgeClass(athlete.free_participations)}">
+                                ${athlete.free_participations} бесплатных участий
+                            </span>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-outline-primary btn-sm" onclick="showAthleteDetails(${athlete.id})">
+                                <i class="fas fa-eye"></i> Детали
+                            </button>
+                            <a href="/athlete/${athlete.id}" class="btn btn-primary btn-sm">
+                                <i class="fas fa-user"></i> Профиль
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Загрузка данных при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    loadAnalysisData();
+});
+</script>
+{% endblock %}

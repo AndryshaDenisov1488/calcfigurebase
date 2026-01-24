@@ -1,0 +1,430 @@
+{% extends "base.html" %}
+
+{% block title %}Разряды и категории - Система управления турнирами{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
+    <div>
+        <h2 class="mb-1">
+            <i class="fas fa-layer-group me-2"></i>Разряды и категории
+        </h2>
+        <p class="text-muted mb-0 small">
+            Всего разрядов: {{ rank_summary.total_ranks }} · С данными: {{ rank_summary.ranks_with_data }} · Спортсменов: {{ rank_summary.total_athletes }} · Бесплатных стартов (событий): {{ rank_summary.total_free_participations }}
+            {% if selected_event_obj %}
+                <span class="d-block mt-1">
+                    Фильтр по турниру: <strong>{{ selected_event_obj.name }}</strong>
+                    {% if selected_event_obj.begin_date %}
+                        ({{ selected_event_obj.begin_date.strftime('%d.%m.%Y') }})
+                    {% endif %}
+                </span>
+            {% endif %}
+        </p>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+        <select class="form-select" id="eventFilter" onchange="filterByEvent()">
+            <option value="">Все турниры</option>
+            {% for event in events %}
+                <option value="{{ event.id }}" {% if selected_event == event.id %}selected{% endif %}>
+                    {{ event.name }}{% if event.begin_date %}, {{ event.begin_date.strftime('%d.%m.%Y') }}{% endif %}
+                </option>
+            {% endfor %}
+        </select>
+        {% if selected_event %}
+            <button class="btn btn-outline-secondary" type="button" onclick="clearEventFilter()">
+                <i class="fas fa-times"></i>
+            </button>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-center">
+            <div class="col-12 col-lg-4">
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="search" id="rankSearch" class="form-control" placeholder="Поиск по разряду или спортсмену (гибкий поиск, любой регистр)">
+                </div>
+            </div>
+            <div class="col-6 col-md-3 col-lg-2">
+                <select class="form-select" id="genderFilter">
+                    <option value="">Пол: все</option>
+                    <option value="F">Только женские</option>
+                    <option value="M">Только мужские</option>
+                    <option value="X">Смешанные</option>
+                    <option value="U">Не указан</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-3 col-lg-2">
+                <select class="form-select" id="rankSort">
+                    <option value="weight">Разряды: по значимости</option>
+                    <option value="name">Разряды: по алфавиту</option>
+                    <option value="athletes">Разряды: по числу спортсменов</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-3 col-lg-2">
+                <select class="form-select" id="athleteSort">
+                    <option value="best">Спортсмены: по лучшему месту</option>
+                    <option value="points">Спортсмены: по баллам</option>
+                    <option value="participations">Спортсмены: по участиям</option>
+                    <option value="name">Спортсмены: по имени</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-3 col-lg-2">
+                <div class="form-check form-switch ps-0">
+                    <input class="form-check-input ms-0" type="checkbox" id="hideEmpty" checked>
+                    <label class="form-check-label ms-3" for="hideEmpty">Скрывать пустые</label>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<p id="rankSummary" class="text-muted small mb-3"></p>
+
+<div id="ranksAccordion" class="accordion"></div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.rank-accordion-item .accordion-button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+
+@media (min-width: 768px) {
+    .rank-accordion-item .accordion-button {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+    }
+}
+
+.rank-header-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    font-size: 0.85rem;
+    color: var(--bs-secondary);
+}
+
+.rank-header-meta .badge {
+    font-size: 0.75rem;
+}
+
+.rank-accordion-item .accordion-body {
+    background-color: #fcfcfd;
+}
+
+.rank-empty {
+    text-align: center;
+    color: var(--bs-secondary);
+    padding: 2rem 1rem;
+    border: 1px dashed rgba(0, 0, 0, 0.1);
+    border-radius: 0.75rem;
+    background: #fff;
+}
+
+.rank-stat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 999px;
+    background: rgba(33, 37, 41, 0.05);
+    font-size: 0.8rem;
+}
+
+.rank-stat-pill i {
+    color: #0d6efd;
+}
+
+.rank-table thead th {
+    position: sticky;
+    top: 0;
+    background: #fff;
+    color: #333 !important; /* Темный текст на белом фоне */
+    z-index: 1;
+}
+
+.rank-table tbody tr:hover {
+    background-color: rgba(13, 110, 253, 0.05);
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const rankGroups = {{ rank_groups_json | safe }};
+const expandedRanks = new Set();
+
+function filterByEvent() {
+    const eventId = document.getElementById('eventFilter').value;
+    const url = new URL(window.location);
+    if (eventId) {
+        url.searchParams.set('event', eventId);
+    } else {
+        url.searchParams.delete('event');
+    }
+    window.location.href = url.toString();
+}
+
+function clearEventFilter() {
+    const url = new URL(window.location);
+    url.searchParams.delete('event');
+    window.location.href = url.toString();
+}
+
+function formatPoints(value) {
+    if (value === null || value === undefined) {
+        return '—';
+    }
+    return Number(value).toFixed(2);
+}
+
+function formatPlace(value) {
+    if (value === null || value === undefined) {
+        return '—';
+    }
+    return value;
+}
+
+function formatDate(dateStr) {
+    if (!dateStr) {
+        return '—';
+    }
+    const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) {
+        return dateStr;
+    }
+    return date.toLocaleDateString('ru-RU');
+}
+
+function sortAthletes(list, sortKey) {
+    const athletes = list.slice();
+    switch (sortKey) {
+        case 'name':
+            athletes.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+            break;
+        case 'points':
+            athletes.sort((a, b) => (b.best_points || 0) - (a.best_points || 0));
+            break;
+        case 'participations':
+            athletes.sort((a, b) => (b.participations || 0) - (a.participations || 0));
+            break;
+        default:
+            athletes.sort((a, b) => {
+                const placeA = a.best_place !== null && a.best_place !== undefined ? a.best_place : 999;
+                const placeB = b.best_place !== null && b.best_place !== undefined ? b.best_place : 999;
+                if (placeA !== placeB) {
+                    return placeA - placeB;
+                }
+                return (b.best_points || 0) - (a.best_points || 0);
+            });
+    }
+    return athletes;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const rankSearchInput = document.getElementById('rankSearch');
+    const genderFilter = document.getElementById('genderFilter');
+    const rankSortSelect = document.getElementById('rankSort');
+    const athleteSortSelect = document.getElementById('athleteSort');
+    const hideEmptySwitch = document.getElementById('hideEmpty');
+    const ranksAccordion = document.getElementById('ranksAccordion');
+    const rankSummary = document.getElementById('rankSummary');
+
+    function applyFilters() {
+        const searchTerm = rankSearchInput.value.trim().toLowerCase();
+        const genderValue = genderFilter.value;
+        const rankSortValue = rankSortSelect.value;
+        const athleteSortValue = athleteSortSelect.value;
+        const hideEmpty = hideEmptySwitch.checked;
+
+        const processed = [];
+
+        rankGroups.forEach(rank => {
+            if (genderValue && rank.gender !== genderValue) {
+                return;
+            }
+
+            let athletes = rank.athletes.slice();
+
+            if (searchTerm) {
+                const rankNameMatch = matchesSearch(rank.display_name, searchTerm);
+                if (!rankNameMatch) {
+                    athletes = athletes.filter(athlete => matchesSearch(athlete.name, searchTerm));
+                }
+                if (!rankNameMatch && athletes.length === 0) {
+                    return;
+                }
+            }
+
+            athletes = sortAthletes(athletes, athleteSortValue);
+
+            if (hideEmpty && athletes.length === 0) {
+                return;
+            }
+
+            processed.push({
+                ...rank,
+                athletes
+            });
+        });
+
+        processed.sort((a, b) => {
+            if (rankSortValue === 'name') {
+                return a.display_name.localeCompare(b.display_name, 'ru');
+            }
+            if (rankSortValue === 'athletes') {
+                const diff = b.athletes.length - a.athletes.length;
+                if (diff !== 0) {
+                    return diff;
+                }
+                return a.display_name.localeCompare(b.display_name, 'ru');
+            }
+            const weightDiff = a.weight - b.weight;
+            if (weightDiff !== 0) {
+                return weightDiff;
+            }
+            return a.display_name.localeCompare(b.display_name, 'ru');
+        });
+
+        return processed;
+    }
+
+    function updateSummary(data) {
+        const ranksWithData = data.filter(rank => rank.athletes.length > 0).length;
+        const totalAthletes = data.reduce((acc, rank) => acc + rank.athletes.length, 0);
+        const totalFree = data.reduce((acc, rank) => acc + (rank.total_free_participations || 0), 0);
+        rankSummary.textContent = `Показано разрядов: ${data.length}. С данными: ${ranksWithData}. Спортсменов: ${totalAthletes}. Бесплатных стартов (событий): ${totalFree}.`;
+    }
+
+    function renderRanks() {
+        const data = applyFilters();
+
+        if (expandedRanks.size === 0 && data.length > 0) {
+            expandedRanks.add(data[0].anchor);
+        }
+
+        ranksAccordion.innerHTML = '';
+
+        if (data.length === 0) {
+            ranksAccordion.innerHTML = '<div class="rank-empty">Ничего не найдено. Попробуйте изменить условия поиска.</div>';
+            updateSummary([]);
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+
+        data.forEach(rank => {
+            const isExpanded = expandedRanks.has(rank.anchor);
+            const collapseId = `collapse-${rank.anchor}`;
+            const headingId = `heading-${rank.anchor}`;
+
+            const accordionItem = document.createElement('div');
+            accordionItem.className = 'accordion-item rank-accordion-item mb-3 shadow-sm border-0';
+
+            const topAthlete = rank.athletes[0];
+            const bestPlace = topAthlete ? formatPlace(topAthlete.best_place) : '—';
+            const bestPoints = topAthlete ? formatPoints(topAthlete.best_points) : '—';
+            const freeCount = rank.total_free_participations || 0;
+
+            accordionItem.innerHTML = `
+                <h2 class="accordion-header" id="${headingId}">
+                    <button class="accordion-button ${isExpanded ? '' : 'collapsed'}" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="${isExpanded}" aria-controls="${collapseId}">
+                        <div>
+                            <span class="fw-semibold">${rank.display_name}</span>
+                            <span class="badge bg-light text-dark border ms-2">${rank.gender_label}</span>
+                        </div>
+                        <div class="rank-header-meta">
+                            <span class="rank-stat-pill"><i class="fas fa-users"></i>${rank.athletes.length}</span>
+                            <span class="rank-stat-pill"><i class="fas fa-trophy"></i>${bestPlace}</span>
+                            <span class="rank-stat-pill"><i class="fas fa-star"></i>${bestPoints}</span>
+                            <span class="rank-stat-pill text-success"><i class="fas fa-ticket-alt"></i>${freeCount}</span>
+                        </div>
+                    </button>
+                </h2>
+                <div id="${collapseId}" class="accordion-collapse collapse ${isExpanded ? 'show' : ''}" aria-labelledby="${headingId}" data-anchor="${rank.anchor}">
+                    <div class="accordion-body">
+                        ${rank.athletes.length ? `
+                            <div class="table-responsive" style="max-height: 360px;">
+                                <table class="table table-sm align-middle rank-table mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 50px;">#</th>
+                                            <th>Спортсмен</th>
+                                            <th class="text-center" style="width: 130px;">Лучшее место</th>
+                                            <th class="text-center" style="width: 130px;">Лучшие баллы</th>
+                                            <th class="text-center" style="width: 120px;">Участий</th>
+                                            <th class="text-center" style="width: 120px;">Турниров</th>
+                                            <th class="text-center" style="width: 150px;">Дата последнего старта</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${rank.athletes.map((athlete, idx) => {
+                                            const rowClass = athlete.has_free_participation ? 'table-success' : '';
+                                            const freeBadge = athlete.has_free_participation ? '<span class="badge bg-success ms-2">БЕСП</span>' : '';
+                                            return `
+                                                <tr class="${rowClass}">
+                                                    <td class="text-muted">${idx + 1}</td>
+                                                    <td>
+                                                        <a href="/athlete/${athlete.id}" class="text-decoration-none">
+                                                            ${athlete.name}
+                                                        </a>
+                                                        ${freeBadge}
+                                                    </td>
+                                                    <td class="text-center">
+                                                        ${formatPlace(athlete.best_place)}
+                                                    </td>
+                                                    <td class="text-center">
+                                                        ${formatPoints(athlete.best_points)}
+                                                    </td>
+                                                    <td class="text-center">
+                                                        ${athlete.participations ?? '—'}
+                                                        ${athlete.free_participations ? `<div class="text-success small">Бесплатных: ${athlete.free_participations}</div>` : ''}
+                                                    </td>
+                                                    <td class="text-center">
+                                                        ${athlete.events_count ?? '—'}
+                                                    </td>
+                                                    <td class="text-center">
+                                                        ${formatDate(athlete.last_event_date)}
+                                                    </td>
+                                                </tr>
+                                            `;
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ` : `
+                            <div class="rank-empty">Нет спортсменов в этом разряде пока что.</div>
+                        `}
+                    </div>
+                </div>
+            `;
+
+            fragment.appendChild(accordionItem);
+        });
+
+        ranksAccordion.appendChild(fragment);
+
+        ranksAccordion.querySelectorAll('.accordion-collapse').forEach(collapseEl => {
+            const anchor = collapseEl.getAttribute('data-anchor');
+            collapseEl.addEventListener('shown.bs.collapse', () => expandedRanks.add(anchor));
+            collapseEl.addEventListener('hidden.bs.collapse', () => expandedRanks.delete(anchor));
+        });
+
+        updateSummary(data);
+    }
+
+    rankSearchInput.addEventListener('input', () => renderRanks());
+    [genderFilter, rankSortSelect, athleteSortSelect, hideEmptySwitch].forEach(control => {
+        control.addEventListener('change', () => renderRanks());
+    });
+
+    renderRanks();
+});
+</script>
+{% endblock %}

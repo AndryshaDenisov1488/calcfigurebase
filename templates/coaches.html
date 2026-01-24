@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+
+{% block title %}Тренеры - Система управления турнирами{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Мобильная адаптация для страницы тренеров */
+    @media (max-width: 768px) {
+        .card-header .d-flex {
+            flex-direction: column;
+            align-items: stretch !important;
+            gap: 0.75rem;
+        }
+        
+        .card-header .form-control {
+            width: 100% !important;
+            margin-right: 0 !important;
+            margin-bottom: 0.5rem;
+        }
+        
+        .card-header .badge {
+            align-self: flex-start;
+        }
+        
+        .table-responsive {
+            font-size: 0.875rem;
+        }
+        
+        .table th,
+        .table td {
+            padding: 0.5rem 0.25rem;
+        }
+        
+        .badge {
+            font-size: 0.75rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4><i class="fas fa-user-tie"></i> Тренеры</h4>
+                <div class="d-flex align-items-center">
+                    <input type="text" id="searchInput" class="form-control me-2" placeholder="Поиск по имени тренера (гибкий поиск, любой регистр)..." style="width: 300px;">
+                    <span class="badge bg-primary" id="coachesCount">0 тренеров</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="loadingSpinner" class="text-center py-4">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Загрузка...</span>
+                    </div>
+                    <p class="mt-2 text-muted">Загрузка данных...</p>
+                </div>
+                
+                <div id="coachesTable" style="display: none;">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>№</th>
+                                    <th class="sortable" data-sort="name">
+                                        Имя тренера <i class="fas fa-sort"></i>
+                                    </th>
+                                    <th class="sortable" data-sort="athletes">
+                                        Спортсменов <i class="fas fa-sort"></i>
+                                    </th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="coachesTableBody">
+                                <!-- Данные будут загружены через AJAX -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div id="noResults" class="text-center py-5" style="display: none;">
+                    <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                    <h5 class="text-muted">Тренеры не найдены</h5>
+                    <p class="text-muted">Попробуйте изменить поисковый запрос</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let searchTimeout;
+let currentSort = { by: 'athletes', order: 'desc' };
+
+function loadCoaches(search = '', sortBy = currentSort.by, sortOrder = currentSort.order) {
+    const loadingSpinner = document.getElementById('loadingSpinner');
+    const coachesTable = document.getElementById('coachesTable');
+    const noResults = document.getElementById('noResults');
+    const coachesTableBody = document.getElementById('coachesTableBody');
+    const coachesCount = document.getElementById('coachesCount');
+    
+    loadingSpinner.style.display = 'block';
+    coachesTable.style.display = 'none';
+    noResults.style.display = 'none';
+    
+    const url = new URL('/api/coaches', window.location.origin);
+    if (search) url.searchParams.set('search', search);
+    if (sortBy) url.searchParams.set('sort_by', sortBy);
+    if (sortOrder) url.searchParams.set('sort_order', sortOrder);
+    
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            loadingSpinner.style.display = 'none';
+            
+            if (data.coaches && data.coaches.length > 0) {
+                coachesTable.style.display = 'block';
+                coachesCount.textContent = `${data.coaches.length} тренеров`;
+                
+                coachesTableBody.innerHTML = data.coaches.map((coach, index) => `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td>
+                            <strong>${coach.name}</strong>
+                        </td>
+                        <td>
+                            <span class="badge bg-primary">${coach.athletes_count} спортсменов</span>
+                        </td>
+                        <td>
+                            <a href="/coach/${coach.id}" class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-user"></i> Профиль
+                            </a>
+                        </td>
+                    </tr>
+                `).join('');
+            } else {
+                noResults.style.display = 'block';
+                coachesCount.textContent = '0 тренеров';
+            }
+        })
+        .catch(error => {
+            console.error('Ошибка загрузки тренеров:', error);
+            loadingSpinner.style.display = 'none';
+            noResults.style.display = 'block';
+        });
+}
+
+// Поиск в реальном времени
+document.getElementById('searchInput').addEventListener('input', function(e) {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        loadCoaches(e.target.value.trim());
+    }, 300);
+});
+
+// Поиск по Enter
+document.getElementById('searchInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        clearTimeout(searchTimeout);
+        loadCoaches(e.target.value.trim());
+    }
+});
+
+// Сортировка
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.sortable').forEach(header => {
+        header.style.cursor = 'pointer';
+        header.addEventListener('click', function() {
+            const sortBy = this.dataset.sort;
+            let newOrder = 'desc';
+            
+            if (currentSort.by === sortBy) {
+                newOrder = currentSort.order === 'asc' ? 'desc' : 'asc';
+            }
+            
+            currentSort = { by: sortBy, order: newOrder };
+            
+            // Обновляем иконки
+            document.querySelectorAll('.sortable i').forEach(icon => {
+                icon.className = 'fas fa-sort';
+            });
+            const activeIcon = this.querySelector('i');
+            if (activeIcon) {
+                activeIcon.className = newOrder === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down';
+            }
+            
+            const searchValue = document.getElementById('searchInput').value.trim();
+            loadCoaches(searchValue, sortBy, newOrder);
+        });
+    });
+    
+    // Загружаем данные при загрузке страницы
+    loadCoaches();
+});
+</script>
+{% endblock %}

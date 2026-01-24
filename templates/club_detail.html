@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+
+{% block title %}{{ club.name }} - Система управления турнирами{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <!-- Заголовок клуба -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h4><i class="fas fa-school"></i> {{ club.name }}</h4>
+                    <a href="{{ url_for('public.clubs') }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Назад к списку школ
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="text-muted">Информация о школе/клубе</h6>
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Название:</strong></td>
+                                <td>{{ club.name }}</td>
+                            </tr>
+                            {% if club.place %}
+                            <tr>
+                                <td><strong>Место:</strong></td>
+                                <td>{{ club.place }}</td>
+                            </tr>
+                            {% endif %}
+                            {% if club.status %}
+                            <tr>
+                                <td><strong>Статус:</strong></td>
+                                <td>
+                                    <span class="badge bg-{{ 'success' if club.status == 'A' else 'secondary' }}">
+                                        {{ 'Активный' if club.status == 'A' else 'Неактивный' }}
+                                    </span>
+                                </td>
+                            </tr>
+                            {% endif %}
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted">Статистика</h6>
+                        <div class="row text-center">
+                            <div class="col-4">
+                                <div class="stat-item">
+                                    <h3 class="text-primary">{{ athletes_data|length }}</h3>
+                                    <small class="text-muted">Спортсменов</small>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="stat-item">
+                                    {% set athletes_with_free = [] %}
+                                    {% for athlete_data in athletes_data %}
+                                        {% set participations = athlete_data.participations %}
+                                        {% if participations|selectattr('participant.pct_ppname', 'equalto', 'БЕСП')|list|length > 0 %}
+                                            {% set _ = athletes_with_free.append(1) %}
+                                        {% endif %}
+                                    {% endfor %}
+                                    {% set free_count = athletes_with_free|length %}
+                                    {% set total_count = athletes_data|length %}
+                                    {% set free_percentage = (free_count / total_count * 100)|round(1) if total_count > 0 else 0 %}
+                                    <h3 class="text-success">{{ free_count }}</h3>
+                                    <small class="text-muted">С бесплатным участием</small>
+                                    <br><small class="text-success fw-bold">{{ free_percentage }}%</small>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="stat-item">
+                                    <h3 class="text-info">
+                                        {{ athletes_data|map(attribute='participations')|map('length')|sum }}
+                                    </h3>
+                                    <small class="text-muted">Участий</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Список спортсменов -->
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-users"></i> Спортсмены школы</h5>
+            </div>
+            <div class="card-body">
+                {% if athletes_data %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Спортсмен</th>
+                                    <th class="text-center">Участий</th>
+                                    <th class="text-center">Лучшее место</th>
+                                    <th class="text-center">Лучший результат</th>
+                                    <th class="text-center">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for athlete_data in athletes_data %}
+                                {% set athlete = athlete_data.athlete %}
+                                {% set participations = athlete_data.participations %}
+                                {% set best_place = participations|selectattr('participant.total_place')|map(attribute='participant.total_place')|min %}
+                                {% set best_score = participations|selectattr('participant.total_points')|map(attribute='participant.total_points')|max %}
+                                {% set has_free_participation = participations|selectattr('participant.pct_ppname', 'equalto', 'БЕСП')|list|length > 0 %}
+                                {% set has_withdrawn = participations|selectattr('participant.status', 'equalto', 'R')|list|length > 0 %}
+                                {% set has_withdrawn_w = participations|selectattr('participant.status', 'equalto', 'W')|list|length > 0 %}
+                                <tr class="{{ 'table-success' if has_free_participation else '' }}">
+                                    <td>
+                                        <div>
+                                            <strong>{{ athlete.full_name }}</strong>
+                                            {% if has_free_participation %}
+                                                <i class="fas fa-gift text-success ms-2" title="Имеет бесплатное участие"></i>
+                                            {% endif %}
+                                            {% if has_withdrawn or has_withdrawn_w %}
+                                                <span class="badge bg-warning text-dark ms-2" title="Снята с соревнований">
+                                                    <i class="fas fa-ban"></i> Снята
+                                                </span>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge bg-primary">{{ participations|length }}</span>
+                                    </td>
+                                    <td class="text-center">
+                                        {% if best_place %}
+                                            <span class="badge bg-{{ 'success' if best_place <= 3 else 'secondary' }}">
+                                                {{ best_place }}
+                                            </span>
+                                        {% else %}
+                                            {% if has_withdrawn or has_withdrawn_w %}
+                                                <span class="text-muted" title="Снята с соревнований">-</span>
+                                            {% else %}
+                                                <span class="text-muted">-</span>
+                                            {% endif %}
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        {% if best_score %}
+                                            <strong>{{ (best_score)|round(2) }}</strong>
+                                        {% else %}
+                                            {% if has_withdrawn or has_withdrawn_w %}
+                                                <span class="text-muted" title="Снята с соревнований">-</span>
+                                            {% else %}
+                                                <span class="text-muted">-</span>
+                                            {% endif %}
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        <a href="{{ url_for('public.athlete_detail', athlete_id=athlete.id) }}" class="btn btn-outline-primary btn-sm">
+                                            <i class="fas fa-user"></i> Профиль
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-users fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">Спортсмены не найдены</h5>
+                        <p class="text-muted">В этой школе пока нет зарегистрированных спортсменов</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- История участий -->
+        {% if athletes_data %}
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5><i class="fas fa-history"></i> История участий</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Спортсмен</th>
+                                <th>Турнир</th>
+                                <th>Категория</th>
+                                <th>Дата</th>
+                                <th class="text-center">Место</th>
+                                <th class="text-center">Баллы</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for athlete_data in athletes_data %}
+                            {% set athlete = athlete_data.athlete %}
+                            {% for participation in athlete_data.participations %}
+                            {% set is_free_participation = participation.participant.pct_ppname == 'БЕСП' %}
+                            <tr class="{{ 'table-success' if is_free_participation else '' }}">
+                                <td>
+                                    <a href="{{ url_for('public.athlete_detail', athlete_id=athlete.id) }}" class="text-decoration-none">
+                                        {{ athlete.full_name }}
+                                    </a>
+                                    {% if is_free_participation %}
+                                        <i class="fas fa-gift text-success ms-2" title="Бесплатное участие"></i>
+                                    {% endif %}
+                                    {% if participation.participant.status == 'R' or participation.participant.status == 'W' %}
+                                        <span class="badge bg-warning text-dark ms-2" title="Снята с соревнований">
+                                            <i class="fas fa-ban"></i> Снята
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ participation.event.name }}</td>
+                                <td>{{ participation.category.name }}</td>
+                                <td>
+                                    {% if participation.event.begin_date %}
+                                        {{ participation.event.begin_date.strftime('%d.%m.%Y') }}
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if participation.participant.total_place %}
+                                        <span class="badge bg-{{ 'success' if participation.participant.total_place <= 3 else 'secondary' }}">
+                                            {{ participation.participant.total_place }}
+                                        </span>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if participation.participant.total_points %}
+                                        <strong>{{ (participation.participant.total_points)|round(2) }}</strong>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
