@@ -627,12 +627,13 @@ def api_athletes():
         else:
             athletes_query = athletes_query.order_by(order_column.asc())
     
-    # Для отладки - логируем SQL запрос (только если есть поиск)
+    # Для отладки - логируем информацию о поиске
     if search:
         try:
-            logger.debug(f"SQL запрос для поиска '{search}': {str(athletes_query.statement)}")
-        except:
-            pass
+            logger.info(f"Поиск: '{search}' (нормализовано: '{normalize_search_term(search)}')")
+            logger.debug(f"SQL запрос для поиска: {str(athletes_query.statement)}")
+        except Exception as e:
+            logger.warning(f"Ошибка при логировании SQL: {e}")
     
     athletes = athletes_query.paginate(
         page=page, per_page=per_page, error_out=False
@@ -640,7 +641,7 @@ def api_athletes():
     
     # Для отладки - логируем количество найденных результатов
     if search:
-        logger.info(f"Поиск '{search}': найдено {athletes.total} спортсменов")
+        logger.info(f"Поиск '{search}': найдено {athletes.total} спортсменов из {athletes_query.count() if hasattr(athletes_query, 'count') else 'N/A'} возможных")
     
     # Получаем данные участников для всех спортсменов одним запросом
     athlete_ids = [athlete.id for athlete, club in athletes.items]

@@ -57,18 +57,31 @@ function initializeSearch() {
 
 // Обработка поиска (только для статических таблиц)
 function handleSearch(event) {
-    // Дополнительная проверка - не обрабатываем поиск на странице спортсменов
+    // КРИТИЧЕСКАЯ проверка в самом начале - полностью отключаем для страницы спортсменов
     const pathname = window.location.pathname;
     if (pathname === '/athletes' || pathname.startsWith('/athletes/')) {
+        console.log('[handleSearch] Отключен для страницы спортсменов');
+        return;
+    }
+    
+    // Проверяем наличие события и цели
+    if (!event || !event.target) {
         return;
     }
     
     // Проверяем, что это не поле поиска спортсменов
-    if (event.target.id === 'searchInput' || event.target.closest('#athletesTable')) {
+    const targetId = event.target.id;
+    const targetType = event.target.type;
+    
+    if (targetId === 'searchInput' || 
+        (event.target.closest && event.target.closest('#athletesTable')) ||
+        (event.target.closest && event.target.closest('.card') && event.target.closest('.card').querySelector('#athletesTable'))) {
+        console.log('[handleSearch] Пропущен - поле поиска спортсменов');
         return;
     }
     
-    const searchTerm = event.target.value.toLowerCase();
+    // Проверяем наличие всех необходимых элементов перед использованием
+    const searchTerm = event.target.value ? event.target.value.toLowerCase() : '';
     const card = event.target.closest('.card');
     
     if (!card) {
@@ -76,7 +89,6 @@ function handleSearch(event) {
     }
     
     const table = card.querySelector('table');
-    
     if (!table) {
         return; // Если нет таблицы, выходим
     }
@@ -86,9 +98,14 @@ function handleSearch(event) {
         return; // Если нет tbody, выходим
     }
     
+    // Только теперь выполняем поиск
     const rows = tbody.querySelectorAll('tr');
+    if (!rows || rows.length === 0) {
+        return;
+    }
+    
     rows.forEach(row => {
-        const text = row.textContent.toLowerCase();
+        const text = row.textContent ? row.textContent.toLowerCase() : '';
         if (text.includes(searchTerm)) {
             row.style.display = '';
         } else {
