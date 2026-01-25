@@ -13,3 +13,4 @@ google-auth-oauthlib==1.1.0
 google-auth-httplib2==0.1.1
 reportlab==4.0.7
 alembic==1.12.1
+redis==5.0.1
