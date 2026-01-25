@@ -7,7 +7,7 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request, Response
 
 from extensions import db
-from models import Event, Category, Athlete, Participant, Club, Segment, Performance, Coach, CoachAssignment
+from models import Event, Category, Athlete, Participant, Club, Segment, Performance, Coach, CoachAssignment, Element, ComponentScore
 from season_utils import get_season_from_date
 from services.rank_service import normalize_category_name, get_rank_weight
 from utils.search_utils import normalize_search_term, create_multi_field_search_filter
@@ -1004,4 +1004,182 @@ def api_coaches():
         return jsonify({'coaches': coaches})
     except Exception as e:
         logger.error(f"Ошибка в api_coaches: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/participant/<int:participant_id>/performance-details')
+def api_participant_performance_details(participant_id):
+    """API для получения детальной информации о выступлении участника (распечатка)"""
+    try:
+        participant = Participant.query.get_or_404(participant_id)
+        
+        # Получаем все выступления (performance) для этого участника
+        performances = Performance.query.filter_by(participant_id=participant_id).order_by(Performance.index).all()
+        
+        # Получаем информацию о событии и категории
+        event = Event.query.get(participant.event_id)
+        category = Category.query.get(participant.category_id)
+        athlete = Athlete.query.get(participant.athlete_id)
+        club = Club.query.get(athlete.club_id) if athlete and athlete.club_id else None
+        
+        # Формируем данные для каждого выступления
+        performances_data = []
+        for perf in performances:
+            segment = Segment.query.get(perf.segment_id)
+            
+            # Получаем элементы
+            elements = Element.query.filter_by(performance_id=perf.id).order_by(Element.order_num).all()
+            elements_data = []
+            for elem in elements:
+                judge_scores = elem.judge_scores or {}
+                # Извлекаем оценки судей J1, J2, J3 и т.д.
+                judge_scores_list = []
+                for j in range(1, 16):  # Обычно до 9 судей, но на всякий случай до 15
+                    key = f'J{j:02d}'
+                    score = judge_scores.get(key)
+                    if score is not None:
+                        judge_scores_list.append(score)
+                    else:
+                        # Пробуем без нуля впереди
+                        key_alt = f'J{j}'
+                        score = judge_scores.get(key_alt)
+                        if score is not None:
+                            judge_scores_list.append(score)
+                        else:
+                            break  # Если нет оценки, дальше тоже не будет
+                
+                # Форматируем базовую стоимость и GOE
+                base_value = None
+                if elem.base_value is not None:
+                    base_value = elem.base_value / 100.0 if elem.base_value > 100 else elem.base_value
+                
+                goe_result = None
+                if elem.goe_result is not None:
+                    goe_result = elem.goe_result / 100.0 if abs(elem.goe_result) > 5 else elem.goe_result
+                
+                element_score = None
+                if elem.result is not None:
+                    element_score = elem.result / 100.0 if elem.result > 100 else elem.result
+                elif base_value is not None and goe_result is not None:
+                    element_score = base_value + goe_result
+                
+                elements_data.append({
+                    'order_num': elem.order_num,
+                    'executed_code': elem.executed_code or elem.planned_code or '',
+                    'info_code': elem.info_code or '',
+                    'base_value': round(base_value, 2) if base_value is not None else None,
+                    'goe_result': round(goe_result, 2) if goe_result is not None else None,
+                    'penalty': elem.penalty,
+                    'result': round(element_score, 2) if element_score is not None else None,
+                    'judge_scores': judge_scores_list[:3]  # Первые 3 судьи для отображения
+                })
+            
+            # Получаем компоненты программы
+            components = ComponentScore.query.filter_by(performance_id=perf.id).all()
+            components_data = []
+            for comp in components:
+                judge_scores = comp.judge_scores or {}
+                # Извлекаем оценки судей
+                judge_scores_list = []
+                for j in range(1, 16):
+                    key = f'J{j:02d}'
+                    score = judge_scores.get(key)
+                    if score is not None:
+                        judge_scores_list.append(score / 100.0 if score > 10 else score)
+                    else:
+                        key_alt = f'J{j}'
+                        score = judge_scores.get(key_alt)
+                        if score is not None:
+                            judge_scores_list.append(score / 100.0 if score > 10 else score)
+                        else:
+                            break
+                
+                # Вычисляем итоговую оценку компонента
+                component_result = None
+                if comp.result is not None:
+                    component_result = comp.result / 100.0 if comp.result > 100 else comp.result
+                elif judge_scores_list and comp.factor:
+                    avg_score = sum(judge_scores_list) / len(judge_scores_list) if judge_scores_list else 0
+                    component_result = avg_score * comp.factor
+                
+                # Определяем название компонента
+                component_name_map = {
+                    'SS': 'Мастерство катания',
+                    'TR': 'Переходы',
+                    'PE': 'Представление',
+                    'CH': 'Композиция',
+                    'IN': 'Интерпретация',
+                    'CO': 'Композиция',
+                    'PR': 'Представление',
+                    'SK': 'Мастерство катания'
+                }
+                component_name = component_name_map.get(comp.component_type, comp.component_type or 'Компонент')
+                
+                components_data.append({
+                    'type': comp.component_type,
+                    'name': component_name,
+                    'factor': comp.factor,
+                    'judge_scores': judge_scores_list[:3] if len(judge_scores_list) >= 3 else judge_scores_list,
+                    'result': round(component_result, 2) if component_result is not None else None
+                })
+            
+            # Форматируем общие баллы
+            tes_total = None
+            if perf.tes_total is not None:
+                tes_total = perf.tes_total / 100.0 if perf.tes_total > 1000 else perf.tes_total
+            
+            pcs_total = None
+            if perf.pcs_total is not None:
+                pcs_total = perf.pcs_total / 100.0 if perf.pcs_total > 1000 else perf.pcs_total
+            
+            deductions = None
+            if perf.deductions is not None:
+                deductions = abs(perf.deductions) / 100.0 if abs(perf.deductions) > 10 else abs(perf.deductions)
+            
+            performances_data.append({
+                'id': perf.id,
+                'segment_name': segment.name if segment else 'Неизвестный сегмент',
+                'segment_type': segment.segment_type if segment else None,
+                'place': perf.place,
+                'points': round(perf.points, 2) if perf.points else None,
+                'tes_total': round(tes_total, 2) if tes_total is not None else None,
+                'pcs_total': round(pcs_total, 2) if pcs_total is not None else None,
+                'deductions': round(deductions, 2) if deductions is not None else 0.00,
+                'elements': elements_data,
+                'components': components_data
+            })
+        
+        # Формируем итоговые данные
+        result = {
+            'participant': {
+                'id': participant.id,
+                'bib_number': participant.bib_number,
+                'total_place': participant.total_place,
+                'total_points': round(participant.total_points, 2) if participant.total_points else None,
+                'status': participant.status,
+                'coach': participant.coach
+            },
+            'event': {
+                'id': event.id if event else None,
+                'name': event.name if event else 'Неизвестный турнир',
+                'begin_date': event.begin_date.strftime('%d.%m.%Y') if event and event.begin_date else None,
+                'end_date': event.end_date.strftime('%d.%m.%Y') if event and event.end_date else None,
+                'place': event.place if event else None
+            },
+            'category': {
+                'id': category.id if category else None,
+                'name': category.name if category else 'Неизвестная категория',
+                'gender': category.gender if category else None,
+                'category_type': category.category_type if category else None
+            },
+            'athlete': {
+                'id': athlete.id if athlete else None,
+                'full_name': athlete.full_name if athlete else 'Неизвестный спортсмен',
+                'club_name': club.name if club else None
+            },
+            'performances': performances_data
+        }
+        
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Ошибка в api_participant_performance_details: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500

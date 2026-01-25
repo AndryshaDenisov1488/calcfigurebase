@@ -397,6 +397,162 @@
     .medal.gold { background-color: #ffd700; color: #000; }
     .medal.silver { background-color: #c0c0c0; color: #000; }
     .medal.bronze { background-color: #cd7f32; color: #000; }
+    
+    /* Стили для распечатки */
+    .printout-container {
+        background: #fff;
+        border: 2px solid #dee2e6;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    
+    .printout-header {
+        border-bottom: 2px solid #dee2e6;
+        padding-bottom: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    .printout-header h5 {
+        margin: 0;
+        font-weight: 600;
+        color: #212529;
+    }
+    
+    .printout-header .event-info {
+        color: #6c757d;
+        font-size: 0.9rem;
+        margin-top: 0.5rem;
+    }
+    
+    .printout-summary {
+        background: #f8f9fa;
+        border-radius: 6px;
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    .printout-summary table {
+        width: 100%;
+        margin: 0;
+    }
+    
+    .printout-summary td {
+        padding: 0.5rem;
+        border: 1px solid #dee2e6;
+        font-weight: 500;
+    }
+    
+    .printout-summary td:first-child {
+        background: #e9ecef;
+        font-weight: 600;
+        width: 40%;
+    }
+    
+    .printout-section {
+        margin-bottom: 2rem;
+    }
+    
+    .printout-section h6 {
+        background: #007bff;
+        color: white;
+        padding: 0.75rem 1rem;
+        margin: 0 0 1rem 0;
+        border-radius: 4px;
+        font-weight: 600;
+        font-size: 0.95rem;
+    }
+    
+    .printout-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+        margin-bottom: 1rem;
+    }
+    
+    .printout-table th {
+        background: #007bff;
+        color: white;
+        padding: 0.75rem 0.5rem;
+        text-align: center;
+        font-weight: 600;
+        border: 1px solid #0056b3;
+        font-size: 0.8rem;
+    }
+    
+    .printout-table td {
+        padding: 0.5rem;
+        text-align: center;
+        border: 1px solid #dee2e6;
+        vertical-align: middle;
+    }
+    
+    .printout-table tbody tr:nth-child(even) {
+        background: #f8f9fa;
+    }
+    
+    .printout-table tbody tr:hover {
+        background: #e9ecef;
+    }
+    
+    .printout-table .element-code {
+        font-weight: 600;
+        font-family: 'Courier New', monospace;
+        color: #007bff;
+    }
+    
+    .printout-table .score-value {
+        font-weight: 600;
+        color: #212529;
+    }
+    
+    .printout-table .judge-score {
+        font-size: 0.8rem;
+        color: #6c757d;
+    }
+    
+    .printout-total {
+        background: #e9ecef;
+        font-weight: 700;
+        font-size: 1rem;
+    }
+    
+    .toggle-printout {
+        transition: transform 0.3s ease;
+    }
+    
+    .toggle-printout.expanded {
+        transform: rotate(180deg);
+    }
+    
+    .printout-row {
+        background: #f8f9fa;
+    }
+    
+    .printout-error {
+        color: #dc3545;
+        padding: 1rem;
+        text-align: center;
+        background: #f8d7da;
+        border-radius: 4px;
+        border: 1px solid #f5c6cb;
+    }
+    
+    @media (max-width: 768px) {
+        .printout-container {
+            padding: 1rem;
+        }
+        
+        .printout-table {
+            font-size: 0.75rem;
+        }
+        
+        .printout-table th,
+        .printout-table td {
+            padding: 0.375rem 0.25rem;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -576,6 +732,7 @@
                         <table class="table table-hover">
                             <thead>
                                 <tr>
+                                    <th style="width: 30px;"></th>
                                     <th>Турнир</th>
                                     <th>Категория</th>
                                     <th>Дата</th>
@@ -585,7 +742,14 @@
                             </thead>
                             <tbody>
                                 {% for event, category, participant in participations %}
-                                <tr {% if participant.pct_ppname == 'БЕСП' %}class="table-success"{% elif participant.status == 'R' or participant.status == 'W' %}class="table-warning"{% endif %}>
+                                <tr data-participant-id="{{ participant.id }}" {% if participant.pct_ppname == 'БЕСП' %}class="table-success"{% elif participant.status == 'R' or participant.status == 'W' %}class="table-warning"{% endif %}>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-primary toggle-printout" 
+                                                data-participant-id="{{ participant.id }}"
+                                                title="Показать распечатку">
+                                            <i class="fas fa-chevron-down"></i>
+                                        </button>
+                                    </td>
                                     <td>
                                         <strong>{{ event.name }}</strong>
                                         {% if event.place %}
@@ -636,6 +800,18 @@
                                                 <span class="text-muted">-</span>
                                             {% endif %}
                                         {% endif %}
+                                    </td>
+                                </tr>
+                                <tr class="printout-row" data-participant-id="{{ participant.id }}" style="display: none;">
+                                    <td colspan="6">
+                                        <div class="printout-container" data-participant-id="{{ participant.id }}">
+                                            <div class="text-center py-3">
+                                                <div class="spinner-border text-primary" role="status">
+                                                    <span class="visually-hidden">Загрузка...</span>
+                                                </div>
+                                                <p class="mt-2 text-muted">Загрузка распечатки...</p>
+                                            </div>
+                                        </div>
                                     </td>
                                 </tr>
                                 {% endfor %}
@@ -938,6 +1114,214 @@ document.addEventListener('DOMContentLoaded', function() {
             errorMessage.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Не удалось загрузить графики результатов';
             chartCard.parentNode.insertBefore(errorMessage, chartCard);
         });
+    
+    // Управление распечаткой выступлений
+    const toggleButtons = document.querySelectorAll('.toggle-printout');
+    const loadedPrintouts = new Set(); // Храним ID уже загруженных распечаток
+    
+    toggleButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const participantId = this.dataset.participantId;
+            const printoutRow = document.querySelector(`tr.printout-row[data-participant-id="${participantId}"]`);
+            const container = document.querySelector(`.printout-container[data-participant-id="${participantId}"]`);
+            
+            if (!printoutRow || !container) return;
+            
+            const isExpanded = printoutRow.style.display !== 'none';
+            
+            if (isExpanded) {
+                // Сворачиваем
+                printoutRow.style.display = 'none';
+                this.classList.remove('expanded');
+                this.querySelector('i').classList.remove('fa-chevron-up');
+                this.querySelector('i').classList.add('fa-chevron-down');
+            } else {
+                // Раскрываем
+                printoutRow.style.display = 'table-row';
+                this.classList.add('expanded');
+                this.querySelector('i').classList.remove('fa-chevron-down');
+                this.querySelector('i').classList.add('fa-chevron-up');
+                
+                // Загружаем данные, если еще не загружены
+                if (!loadedPrintouts.has(participantId)) {
+                    loadPrintoutData(participantId, container);
+                }
+            }
+        });
+    });
+    
+    function loadPrintoutData(participantId, container) {
+        fetch(`/api/participant/${participantId}/performance-details`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                loadedPrintouts.add(participantId);
+                renderPrintout(data, container);
+            })
+            .catch(error => {
+                console.error('Ошибка загрузки распечатки:', error);
+                container.innerHTML = `
+                    <div class="printout-error">
+                        <i class="fas fa-exclamation-triangle"></i> 
+                        Ошибка загрузки данных распечатки. Попробуйте обновить страницу.
+                    </div>
+                `;
+            });
+    }
+    
+    function renderPrintout(data, container) {
+        const { participant, event, category, athlete, performances } = data;
+        
+        let html = `
+            <div class="printout-header">
+                <h5>${event.name}</h5>
+                <div class="event-info">
+                    ${event.begin_date ? event.begin_date : ''}${event.end_date && event.end_date !== event.begin_date ? ' - ' + event.end_date : ''}
+                    ${event.place ? ' • ' + event.place : ''}
+                </div>
+                <div class="event-info mt-2">
+                    <strong>${category.name}</strong> • ${athlete.full_name}${athlete.club_name ? ' • ' + athlete.club_name : ''}
+                </div>
+            </div>
+            
+            <div class="printout-summary">
+                <table>
+                    <tr>
+                        <td>Старт. номер</td>
+                        <td>${participant.bib_number || '-'}</td>
+                    </tr>
+                    <tr>
+                        <td>Общая сумма за вид</td>
+                        <td><strong>${participant.total_points !== null ? participant.total_points.toFixed(2) : '-'}</strong></td>
+                    </tr>
+                    <tr>
+                        <td>Место</td>
+                        <td><strong>${participant.total_place || '-'}</strong></td>
+                    </tr>
+                </table>
+            </div>
+        `;
+        
+        // Рендерим каждое выступление (сегмент)
+        performances.forEach((perf, perfIndex) => {
+            html += `
+                <div class="printout-section">
+                    <h6>${perf.segment_name}</h6>
+            `;
+            
+            // Элементы
+            if (perf.elements && perf.elements.length > 0) {
+                html += `
+                    <h6 style="background: #28a745; margin-top: 1rem;">Выполненные элементы</h6>
+                    <table class="printout-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Выполненные элементы</th>
+                                <th>Info</th>
+                                <th>Базовая стоимость</th>
+                                <th>GOE</th>
+                                <th>J1</th>
+                                <th>J2</th>
+                                <th>J3</th>
+                                <th>Оценка бригады</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                perf.elements.forEach((elem, index) => {
+                    const judgeScores = elem.judge_scores || [];
+                    html += `
+                        <tr>
+                            <td>${elem.order_num || index + 1}</td>
+                            <td class="element-code">${elem.executed_code || '-'}</td>
+                            <td>${elem.info_code || ''}</td>
+                            <td>${elem.base_value !== null ? elem.base_value.toFixed(2) : '-'}</td>
+                            <td>${elem.goe_result !== null ? (elem.goe_result >= 0 ? '+' : '') + elem.goe_result.toFixed(2) : '-'}</td>
+                            <td class="judge-score">${judgeScores[0] !== undefined ? (judgeScores[0] >= 0 ? '+' : '') + Math.round(judgeScores[0]) : '-'}</td>
+                            <td class="judge-score">${judgeScores[1] !== undefined ? (judgeScores[1] >= 0 ? '+' : '') + Math.round(judgeScores[1]) : '-'}</td>
+                            <td class="judge-score">${judgeScores[2] !== undefined ? (judgeScores[2] >= 0 ? '+' : '') + Math.round(judgeScores[2]) : '-'}</td>
+                            <td class="score-value">${elem.result !== null ? elem.result.toFixed(2) : '-'}</td>
+                        </tr>
+                    `;
+                });
+                
+                // Итоговая строка для элементов
+                html += `
+                        <tr class="printout-total">
+                            <td colspan="8"><strong>Сумма в технической оценке</strong></td>
+                            <td><strong>${perf.tes_total !== null ? perf.tes_total.toFixed(2) : '-'}</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+                `;
+            }
+            
+            // Компоненты программы
+            if (perf.components && perf.components.length > 0) {
+                html += `
+                    <h6 style="background: #17a2b8; margin-top: 1.5rem;">Компоненты программы</h6>
+                    <table class="printout-table">
+                        <thead>
+                            <tr>
+                                <th>Компоненты программы</th>
+                                <th>Фактор</th>
+                                <th>J1</th>
+                                <th>J2</th>
+                                <th>J3</th>
+                                <th>Результат</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                
+                perf.components.forEach(comp => {
+                    const judgeScores = comp.judge_scores || [];
+                    html += `
+                        <tr>
+                            <td style="text-align: left;"><strong>${comp.name}</strong></td>
+                            <td>${comp.factor !== null ? comp.factor.toFixed(2) : '-'}</td>
+                            <td class="judge-score">${judgeScores[0] !== undefined ? judgeScores[0].toFixed(2) : '-'}</td>
+                            <td class="judge-score">${judgeScores[1] !== undefined ? judgeScores[1].toFixed(2) : '-'}</td>
+                            <td class="judge-score">${judgeScores[2] !== undefined ? judgeScores[2].toFixed(2) : '-'}</td>
+                            <td class="score-value">${comp.result !== null ? comp.result.toFixed(2) : '-'}</td>
+                        </tr>
+                    `;
+                });
+                
+                // Итоговая строка для компонентов
+                html += `
+                        <tr class="printout-total">
+                            <td colspan="5"><strong>Сумма за компоненты программы (умноженная)</strong></td>
+                            <td><strong>${perf.pcs_total !== null ? perf.pcs_total.toFixed(2) : '-'}</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+                `;
+            }
+            
+            // Снижения
+            html += `
+                <div class="printout-summary" style="margin-top: 1.5rem;">
+                    <table>
+                        <tr>
+                            <td>Общая сумма снижений</td>
+                            <td><strong>${perf.deductions !== null ? perf.deductions.toFixed(2) : '0.00'}</strong></td>
+                        </tr>
+                    </table>
+                </div>
+            `;
+            
+            html += `</div>`; // Закрываем printout-section
+        });
+        
+        container.innerHTML = html;
+    }
 });
 </script>
 {% endblock %}
