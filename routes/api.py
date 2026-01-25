@@ -1194,26 +1194,24 @@ def api_participant_performance_details(participant_id):
                         score = judge_scores.get(key_alt)
                     
                     if score is not None:
-                        # Исправляем ошибку "off-by-one": добавляем +1 к оценке судьи
-                        # Если оценка уже декодирована (от -5 до +3), добавляем +1
-                        # Если оценка - это код (0-15), сначала декодируем, потом добавляем +1
+                        # Декодируем оценку судьи из кода XML в значение GOE
+                        # Оценки судей хранятся в БД как коды (0-15), нужно декодировать
                         try:
-                            score_num = int(score) if isinstance(score, (int, str)) else score
-                            # Если значение в диапазоне декодированных GOE (-5 до +3), добавляем +1
-                            if isinstance(score_num, (int, float)) and -5 <= score_num <= 3:
-                                score_num = score_num + 1
-                            # Если значение в диапазоне кодов (0-15), декодируем и добавляем +1
-                            elif isinstance(score_num, (int, float)) and 0 <= score_num <= 15:
-                                # Импортируем функцию декодирования
-                                from parsers.isu_calcfs_parser import ISUCalcFSParser
-                                decoded = ISUCalcFSParser._decode_goe_xml(score_num)
-                                if decoded is not None:
-                                    score_num = decoded + 1
+                            from parsers.isu_calcfs_parser import ISUCalcFSParser
+                            # Если это число (код), декодируем
+                            if isinstance(score, (int, str)):
+                                score_code = int(score) if isinstance(score, str) else score
+                                # Если значение в диапазоне кодов (0-15), декодируем
+                                if 0 <= score_code <= 15:
+                                    decoded_score = ISUCalcFSParser._decode_judge_score_xml(score_code)
+                                    judge_scores_list.append(decoded_score)
                                 else:
-                                    score_num = None
-                            judge_scores_list.append(score_num)
+                                    # Если уже декодировано (старые данные), используем как есть
+                                    judge_scores_list.append(score_code)
+                            else:
+                                judge_scores_list.append(score)
                         except (ValueError, TypeError):
-                            # Если не удалось преобразовать, оставляем как есть
+                            # Если не удалось декодировать, оставляем как есть
                             judge_scores_list.append(score)
                     else:
                         break  # Если нет оценки, дальше тоже не будет
