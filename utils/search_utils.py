@@ -54,26 +54,46 @@ def create_search_filter(model_field, search_term):
 def create_multi_field_search_filter(search_term, *fields):
     """Создает фильтр для поиска по нескольким полям
     
+    Поддерживает:
+    - Поиск по части слова
+    - Поиск по нескольким словам (AND логика)
+    - Поиск без учета регистра
+    - Поиск по любому из полей (OR логика)
+    
     Args:
         search_term: Поисковый запрос
         *fields: SQLAlchemy поля для поиска
         
     Returns:
-        SQLAlchemy OR filter condition
+        SQLAlchemy OR filter condition или None
     """
     if not search_term or not fields:
         return None
     
-    from sqlalchemy import or_
+    from sqlalchemy import or_, and_
     
     normalized_search = normalize_search_term(search_term)
     
-    # Создаем фильтры для каждого поля
-    # Используем ILIKE для поиска без учета регистра
+    # Разбиваем поисковый запрос на слова
+    search_words = normalized_search.split()
+    
+    # Если одно слово - простой поиск
+    if len(search_words) == 1:
+        filters = []
+        for field in fields:
+            if field is not None:
+                filters.append(field.ilike(f'%{normalized_search}%'))
+        return or_(*filters) if filters else None
+    
+    # Если несколько слов - ищем все слова в любом из полей
+    # Это более гибкий поиск: "Иван Петров" найдет и "Иван Петров", и "Петров Иван"
     filters = []
     for field in fields:
         if field is not None:
-            filters.append(field.ilike(f'%{normalized_search}%'))
+            # Каждое слово должно быть найдено в поле (AND между словами)
+            word_filters = [field.ilike(f'%{word}%') for word in search_words]
+            if word_filters:
+                filters.append(and_(*word_filters))
     
     return or_(*filters) if filters else None
 

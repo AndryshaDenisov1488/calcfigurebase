@@ -573,7 +573,7 @@ def api_athletes():
             Athlete.full_name_xml,
             Athlete.patronymic
         )
-        if search_filter:
+        if search_filter is not None:
             athletes_query = athletes_query.filter(search_filter)
     
     # Добавляем JOIN с Participant и Category для сортировки по разрядам
@@ -979,7 +979,7 @@ def api_coaches():
         # Поиск с нормализацией
         if search:
             search_filter = create_multi_field_search_filter(search, Coach.name)
-            if search_filter:
+            if search_filter is not None:
                 query = query.filter(search_filter)
         
         # Сортировка
@@ -1058,7 +1058,11 @@ def api_participant_performance_details(participant_id):
                 
                 element_score = None
                 if elem.result is not None:
-                    element_score = elem.result / 100.0 if elem.result > 100 else elem.result
+                    try:
+                        result_num = float(elem.result) if isinstance(elem.result, str) else elem.result
+                        element_score = result_num / 100.0 if result_num > 100 else result_num
+                    except (ValueError, TypeError):
+                        element_score = elem.result
                 elif base_value is not None and goe_result is not None:
                     element_score = base_value + goe_result
                 
@@ -1084,19 +1088,33 @@ def api_participant_performance_details(participant_id):
                     key = f'J{j:02d}'
                     score = judge_scores.get(key)
                     if score is not None:
-                        judge_scores_list.append(score / 100.0 if score > 10 else score)
+                        # Преобразуем в число, если это строка
+                        try:
+                            score_num = float(score) if isinstance(score, str) else score
+                            judge_scores_list.append(score_num / 100.0 if score_num > 10 else score_num)
+                        except (ValueError, TypeError):
+                            judge_scores_list.append(score)
                     else:
                         key_alt = f'J{j}'
                         score = judge_scores.get(key_alt)
                         if score is not None:
-                            judge_scores_list.append(score / 100.0 if score > 10 else score)
+                            # Преобразуем в число, если это строка
+                            try:
+                                score_num = float(score) if isinstance(score, str) else score
+                                judge_scores_list.append(score_num / 100.0 if score_num > 10 else score_num)
+                            except (ValueError, TypeError):
+                                judge_scores_list.append(score)
                         else:
                             break
                 
                 # Вычисляем итоговую оценку компонента
                 component_result = None
                 if comp.result is not None:
-                    component_result = comp.result / 100.0 if comp.result > 100 else comp.result
+                    try:
+                        result_num = float(comp.result) if isinstance(comp.result, str) else comp.result
+                        component_result = result_num / 100.0 if result_num > 100 else result_num
+                    except (ValueError, TypeError):
+                        component_result = comp.result
                 elif judge_scores_list and comp.factor:
                     avg_score = sum(judge_scores_list) / len(judge_scores_list) if judge_scores_list else 0
                     component_result = avg_score * comp.factor
