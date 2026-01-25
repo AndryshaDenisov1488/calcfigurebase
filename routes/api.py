@@ -552,7 +552,10 @@ def api_club_free_participation():
 def api_athletes():
     """API для получения списка спортсменов с поиском и сортировкой"""
     page = request.args.get('page', 1, type=int)
-    per_page = 20
+    per_page = request.args.get('per_page', 20, type=int)
+    # Ограничиваем per_page разумными значениями
+    if per_page not in [10, 20, 50, 100]:
+        per_page = 20
     search = request.args.get('search', '').strip()
     rank_filter = request.args.get('rank', '').strip()
     
