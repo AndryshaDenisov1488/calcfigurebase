@@ -28,7 +28,20 @@ class ISUCalcFSParser:
 
     @staticmethod
     def _decode_goe_xml(code):
-        """Decode GOE code from XML to value (-5..+3)."""
+        """Decode GOE code from XML to value (-5..+3).
+        
+        Расшифровка кодов GOE в XML файлах ISUCalcFS:
+        - Коды 0-8: стандартная шкала (0→-5, 1→-4, 2→-3, 3→-2, 4→-1, 5→0, 6→+1, 7→+2, 8→+3)
+        - Код 9: не используется (None)
+        - Код 10: специальный случай для -5 (снятие)
+        - Коды 11-15: альтернативное кодирование (11→-5, 12→-4, 13→-3, 14→-2, 15→-1)
+        
+        Args:
+            code: Код GOE из XML (строка или число)
+            
+        Returns:
+            Значение GOE от -5 до +3 или None
+        """
         if code is None:
             return None
         code = str(code).strip()
@@ -38,14 +51,23 @@ class ISUCalcFSParser:
             code_int = int(code)
         except ValueError:
             return None
+        
+        # Код 9 - не используется
+        if code_int == 9:
+            return None
+        
+        # Код 10 - специальный случай (-5)
         if code_int == 10:
             return -5
-        if code_int <= 5:
-            return code_int - 5
-        if code_int <= 8:
-            return code_int - 5
-        if code_int >= 11:
-            return code_int - 10
+        
+        # Коды 0-8: стандартное кодирование
+        if 0 <= code_int <= 8:
+            return code_int - 5  # 0→-5, 1→-4, 2→-3, 3→-2, 4→-1, 5→0, 6→+1, 7→+2, 8→+3
+        
+        # Коды 11-15: альтернативное кодирование для отрицательных значений
+        if 11 <= code_int <= 15:
+            return code_int - 16  # 11→-5, 12→-4, 13→-3, 14→-2, 15→-1
+        
         return None
 
     def parse(self):
