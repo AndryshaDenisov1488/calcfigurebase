@@ -108,14 +108,22 @@ def create_multi_field_search_filter(search_term, *fields):
                 word_upper = word.upper()
                 word_title = word.capitalize()
                 
+                # Важно: для кириллицы в SQLite нужно использовать точные варианты регистра
                 # Поиск в нижнем регистре
                 filters.append(field.like(f'%{word_lower}%'))
                 # Поиск в верхнем регистре
                 filters.append(field.like(f'%{word_upper}%'))
-                # Поиск с заглавной буквы
+                # Поиск с заглавной буквы (первая буква заглавная, остальные маленькие)
                 filters.append(field.like(f'%{word_title}%'))
                 # Поиск в исходном регистре (на случай, если пользователь ввел с заглавной)
                 filters.append(field.like(f'%{word}%'))
+                
+                # Дополнительно: для русских имен часто используется заглавная первая буква
+                # Например, "Иван" - первая буква заглавная
+                if word_lower != word_title:
+                    # Если есть разница между lower и title, добавляем еще варианты
+                    # Но это уже покрыто word_title
+                    pass
         return or_(*filters) if filters else None
     
     # Если несколько слов - максимально гибкий поиск
