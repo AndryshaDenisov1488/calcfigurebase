@@ -109,10 +109,45 @@ def export_event_results(event_id):
 
 @api_bp.route('/statistics')
 def api_statistics():
-    """API для получения статистики"""
-    total_athletes = Athlete.query.count()
+    """API для получения статистики
+    ВАЖНО: Исключает МС и КМС из подсчета. Считаются только разряды с 1 сп до 3 юношеского.
+    """
+    from models import Category
+    
+    # Разряды, которые нужно исключить из отчета (МС и КМС)
+    excluded_ranks = {
+        'МС, Женщины',
+        'МС, Мужчины',
+        'МС, Пары',
+        'МС, Танцы',
+        'КМС, Девушки',
+        'КМС, Юноши',
+        'КМС, Пары',
+        'КМС, Танцы'
+    }
+    
+    # Подсчет спортсменов, которые участвовали в разрядах без МС и КМС
+    total_athletes = db.session.query(db.func.count(db.distinct(Participant.athlete_id))).join(
+        Category, Participant.category_id == Category.id
+    ).filter(
+        db.or_(
+            Category.normalized_name.is_(None),
+            Category.normalized_name.notin_(excluded_ranks)
+        )
+    ).scalar()
+    
     total_events = Event.query.count()
-    total_participations = Participant.query.count()
+    
+    # Подсчет участий без МС и КМС
+    total_participations = db.session.query(Participant).join(
+        Category, Participant.category_id == Category.id
+    ).filter(
+        db.or_(
+            Category.normalized_name.is_(None),
+            Category.normalized_name.notin_(excluded_ranks)
+        )
+    ).count()
+    
     club_stats = db.session.query(
         Club.name,
         db.func.count(Athlete.id).label('athlete_count')
