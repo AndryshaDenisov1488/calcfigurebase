@@ -981,9 +981,10 @@ def export_to_google_sheets(spreadsheet_id=None):
     
     def rate_limit_delay():
         """Добавляет задержку между запросами для соблюдения rate limits"""
+        import time as time_module  # Явный импорт для избежания проблем с областью видимости
         nonlocal api_requests_count, last_request_time
         api_requests_count += 1
-        current_time = time.time()
+        current_time = time_module.time()
         
         # Минимальная задержка между запросами: 1 секунда (60 запросов/минуту)
         min_delay = 1.0
@@ -991,14 +992,14 @@ def export_to_google_sheets(spreadsheet_id=None):
             elapsed = current_time - last_request_time
             if elapsed < min_delay:
                 sleep_time = min_delay - elapsed
-                time.sleep(sleep_time)
+                time_module.sleep(sleep_time)
         
-        last_request_time = time.time()
+        last_request_time = time_module.time()
         
         # Каждые 10 запросов - дополнительная задержка
         if api_requests_count % 10 == 0:
             logger.info(f"Выполнено {api_requests_count} API запросов. Делаем паузу...")
-            time.sleep(2)
+            time_module.sleep(2)
     
     try:
         # Подключаемся к Google Sheets
@@ -1388,7 +1389,7 @@ def export_to_google_sheets(spreadsheet_id=None):
                             'condition': {
                                 'type': 'CUSTOM_FORMULA',
                                 'values': [{
-                                    'userEnteredValue': '=COUNTIF($B:$B, B3)>1'
+                                    'userEnteredValue': 'COUNTIF($B:$B, B3)>1'
                                 }]
                             },
                             'format': {
@@ -1771,7 +1772,7 @@ def export_to_google_sheets(spreadsheet_id=None):
                             'condition': {
                                 'type': 'CUSTOM_FORMULA',
                                 'values': [{
-                                    'userEnteredValue': '=COUNTIF($B:$B, B3)>1'
+                                    'userEnteredValue': 'COUNTIF($B:$B, B3)>1'
                                 }]
                             },
                             'format': {
