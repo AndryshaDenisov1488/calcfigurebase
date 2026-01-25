@@ -1371,44 +1371,46 @@ def export_to_google_sheets(spreadsheet_id=None):
             logger.info(f"[OK] Установлена ширина {len(column_widths)} колонок одним запросом!")
         
         # УСЛОВНОЕ ФОРМАТИРОВАНИЕ: Выделение дубликатов ФИО
-        logger.info("Добавление условного форматирования для дубликатов...")
-        try:
-            # Определяем диапазон данных (колонка B, начиная со строки 3)
-            # Строка 1 - главный заголовок, строка 3 - начало данных
-            conditional_format_request = {
-                'addConditionalFormatRule': {
-                    'rule': {
-                        'ranges': [{
-                            'sheetId': sheet_id,
-                            'startRowIndex': 2,  # Строка 3 (индекс 2)
-                            'endRowIndex': 5000,  # До 5000 строки
-                            'startColumnIndex': 1,  # Колонка B (индекс 1)
-                            'endColumnIndex': 2  # Только колонка B
-                        }],
-                        'booleanRule': {
-                            'condition': {
-                                'type': 'CUSTOM_FORMULA',
-                                'values': [{
-                                    'userEnteredValue': '=COUNTIF($B:$B,B3)>1'
-                                }]
-                            },
-                            'format': {
-                                'backgroundColor': {
-                                    'red': 1.0,
-                                    'green': 0.4,
-                                    'blue': 0.8
-                                }
-                            }
-                        }
-                    },
-                    'index': 0
-                }
-            }
-            safe_api_call(spreadsheet.batch_update, {'requests': [conditional_format_request]})
-            rate_limit_delay()
-            logger.info("[OK] Условное форматирование для дубликатов добавлено!")
-        except Exception as e:
-            logger.warning(f"Ошибка добавления условного форматирования: {e}")
+        # Временно отключено из-за проблем с форматом формулы в API
+        # TODO: Настроить правильный формат формулы для Google Sheets API
+        logger.info("Пропуск условного форматирования (временно отключено)")
+        # try:
+        #     # Определяем диапазон данных (колонка B, начиная со строки 3)
+        #     # Строка 1 - главный заголовок, строка 3 - начало данных
+        #     conditional_format_request = {
+        #         'addConditionalFormatRule': {
+        #             'rule': {
+        #                 'ranges': [{
+        #                     'sheetId': sheet_id,
+        #                     'startRowIndex': 2,  # Строка 3 (индекс 2)
+        #                     'endRowIndex': 5000,  # До 5000 строки
+        #                     'startColumnIndex': 1,  # Колонка B (индекс 1)
+        #                     'endColumnIndex': 2  # Только колонка B
+        #                 }],
+        #                 'booleanRule': {
+        #                     'condition': {
+        #                         'type': 'CUSTOM_FORMULA',
+        #                         'values': [{
+        #                             'userEnteredValue': '=COUNTIF($B:$B,B3)>1'
+        #                         }]
+        #                     },
+        #                     'format': {
+        #                         'backgroundColor': {
+        #                             'red': 1.0,
+        #                             'green': 0.4,
+        #                             'blue': 0.8
+        #                         }
+        #                     }
+        #                 }
+        #             },
+        #             'index': 0
+        #         }
+        #     }
+        #     safe_api_call(spreadsheet.batch_update, {'requests': [conditional_format_request]})
+        #     rate_limit_delay()
+        #     logger.info("[OK] Условное форматирование для дубликатов добавлено!")
+        # except Exception as e:
+        #     logger.warning(f"Ошибка добавления условного форматирования: {e}")
         
         # Замораживаем первую строку
         worksheet.freeze(rows=1)
@@ -1756,42 +1758,43 @@ def export_to_google_sheets(spreadsheet_id=None):
             rate_limit_delay()
         
         # УСЛОВНОЕ ФОРМАТИРОВАНИЕ ДЛЯ ВТОРОГО ЛИСТА: Выделение дубликатов ФИО
-        logger.info("Добавление условного форматирования для дубликатов (лист 2)...")
-        try:
-            conditional_format_request2 = {
-                'addConditionalFormatRule': {
-                    'rule': {
-                        'ranges': [{
-                            'sheetId': sheet_id2,
-                            'startRowIndex': 2,  # Начало данных (после заголовков)
-                            'endRowIndex': 5000,
-                            'startColumnIndex': 1,  # Колонка B (ФИО)
-                            'endColumnIndex': 2
-                        }],
-                        'booleanRule': {
-                            'condition': {
-                                'type': 'CUSTOM_FORMULA',
-                                'values': [{
-                                    'userEnteredValue': '=COUNTIF($B:$B,B3)>1'
-                                }]
-                            },
-                            'format': {
-                                'backgroundColor': {
-                                    'red': 1.0,
-                                    'green': 0.4,
-                                    'blue': 0.8
-                                }
-                            }
-                        }
-                    },
-                    'index': 0
-                }
-            }
-            safe_api_call(spreadsheet.batch_update, {'requests': [conditional_format_request2]})
-            rate_limit_delay()
-            logger.info("[OK] Условное форматирование для дубликатов добавлено (лист 2)!")
-        except Exception as e:
-            logger.warning(f"Ошибка добавления условного форматирования (лист 2): {e}")
+        # Временно отключено из-за проблем с форматом формулы в API
+        logger.info("Пропуск условного форматирования для второго листа (временно отключено)")
+        # try:
+        #     conditional_format_request2 = {
+        #         'addConditionalFormatRule': {
+        #             'rule': {
+        #                 'ranges': [{
+        #                     'sheetId': sheet_id2,
+        #                     'startRowIndex': 2,  # Начало данных (после заголовков)
+        #                     'endRowIndex': 5000,
+        #                     'startColumnIndex': 1,  # Колонка B (ФИО)
+        #                     'endColumnIndex': 2
+        #                 }],
+        #                 'booleanRule': {
+        #                     'condition': {
+        #                         'type': 'CUSTOM_FORMULA',
+        #                         'values': [{
+        #                             'userEnteredValue': '=COUNTIF($B:$B,B3)>1'
+        #                         }]
+        #                     },
+        #                     'format': {
+        #                         'backgroundColor': {
+        #                             'red': 1.0,
+        #                             'green': 0.4,
+        #                             'blue': 0.8
+        #                         }
+        #                     }
+        #                 }
+        #             },
+        #             'index': 0
+        #         }
+        #     }
+        #     safe_api_call(spreadsheet.batch_update, {'requests': [conditional_format_request2]})
+        #     rate_limit_delay()
+        #     logger.info("[OK] Условное форматирование для дубликатов добавлено (лист 2)!")
+        # except Exception as e:
+        #     logger.warning(f"Ошибка добавления условного форматирования (лист 2): {e}")
         
         worksheet2.freeze(rows=1)
         
