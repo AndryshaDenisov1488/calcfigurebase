@@ -565,8 +565,32 @@ def api_athletes():
         Athlete, Club
     ).outerjoin(Club, Athlete.club_id == Club.id)
     
+    # Универсальный поиск по имени, фамилии, отчеству и полному имени (нечувствительный к регистру)
+    # Применяем ПОСЛЕ базового JOIN с Club, но ДО JOIN с Participant
+    # Это важно, чтобы фильтр работал правильно и не дублировал результаты
+    if search and search.strip():
+        normalized = normalize_search_term(search)
+        logger.info(f"Поиск: '{search}' -> нормализовано: '{normalized}' (длина: {len(normalized)})")
+        
+        search_filter = create_multi_field_search_filter(
+            search,
+            Athlete.first_name,
+            Athlete.last_name,
+            Athlete.full_name_xml,
+            Athlete.patronymic
+        )
+        
+        if search_filter is not None:
+            athletes_query = athletes_query.filter(search_filter)
+            logger.info(f"Фильтр поиска применен для '{search}'")
+        else:
+            # Если фильтр не создан (например, слишком короткий запрос)
+            logger.warning(f"Поисковый фильтр не создан для запроса: '{search}' (нормализовано: '{normalized}', длина: {len(normalized)})")
+            # Возвращаем пустой результат, если поиск был запрошен, но фильтр не создан
+            # Это предотвращает показ всех результатов при некорректном запросе
+    
     # Добавляем JOIN с Participant и Category для сортировки по разрядам (если нужно)
-    # Делаем это ДО применения фильтра поиска, чтобы фильтр работал правильно
+    # Делаем это ПОСЛЕ применения фильтра поиска
     if sort_by == 'rank' or rank_filter or sort_by in ['participations', 'best_place']:
         athletes_query = athletes_query.outerjoin(
             Participant, Athlete.id == Participant.athlete_id
@@ -577,25 +601,6 @@ def api_athletes():
             )
             if rank_filter:
                 athletes_query = athletes_query.filter(Category.normalized_name == rank_filter)
-    
-    # Универсальный поиск по имени, фамилии, отчеству и полному имени (нечувствительный к регистру)
-    # Применяем ПОСЛЕ JOIN'ов, но ПЕРЕД group_by
-    if search:
-        search_filter = create_multi_field_search_filter(
-            search,
-            Athlete.first_name,
-            Athlete.last_name,
-            Athlete.full_name_xml,
-            Athlete.patronymic
-        )
-        if search_filter is not None:
-            athletes_query = athletes_query.filter(search_filter)
-        else:
-            # Если фильтр не создан (например, слишком короткий запрос), возвращаем пустой результат
-            # Но только если это действительно поиск, а не пустая строка
-            if search.strip():
-                # Для отладки - логируем, почему фильтр не создан
-                logger.warning(f"Поисковый фильтр не создан для запроса: '{search}' (нормализовано: '{normalize_search_term(search) if search else ''}')")
     
     # Добавляем group_by для агрегатных функций
     # Делаем это ПОСЛЕ фильтра поиска, чтобы фильтр применялся к базовым записям
@@ -627,21 +632,19 @@ def api_athletes():
         else:
             athletes_query = athletes_query.order_by(order_column.asc())
     
-    # Для отладки - логируем информацию о поиске
-    if search:
-        try:
-            logger.info(f"Поиск: '{search}' (нормализовано: '{normalize_search_term(search)}')")
-            logger.debug(f"SQL запрос для поиска: {str(athletes_query.statement)}")
-        except Exception as e:
-            logger.warning(f"Ошибка при логировании SQL: {e}")
-    
     athletes = athletes_query.paginate(
         page=page, per_page=per_page, error_out=False
     )
     
-    # Для отладки - логируем количество найденных результатов
-    if search:
-        logger.info(f"Поиск '{search}': найдено {athletes.total} спортсменов из {athletes_query.count() if hasattr(athletes_query, 'count') else 'N/A'} возможных")
+    # Для отладки - логируем информацию о поиске
+    if search and search.strip():
+        try:
+            normalized = normalize_search_term(search)
+            logger.info(f"Поиск '{search}' (нормализовано: '{normalized}'): найдено {athletes.total} спортсменов на странице {page}")
+            if athletes.total == 0:
+                logger.warning(f"Поиск '{search}' не дал результатов. Проверьте фильтр и данные в БД.")
+        except Exception as e:
+            logger.warning(f"Ошибка при логировании поиска: {e}")
     
     # Получаем данные участников для всех спортсменов одним запросом
     athlete_ids = [athlete.id for athlete, club in athletes.items]

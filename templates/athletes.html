@@ -263,11 +263,15 @@ function loadAthletes(search = '', page = 1, sortBy = currentSort.by, sortOrder 
             }
             
             console.log('Данные получены:', data); // Для отладки
+            console.log('Количество спортсменов:', data && data.athletes ? data.athletes.length : 0);
+            console.log('Поисковый запрос:', search);
             
             // Обновляем таблицу
             if (data && data.athletes) {
+                console.log('Обновление таблицы с', data.athletes.length, 'спортсменами');
                 updateTable(data.athletes);
             } else {
+                console.log('Нет данных - очистка таблицы');
                 updateTable([]);
             }
             

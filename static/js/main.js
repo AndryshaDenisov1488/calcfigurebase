@@ -43,15 +43,19 @@ function initializeSearch() {
     // Исключаем страницу спортсменов - там свой поиск через API
     const pathname = window.location.pathname;
     if (pathname === '/athletes' || pathname.startsWith('/athletes/')) {
+        console.log('[initializeSearch] Пропущена инициализация для страницы спортсменов');
         return; // Не инициализируем поиск на странице спортсменов
     }
     
-    const searchInputs = document.querySelectorAll('input[type="search"]');
+    // Ищем все input поля (не только type="search")
+    const searchInputs = document.querySelectorAll('input[type="search"], input[type="text"]');
     searchInputs.forEach(input => {
         // Проверяем, что это не поле поиска спортсменов
-        if (input.id !== 'searchInput' && !input.closest('#athletesTable')) {
-            input.addEventListener('input', debounce(handleSearch, 300));
+        if (input.id === 'searchInput' || input.closest('#athletesTable')) {
+            console.log('[initializeSearch] Пропущено поле поиска спортсменов:', input.id);
+            return; // Пропускаем поле поиска спортсменов
         }
+        input.addEventListener('input', debounce(handleSearch, 300));
     });
 }
 
