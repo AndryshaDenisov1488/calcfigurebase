@@ -560,14 +560,9 @@ def api_athletes():
     sort_by = request.args.get('sort_by', 'best_place')
     sort_order = request.args.get('sort_order', 'asc')
 
-    # Базовый запрос с JOIN для клубов
-    athletes_query = db.session.query(
-        Athlete, Club
-    ).outerjoin(Club, Athlete.club_id == Club.id)
-    
     # Универсальный поиск по имени, фамилии, отчеству и полному имени (нечувствительный к регистру)
-    # Применяем ПОСЛЕ базового JOIN с Club, но ДО JOIN с Participant
-    # Это важно, чтобы фильтр работал правильно и не дублировал результаты
+    # Создаем фильтр ДО построения основного запроса
+    search_filter = None
     if search and search.strip():
         normalized = normalize_search_term(search)
         logger.info(f"Поиск: '{search}' -> нормализовано: '{normalized}' (длина: {len(normalized)})")
@@ -581,13 +576,33 @@ def api_athletes():
         )
         
         if search_filter is not None:
-            athletes_query = athletes_query.filter(search_filter)
-            logger.info(f"Фильтр поиска применен для '{search}'")
+            logger.info(f"Фильтр поиска создан для '{search}'")
+            
+            # Для отладки - проверяем, есть ли вообще спортсмены с таким именем
+            try:
+                # Простой запрос без JOIN'ов для проверки
+                simple_count = db.session.query(Athlete).filter(search_filter).count()
+                logger.info(f"Проверка: найдено {simple_count} спортсменов с '{search}' БЕЗ JOIN'ов")
+                
+                # Если есть спортсмены без JOIN'ов, но нет с JOIN'ами - проблема в запросе
+                if simple_count > 0:
+                    logger.warning(f"ВНИМАНИЕ: Найдено {simple_count} спортсменов БЕЗ JOIN'ов, но 0 С JOIN'ами. Возможна проблема с применением фильтра после JOIN.")
+            except Exception as e:
+                logger.warning(f"Ошибка при проверке простого запроса: {e}")
         else:
             # Если фильтр не создан (например, слишком короткий запрос)
             logger.warning(f"Поисковый фильтр не создан для запроса: '{search}' (нормализовано: '{normalized}', длина: {len(normalized)})")
-            # Возвращаем пустой результат, если поиск был запрошен, но фильтр не создан
-            # Это предотвращает показ всех результатов при некорректном запросе
+    
+    # Базовый запрос с JOIN для клубов
+    # Применяем фильтр поиска СРАЗУ после создания базового запроса
+    athletes_query = db.session.query(
+        Athlete, Club
+    ).outerjoin(Club, Athlete.club_id == Club.id)
+    
+    # Применяем фильтр поиска ДО всех остальных JOIN'ов
+    if search_filter is not None:
+        athletes_query = athletes_query.filter(search_filter)
+        logger.info(f"Фильтр поиска применен к базовому запросу для '{search}'")
     
     # Добавляем JOIN с Participant и Category для сортировки по разрядам (если нужно)
     # Делаем это ПОСЛЕ применения фильтра поиска
@@ -604,7 +619,10 @@ def api_athletes():
     
     # Добавляем group_by для агрегатных функций
     # Делаем это ПОСЛЕ фильтра поиска, чтобы фильтр применялся к базовым записям
-    if sort_by in ['participations', 'best_place'] or sort_by == 'rank' or rank_filter:
+    # ВАЖНО: group_by применяется всегда, если sort_by = 'best_place' (по умолчанию)
+    # Это означает, что JOIN с Participant всегда делается, и фильтр должен работать ДО этого
+    needs_group_by = sort_by in ['participations', 'best_place'] or sort_by == 'rank' or rank_filter
+    if needs_group_by:
         athletes_query = athletes_query.group_by(Athlete.id, Club.id)
     
     # Сортировка
@@ -643,6 +661,9 @@ def api_athletes():
             logger.info(f"Поиск '{search}' (нормализовано: '{normalized}'): найдено {athletes.total} спортсменов на странице {page}")
             if athletes.total == 0:
                 logger.warning(f"Поиск '{search}' не дал результатов. Проверьте фильтр и данные в БД.")
+                # Дополнительная проверка - может быть проблема с JOIN'ами
+                if needs_group_by:
+                    logger.warning(f"ВНИМАНИЕ: group_by применен (sort_by='{sort_by}'). Возможно, фильтр не работает после JOIN с Participant.")
         except Exception as e:
             logger.warning(f"Ошибка при логировании поиска: {e}")
     
