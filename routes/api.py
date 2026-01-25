@@ -1195,23 +1195,32 @@ def api_participant_performance_details(participant_id):
                     
                     if score is not None:
                         # Декодируем оценку судьи из кода XML в значение GOE
-                        # Оценки судей хранятся в БД как коды (0-15), нужно декодировать
+                        # Оценки судей могут храниться в БД как:
+                        # 1. Коды (0-15) - новые данные, нужно декодировать
+                        # 2. Декодированные значения (-5 до +3) - старые данные, нужно исправить +1
                         try:
                             from parsers.isu_calcfs_parser import ISUCalcFSParser
-                            # Если это число (код), декодируем
+                            # Если это число (код или декодированное значение)
                             if isinstance(score, (int, str)):
-                                score_code = int(score) if isinstance(score, str) else score
+                                score_num = int(score) if isinstance(score, str) else score
+                                
                                 # Если значение в диапазоне кодов (0-15), декодируем
-                                if 0 <= score_code <= 15:
-                                    decoded_score = ISUCalcFSParser._decode_judge_score_xml(score_code)
+                                if 0 <= score_num <= 15:
+                                    decoded_score = ISUCalcFSParser._decode_judge_score_xml(score_num)
                                     judge_scores_list.append(decoded_score)
+                                # Если значение в диапазоне старых декодированных значений (-5 до +3)
+                                # Это старые данные, которые были декодированы с неправильной формулой
+                                # Нужно исправить: добавляем +1
+                                elif -5 <= score_num <= 3:
+                                    corrected_score = score_num + 1
+                                    judge_scores_list.append(corrected_score)
                                 else:
-                                    # Если уже декодировано (старые данные), используем как есть
-                                    judge_scores_list.append(score_code)
+                                    # Если значение вне известных диапазонов, используем как есть
+                                    judge_scores_list.append(score_num)
                             else:
                                 judge_scores_list.append(score)
                         except (ValueError, TypeError):
-                            # Если не удалось декодировать, оставляем как есть
+                            # Если не удалось преобразовать, оставляем как есть
                             judge_scores_list.append(score)
                     else:
                         break  # Если нет оценки, дальше тоже не будет
