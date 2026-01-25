@@ -178,6 +178,18 @@ document.getElementById('exportBtn').addEventListener('click', function() {
         body: JSON.stringify({})
     })
     .then(response => {
+        // Проверяем статус ответа
+        if (response.status === 401) {
+            // Неавторизован - пытаемся получить JSON с редиректом
+            return response.json().then(data => {
+                if (data.redirect) {
+                    window.location.href = data.redirect;
+                    return null;
+                }
+                throw new Error(data.message || 'Необходима авторизация');
+            });
+        }
+        
         // Проверяем что получили JSON, а не HTML
         const contentType = response.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
@@ -186,6 +198,11 @@ document.getElementById('exportBtn').addEventListener('click', function() {
         return response.json();
     })
     .then(data => {
+        // Если был редирект, data будет null
+        if (data === null) {
+            return;
+        }
+        
         // Скрываем загрузку
         btn.disabled = false;
         btnText.style.display = 'inline-block';

@@ -8,6 +8,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 import logging
+import time
 from app import app, db
 from models import Athlete, Club, Category, Participant
 
@@ -49,6 +50,43 @@ def get_google_sheets_client():
     except Exception as e:
         logger.error(f"Ошибка подключения к Google Sheets: {e}")
         raise
+
+def safe_api_call(func, *args, max_retries=3, delay=1, **kwargs):
+    """
+    Безопасный вызов API с обработкой rate limiting и retry
+    
+    Args:
+        func: Функция для вызова
+        *args: Аргументы функции
+        max_retries: Максимальное количество попыток
+        delay: Начальная задержка между попытками (секунды)
+        **kwargs: Именованные аргументы функции
+    
+    Returns:
+        Результат выполнения функции
+    """
+    for attempt in range(max_retries):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            error_str = str(e).lower()
+            
+            # Проверяем на rate limiting (429) или quota exceeded
+            if '429' in error_str or 'quota' in error_str or 'rate limit' in error_str or 'user rate limit' in error_str:
+                wait_time = delay * (2 ** attempt)  # Экспоненциальная задержка
+                logger.warning(f"Rate limit достигнут (попытка {attempt + 1}/{max_retries}). Ожидание {wait_time} сек...")
+                time.sleep(wait_time)
+                continue
+            # Другие ошибки - пробуем еще раз с задержкой
+            elif attempt < max_retries - 1:
+                wait_time = delay * (attempt + 1)
+                logger.warning(f"Ошибка API (попытка {attempt + 1}/{max_retries}): {e}. Ожидание {wait_time} сек...")
+                time.sleep(wait_time)
+                continue
+            else:
+                # Последняя попытка - пробрасываем ошибку
+                logger.error(f"Ошибка API после {max_retries} попыток: {e}")
+                raise
 
 def get_athletes_data():
     """Получает данные всех спортсменов из БД, сгруппированные по разрядам (без МС и КМС)"""
@@ -941,6 +979,28 @@ def export_to_google_sheets(spreadsheet_id=None):
         dict: {'success': bool, 'url': str, 'message': str}
     """
     api_requests_count = 0  # Счётчик API запросов для отладки
+    last_request_time = 0  # Время последнего запроса
+    
+    def rate_limit_delay():
+        """Добавляет задержку между запросами для соблюдения rate limits"""
+        nonlocal api_requests_count, last_request_time
+        api_requests_count += 1
+        current_time = time.time()
+        
+        # Минимальная задержка между запросами: 1 секунда (60 запросов/минуту)
+        min_delay = 1.0
+        if last_request_time > 0:
+            elapsed = current_time - last_request_time
+            if elapsed < min_delay:
+                sleep_time = min_delay - elapsed
+                time.sleep(sleep_time)
+        
+        last_request_time = time.time()
+        
+        # Каждые 10 запросов - дополнительная задержка
+        if api_requests_count % 10 == 0:
+            logger.info(f"Выполнено {api_requests_count} API запросов. Делаем паузу...")
+            time.sleep(2)
     
     try:
         # Подключаемся к Google Sheets
@@ -1014,7 +1074,8 @@ def export_to_google_sheets(spreadsheet_id=None):
                         }
                     }
                 ]
-                spreadsheet.batch_update({'requests': clear_requests})
+                safe_api_call(spreadsheet.batch_update, {'requests': clear_requests})
+                rate_limit_delay()
                 
                 # Дополнительно: очищаем условное форматирование через отдельный запрос
                 try:
@@ -1034,12 +1095,13 @@ def export_to_google_sheets(spreadsheet_id=None):
                                 # Удаляем все правила
                                 for _ in range(len(sheet.get('conditionalFormats', []))):
                                     try:
-                                        spreadsheet.batch_update({'requests': [{
+                                        safe_api_call(spreadsheet.batch_update, {'requests': [{
                                             'deleteConditionalFormatRule': {
                                                 'sheetId': sheet_id,
                                                 'index': 0
                                             }
                                         }]})
+                                        rate_limit_delay()
                                     except:
                                         break
                 except Exception as e:
@@ -1082,7 +1144,8 @@ def export_to_google_sheets(spreadsheet_id=None):
                     'mergeType': 'MERGE_ALL'
                 }
             }
-            spreadsheet.batch_update({'requests': [main_header_merge]})
+            safe_api_call(spreadsheet.batch_update, {'requests': [main_header_merge]})
+            rate_limit_delay()
             logger.info("Главный заголовок объединен и центрирован")
         except Exception as e:
             logger.warning(f"Ошибка объединения главного заголовка: {e}")
@@ -1210,7 +1273,8 @@ def export_to_google_sheets(spreadsheet_id=None):
         # ЗАПИСЫВАЕМ ВСЕ ДАННЫЕ ОДНИМ ЗАПРОСОМ!
         logger.info(f"Запись {len(all_data)} строк одним пакетом...")
         if all_data:
-            worksheet.update(f'A{start_row}:G{current_row-1}', all_data)
+            safe_api_call(worksheet.update, f'A{start_row}:G{current_row-1}', all_data)
+            rate_limit_delay()
         
         # ИСПОЛЬЗУЕМ BATCH_FORMAT - ВСЁ ФОРМАТИРОВАНИЕ ОДНИМ ЗАПРОСОМ!
         logger.info(f"Применение форматирования батчем (1 запрос)...")
@@ -1225,7 +1289,8 @@ def export_to_google_sheets(spreadsheet_id=None):
                     'format': fmt['format']
                 })
             
-            worksheet.batch_format(batch_format_data)
+            safe_api_call(worksheet.batch_format, batch_format_data)
+            rate_limit_delay()
             logger.info(f"[OK] Применено {len(batch_format_data)} форматов одним запросом!")
         
         # ОБЪЕДИНЯЕМ ЯЧЕЙКИ для заголовков разрядов
@@ -1262,7 +1327,8 @@ def export_to_google_sheets(spreadsheet_id=None):
             
             if merge_batch_requests:
                 try:
-                    spreadsheet.batch_update({'requests': merge_batch_requests})
+                    safe_api_call(spreadsheet.batch_update, {'requests': merge_batch_requests})
+                    rate_limit_delay()
                     logger.info(f"[OK] Объединено {len(merge_batch_requests)} заголовков!")
                 except Exception as e:
                     logger.warning(f"Ошибка объединения ячеек: {e}")
@@ -1301,7 +1367,8 @@ def export_to_google_sheets(spreadsheet_id=None):
         
         if width_batch_requests:
             body = {'requests': width_batch_requests}
-            spreadsheet.batch_update(body)
+            safe_api_call(spreadsheet.batch_update, body)
+            rate_limit_delay()
             logger.info(f"[OK] Установлена ширина {len(column_widths)} колонок одним запросом!")
         
         # УСЛОВНОЕ ФОРМАТИРОВАНИЕ: Выделение дубликатов ФИО
@@ -1338,7 +1405,8 @@ def export_to_google_sheets(spreadsheet_id=None):
                     'index': 0
                 }
             }
-            spreadsheet.batch_update({'requests': [conditional_format_request]})
+            safe_api_call(spreadsheet.batch_update, {'requests': [conditional_format_request]})
+            rate_limit_delay()
             logger.info("[OK] Условное форматирование для дубликатов добавлено!")
         except Exception as e:
             logger.warning(f"Ошибка добавления условного форматирования: {e}")
@@ -1392,7 +1460,8 @@ def export_to_google_sheets(spreadsheet_id=None):
                         }
                     }
                 ]
-                spreadsheet.batch_update({'requests': clear_requests2})
+                safe_api_call(spreadsheet.batch_update, {'requests': clear_requests2})
+                rate_limit_delay()
                 
                 # Дополнительно: очищаем условное форматирование второго листа
                 try:
@@ -1403,12 +1472,13 @@ def export_to_google_sheets(spreadsheet_id=None):
                                 # Удаляем все правила условного форматирования
                                 for _ in range(len(sheet.get('conditionalFormats', []))):
                                     try:
-                                        spreadsheet.batch_update({'requests': [{
+                                        safe_api_call(spreadsheet.batch_update, {'requests': [{
                                             'deleteConditionalFormatRule': {
                                                 'sheetId': sheet_id2,
                                                 'index': 0
                                             }
                                         }]})
+                                        rate_limit_delay()
                                     except:
                                         break
                 except Exception as e:
@@ -1446,7 +1516,8 @@ def export_to_google_sheets(spreadsheet_id=None):
                     'mergeType': 'MERGE_ALL'
                 }
             }
-            spreadsheet.batch_update({'requests': [main_header_merge2]})
+            safe_api_call(spreadsheet.batch_update, {'requests': [main_header_merge2]})
+            rate_limit_delay()
             logger.info("Главный заголовок второго листа объединен и центрирован")
         except Exception as e:
             logger.warning(f"Ошибка объединения главного заголовка второго листа: {e}")
@@ -1592,7 +1663,8 @@ def export_to_google_sheets(spreadsheet_id=None):
         # ЗАПИСЫВАЕМ ВСЕ ДАННЫЕ ВТОРОГО ЛИСТА ОДНИМ ЗАПРОСОМ!
         logger.info(f"Запись {len(schools_all_data)} строк для школ одним пакетом...")
         if schools_all_data:
-            worksheet2.update(f'A3:F{current_row}', schools_all_data)
+            safe_api_call(worksheet2.update, f'A3:F{current_row}', schools_all_data)
+            rate_limit_delay()
         
         # ФОРМАТИРОВАНИЕ ВТОРОГО ЛИСТА (точечная подсветка уже в schools_format_requests)
         logger.info("Применение форматирования для второго листа...")
@@ -1604,7 +1676,8 @@ def export_to_google_sheets(spreadsheet_id=None):
                     'format': fmt['format']
                 })
             
-            worksheet2.batch_format(schools_batch_format_data)
+            safe_api_call(worksheet2.batch_format, schools_batch_format_data)
+            rate_limit_delay()
             logger.info(f"[OK] Применено {len(schools_batch_format_data)} форматов для второго листа!")
         
         # ОБЪЕДИНЕНИЕ ЯЧЕЕК ДЛЯ ВТОРОГО ЛИСТА (школы и разряды)
@@ -1641,7 +1714,8 @@ def export_to_google_sheets(spreadsheet_id=None):
             
             if schools_merge_batch_requests:
                 try:
-                    spreadsheet.batch_update({'requests': schools_merge_batch_requests})
+                    safe_api_call(spreadsheet.batch_update, {'requests': schools_merge_batch_requests})
+                    rate_limit_delay()
                     logger.info(f"[OK] Объединено {len(schools_merge_batch_requests)} заголовков для школ!")
                 except Exception as e:
                     logger.warning(f"Ошибка объединения ячеек для школ: {e}")
@@ -1679,7 +1753,8 @@ def export_to_google_sheets(spreadsheet_id=None):
         
         if width_batch_requests2:
             body = {'requests': width_batch_requests2}
-            spreadsheet.batch_update(body)
+            safe_api_call(spreadsheet.batch_update, body)
+            rate_limit_delay()
         
         # УСЛОВНОЕ ФОРМАТИРОВАНИЕ ДЛЯ ВТОРОГО ЛИСТА: Выделение дубликатов ФИО
         logger.info("Добавление условного форматирования для дубликатов (лист 2)...")
@@ -1713,7 +1788,8 @@ def export_to_google_sheets(spreadsheet_id=None):
                     'index': 0
                 }
             }
-            spreadsheet.batch_update({'requests': [conditional_format_request2]})
+            safe_api_call(spreadsheet.batch_update, {'requests': [conditional_format_request2]})
+            rate_limit_delay()
             logger.info("[OK] Условное форматирование для дубликатов добавлено (лист 2)!")
         except Exception as e:
             logger.warning(f"Ошибка добавления условного форматирования (лист 2): {e}")
@@ -1844,7 +1920,8 @@ def export_to_google_sheets(spreadsheet_id=None):
                         }
                     }
                 ]
-                spreadsheet.batch_update({'requests': clear_requests3})
+                safe_api_call(spreadsheet.batch_update, {'requests': clear_requests3})
+                rate_limit_delay()
                 logger.info("[OK] Третий лист очищен")
             except Exception as e:
                 logger.warning(f"Ошибка при очистке третьего листа: {e}")
@@ -1877,7 +1954,8 @@ def export_to_google_sheets(spreadsheet_id=None):
                     'mergeType': 'MERGE_ALL'
                 }
             }
-            spreadsheet.batch_update({'requests': [main_header_merge3]})
+            safe_api_call(spreadsheet.batch_update, {'requests': [main_header_merge3]})
+            rate_limit_delay()
         except Exception as e:
             logger.debug(f"Объединение заголовка третьего листа: {e}")
         
@@ -1950,7 +2028,8 @@ def export_to_google_sheets(spreadsheet_id=None):
         
         # Записываем данные (динамически определяем количество строк)
         end_row = current_row + len(stats_data) - 1
-        worksheet3.update(f'A{current_row}:D{end_row}', stats_data)
+        safe_api_call(worksheet3.update, f'A{current_row}:D{end_row}', stats_data)
+        rate_limit_delay()
         
         # Форматирование третьего листа
         # Вычисляем номера строк для форматирования
@@ -3229,13 +3308,13 @@ def export_to_google_sheets(spreadsheet_id=None):
         ]
         
         if width_batch_requests7:
-            spreadsheet.batch_update({'requests': width_batch_requests7})
+            safe_api_call(spreadsheet.batch_update, {'requests': width_batch_requests7})
+            rate_limit_delay()
         
         worksheet7.freeze(rows=1)
         
         logger.info("[OK] Седьмой лист 'сводная статистика' создан!")
-        logger.info("Экспорт завершен успешно!")
-        logger.info("Примерное количество API запросов: ~35-40")
+        logger.info(f"Экспорт завершен успешно! Всего выполнено {api_requests_count} API запросов.")
         
         total_athletes = sum(len(athletes) for athletes in athletes_by_rank_stats.values())
         total_schools = len(schools_data)

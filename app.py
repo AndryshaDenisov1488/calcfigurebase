@@ -109,9 +109,21 @@ limiter.init_app(app)
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        # Проверяем, является ли запрос AJAX (JSON запрос)
+        is_ajax = request.is_json or request.headers.get('Content-Type', '').startswith('application/json') or request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        
         if not session.get('admin_logged_in'):
             logger.warning(f"Unauthorized access attempt to {request.endpoint} from {request.remote_addr}")
             flash('Необходима авторизация администратора', 'error')
+            
+            # Для AJAX запросов возвращаем JSON
+            if is_ajax:
+                return jsonify({
+                    'success': False,
+                    'message': 'Необходима авторизация администратора',
+                    'redirect': url_for('admin_login')
+                }), 401
+            
             return redirect(url_for('admin_login'))
         
         # Проверяем время сессии
@@ -121,6 +133,15 @@ def admin_required(f):
                 session.clear()
                 logger.info(f"Session expired for admin from {request.remote_addr}")
                 flash('Сессия истекла. Войдите заново.', 'warning')
+                
+                # Для AJAX запросов возвращаем JSON
+                if is_ajax:
+                    return jsonify({
+                        'success': False,
+                        'message': 'Сессия истекла. Войдите заново.',
+                        'redirect': url_for('admin_login')
+                    }), 401
+                
                 return redirect(url_for('admin_login'))
         
         # Обновляем время последней активности
