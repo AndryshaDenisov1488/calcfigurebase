@@ -40,16 +40,30 @@ function initializeTables() {
 
 // Инициализация поиска
 function initializeSearch() {
-    const searchInputs = document.querySelectorAll('input[type="search"], #searchInput');
+    // Исключаем страницу спортсменов - там свой поиск через API
+    if (window.location.pathname === '/athletes') {
+        return; // Не инициализируем поиск на странице спортсменов
+    }
+    
+    const searchInputs = document.querySelectorAll('input[type="search"]');
     searchInputs.forEach(input => {
-        input.addEventListener('input', debounce(handleSearch, 300));
+        // Проверяем, что это не поле поиска спортсменов
+        if (input.id !== 'searchInput') {
+            input.addEventListener('input', debounce(handleSearch, 300));
+        }
     });
 }
 
-// Обработка поиска
+// Обработка поиска (только для статических таблиц)
 function handleSearch(event) {
     const searchTerm = event.target.value.toLowerCase();
-    const table = event.target.closest('.card').querySelector('table');
+    const card = event.target.closest('.card');
+    
+    if (!card) {
+        return; // Если нет родительского .card, выходим
+    }
+    
+    const table = card.querySelector('table');
     
     if (table) {
         const rows = table.querySelectorAll('tbody tr');

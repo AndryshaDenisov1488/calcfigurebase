@@ -1168,10 +1168,14 @@ def api_participant_performance_details(participant_id):
                 deductions = abs(perf.deductions) / 100.0 if abs(perf.deductions) > 1 else abs(perf.deductions)
             
             # Нормализуем points (сумма за сегмент)
+            # В БД points уже нормализован через _parse_score (делится на 100 при сохранении)
+            # Но могут быть старые данные в формате ×100, поэтому проверяем
             segment_points = None
             if perf.points is not None:
-                # Если > 10, значит ×100 (например, 1758 = 17.58, 1496 = 14.96)
-                segment_points = perf.points / 100.0 if abs(perf.points) > 10 else perf.points
+                # Если значение > 100, значит оно в формате ×100 (например, 1758 = 17.58)
+                # Если значение <= 100, значит уже нормализовано (например, 17.58)
+                # Для фигурного катания сумма за программу редко превышает 100 баллов
+                segment_points = perf.points / 100.0 if abs(perf.points) > 100 else perf.points
             
             performances_data.append({
                 'id': perf.id,
@@ -1187,12 +1191,20 @@ def api_participant_performance_details(participant_id):
             })
         
         # Формируем итоговые данные
+        # participant.total_points уже нормализован при сохранении через _parse_score
+        # Но могут быть старые данные в формате ×100
+        total_points_normalized = None
+        if participant.total_points is not None:
+            # Если значение > 100, значит оно в формате ×100 (например, 1758 = 17.58)
+            # Если значение <= 100, значит уже нормализовано (например, 17.58)
+            total_points_normalized = participant.total_points / 100.0 if abs(participant.total_points) > 100 else participant.total_points
+        
         result = {
             'participant': {
                 'id': participant.id,
                 'bib_number': participant.bib_number,
                 'total_place': participant.total_place,
-                'total_points': round(participant.total_points, 2) if participant.total_points else None,
+                'total_points': round(total_points_normalized, 2) if total_points_normalized is not None else None,
                 'status': participant.status,
                 'coach': participant.coach
             },

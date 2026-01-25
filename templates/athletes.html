@@ -225,50 +225,114 @@ function loadAthletes(search = '', page = 1, sortBy = currentSort.by, sortOrder 
     const currentRankFilterValue = rankFilter !== undefined ? rankFilter : document.getElementById('rankFilter').value;
     
     // Показываем индикатор загрузки
-    searchSpinner.style.display = 'block';
+    if (searchSpinner) {
+        searchSpinner.style.display = 'block';
+    }
     
     // Создаем URL для API
     const url = new URL('/api/athletes', window.location.origin);
-    if (search) url.searchParams.set('search', search);
-    if (currentRankFilterValue) url.searchParams.set('rank', currentRankFilterValue);
-    if (page > 1) url.searchParams.set('page', page);
-    if (sortBy) url.searchParams.set('sort_by', sortBy);
-    if (sortOrder) url.searchParams.set('sort_order', sortOrder);
+    if (search && search.trim()) {
+        url.searchParams.set('search', search.trim());
+    }
+    if (currentRankFilterValue) {
+        url.searchParams.set('rank', currentRankFilterValue);
+    }
+    if (page > 1) {
+        url.searchParams.set('page', page);
+    }
+    if (sortBy) {
+        url.searchParams.set('sort_by', sortBy);
+    }
+    if (sortOrder) {
+        url.searchParams.set('sort_order', sortOrder);
+    }
+    
+    console.log('Запрос к API:', url.toString()); // Для отладки
     
     fetch(url)
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             // Скрываем индикатор загрузки
-            searchSpinner.style.display = 'none';
+            if (searchSpinner) {
+                searchSpinner.style.display = 'none';
+            }
+            
+            console.log('Данные получены:', data); // Для отладки
             
             // Обновляем таблицу
-            updateTable(data.athletes);
+            if (data && data.athletes) {
+                updateTable(data.athletes);
+            } else {
+                updateTable([]);
+            }
             
             // Обновляем пагинацию
-            updatePagination(data.pagination);
+            if (data && data.pagination) {
+                updatePagination(data.pagination);
+            }
             
             // Обновляем счетчик результатов
-            updateResultsCounter(data.pagination.total, data.search);
+            const total = (data && data.pagination) ? data.pagination.total : ((data && data.athletes) ? data.athletes.length : 0);
+            updateResultsCounter(total, search);
             
             currentPage = page;
         })
         .catch(error => {
             console.error('Ошибка загрузки данных:', error);
             searchSpinner.style.display = 'none';
+            const tbody = document.querySelector('tbody');
+            const noResults = document.querySelector('.text-center.py-5');
+            if (tbody) {
+                tbody.innerHTML = '';
+            }
+            if (noResults) {
+                noResults.style.display = 'block';
+                noResults.querySelector('h5').textContent = 'Ошибка загрузки данных';
+                noResults.querySelector('p').textContent = 'Попробуйте обновить страницу или изменить запрос';
+            }
         });
 }
 
 function updateTable(athletes) {
     const tbody = document.querySelector('tbody');
     const noResults = document.querySelector('.text-center.py-5');
+    const tableContainer = document.getElementById('athletesTable');
     
-    if (athletes.length === 0) {
-        tbody.innerHTML = '';
-        noResults.style.display = 'block';
+    if (!athletes || athletes.length === 0) {
+        if (tbody) {
+            tbody.innerHTML = '';
+        }
+        if (noResults) {
+            noResults.style.display = 'block';
+        }
+        if (tableContainer) {
+            const table = tableContainer.querySelector('.table-responsive');
+            if (table) {
+                table.style.display = 'none';
+            }
+        }
         return;
     }
     
-    noResults.style.display = 'none';
+    if (noResults) {
+        noResults.style.display = 'none';
+    }
+    if (tableContainer) {
+        const table = tableContainer.querySelector('.table-responsive');
+        if (table) {
+            table.style.display = 'block';
+        }
+    }
+    
+    if (!tbody) {
+        console.error('Не найдено tbody для таблицы');
+        return;
+    }
     
     tbody.innerHTML = athletes.map(athlete => `
         <tr ${athlete.has_free_participation ? 'class="table-success"' : ''}>
