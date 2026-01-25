@@ -1389,7 +1389,7 @@ def export_to_google_sheets(spreadsheet_id=None):
                             'condition': {
                                 'type': 'CUSTOM_FORMULA',
                                 'values': [{
-                                    'userEnteredValue': 'COUNTIF($B:$B, B3)>1'
+                                    'userEnteredValue': '=COUNTIF($B:$B,B3)>1'
                                 }]
                             },
                             'format': {
@@ -1772,7 +1772,7 @@ def export_to_google_sheets(spreadsheet_id=None):
                             'condition': {
                                 'type': 'CUSTOM_FORMULA',
                                 'values': [{
-                                    'userEnteredValue': 'COUNTIF($B:$B, B3)>1'
+                                    'userEnteredValue': '=COUNTIF($B:$B,B3)>1'
                                 }]
                             },
                             'format': {
