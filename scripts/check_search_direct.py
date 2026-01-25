@@ -64,9 +64,37 @@ with app.app_context():
     # Прямой SQL запрос
     search_term = "иван"
     
-    print(f"\nПоиск '{search_term}' в first_name:")
+    print(f"\nПоиск '{search_term}' в first_name (через db.func.lower):")
     athletes = db.session.query(Athlete).filter(
         db.func.lower(Athlete.first_name).like(f'%{search_term}%')
+    ).limit(5).all()
+    print(f"Найдено: {len(athletes)}")
+    for a in athletes:
+        print(f"  - ID {a.id}: '{a.first_name}' '{a.last_name}'")
+    
+    # Альтернативный способ - через ilike (должен работать без lower)
+    print(f"\nПоиск '{search_term}' в first_name (через ilike):")
+    athletes = db.session.query(Athlete).filter(
+        Athlete.first_name.ilike(f'%{search_term}%')
+    ).limit(5).all()
+    print(f"Найдено: {len(athletes)}")
+    for a in athletes:
+        print(f"  - ID {a.id}: '{a.first_name}' '{a.last_name}'")
+    
+    # Прямой поиск без преобразования регистра
+    print(f"\nПоиск '{search_term}' в first_name (прямой LIKE, регистрозависимый):")
+    athletes = db.session.query(Athlete).filter(
+        Athlete.first_name.like(f'%{search_term}%')
+    ).limit(5).all()
+    print(f"Найдено: {len(athletes)}")
+    for a in athletes:
+        print(f"  - ID {a.id}: '{a.first_name}' '{a.last_name}'")
+    
+    # Поиск с заглавной буквы
+    search_term_capitalized = search_term.capitalize()
+    print(f"\nПоиск '{search_term_capitalized}' в first_name (с заглавной буквы):")
+    athletes = db.session.query(Athlete).filter(
+        Athlete.first_name.like(f'%{search_term_capitalized}%')
     ).limit(5).all()
     print(f"Найдено: {len(athletes)}")
     for a in athletes:

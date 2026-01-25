@@ -5,6 +5,7 @@
 """
 
 import re
+from sqlalchemy import func
 from utils.normalizers import normalize_string, fix_latin_to_cyrillic
 
 
@@ -46,9 +47,9 @@ def create_search_filter(model_field, search_term):
     
     normalized_search = normalize_search_term(search_term)
     
-    # Используем ILIKE для поиска без учета регистра
-    # Это работает для большинства случаев
-    return model_field.ilike(f'%{normalized_search}%')
+    # Используем LOWER() для поиска без учета регистра
+    # Это работает надежно как в SQLite, так и в PostgreSQL
+    return func.lower(model_field).like(f'%{normalized_search}%')
 
 
 def create_multi_field_search_filter(search_term, *fields):
@@ -91,8 +92,8 @@ def create_multi_field_search_filter(search_term, *fields):
         filters = []
         for field in fields:
             if field is not None:
-                # Поиск по части слова (ILIKE уже нечувствителен к регистру)
-                filters.append(field.ilike(f'%{word}%'))
+                # Используем LOWER() для поиска без учета регистра (работает в SQLite и PostgreSQL)
+                filters.append(func.lower(field).like(f'%{word}%'))
         return or_(*filters) if filters else None
     
     # Если несколько слов - максимально гибкий поиск
@@ -102,7 +103,8 @@ def create_multi_field_search_filter(search_term, *fields):
     for field in fields:
         if field is not None:
             # Поле должно содержать все слова (AND между словами)
-            word_filters = [field.ilike(f'%{word}%') for word in search_words]
+            # Используем LOWER() для поиска без учета регистра
+            word_filters = [func.lower(field).like(f'%{word}%') for word in search_words]
             if word_filters:
                 field_filters.append(and_(*word_filters))
     
@@ -115,7 +117,8 @@ def create_multi_field_search_filter(search_term, *fields):
         word_field_filters = []
         for field in fields:
             if field is not None:
-                word_field_filters.append(field.ilike(f'%{word}%'))
+                # Используем LOWER() для поиска без учета регистра
+                word_field_filters.append(func.lower(field).like(f'%{word}%'))
         if word_field_filters:
             word_or_filters.append(or_(*word_field_filters))
     

@@ -595,11 +595,11 @@ def api_athletes():
                 else:
                     # Если не найдено, проверяем альтернативные варианты поиска
                     logger.info(f"Не найдено спортсменов с '{search}'. Проверяю альтернативные варианты...")
-                    # Проверяем поиск по каждому полю отдельно
-                    first_name_count = db.session.query(Athlete).filter(Athlete.first_name.ilike(f'%{normalized}%')).count()
-                    last_name_count = db.session.query(Athlete).filter(Athlete.last_name.ilike(f'%{normalized}%')).count()
-                    full_name_count = db.session.query(Athlete).filter(Athlete.full_name_xml.ilike(f'%{normalized}%')).count() if Athlete.full_name_xml else 0
-                    patronymic_count = db.session.query(Athlete).filter(Athlete.patronymic.ilike(f'%{normalized}%')).count() if Athlete.patronymic else 0
+                    # Проверяем поиск по каждому полю отдельно (используем LOWER для совместимости с SQLite)
+                    first_name_count = db.session.query(Athlete).filter(db.func.lower(Athlete.first_name).like(f'%{normalized}%')).count()
+                    last_name_count = db.session.query(Athlete).filter(db.func.lower(Athlete.last_name).like(f'%{normalized}%')).count()
+                    full_name_count = db.session.query(Athlete).filter(db.func.lower(Athlete.full_name_xml).like(f'%{normalized}%')).count() if Athlete.full_name_xml else 0
+                    patronymic_count = db.session.query(Athlete).filter(db.func.lower(Athlete.patronymic).like(f'%{normalized}%')).count() if Athlete.patronymic else 0
                     logger.info(f"  По first_name: {first_name_count}, last_name: {last_name_count}, full_name_xml: {full_name_count}, patronymic: {patronymic_count}")
             except Exception as e:
                 logger.warning(f"Ошибка при проверке простого запроса: {e}")
