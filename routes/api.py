@@ -595,11 +595,43 @@ def api_athletes():
                 else:
                     # Если не найдено, проверяем альтернативные варианты поиска
                     logger.info(f"Не найдено спортсменов с '{search}'. Проверяю альтернативные варианты...")
-                    # Проверяем поиск по каждому полю отдельно (используем LOWER для совместимости с SQLite)
-                    first_name_count = db.session.query(Athlete).filter(db.func.lower(Athlete.first_name).like(f'%{normalized}%')).count()
-                    last_name_count = db.session.query(Athlete).filter(db.func.lower(Athlete.last_name).like(f'%{normalized}%')).count()
-                    full_name_count = db.session.query(Athlete).filter(db.func.lower(Athlete.full_name_xml).like(f'%{normalized}%')).count() if Athlete.full_name_xml else 0
-                    patronymic_count = db.session.query(Athlete).filter(db.func.lower(Athlete.patronymic).like(f'%{normalized}%')).count() if Athlete.patronymic else 0
+                    # Проверяем поиск по каждому полю отдельно (используем поиск в разных регистрах для SQLite)
+                    search_lower = normalized.lower()
+                    search_upper = normalized.upper()
+                    search_title = normalized.capitalize()
+                    
+                    first_name_filter = db.or_(
+                        Athlete.first_name.like(f'%{search_lower}%'),
+                        Athlete.first_name.like(f'%{search_upper}%'),
+                        Athlete.first_name.like(f'%{search_title}%'),
+                        Athlete.first_name.like(f'%{normalized}%')
+                    )
+                    first_name_count = db.session.query(Athlete).filter(first_name_filter).count()
+                    
+                    last_name_filter = db.or_(
+                        Athlete.last_name.like(f'%{search_lower}%'),
+                        Athlete.last_name.like(f'%{search_upper}%'),
+                        Athlete.last_name.like(f'%{search_title}%'),
+                        Athlete.last_name.like(f'%{normalized}%')
+                    )
+                    last_name_count = db.session.query(Athlete).filter(last_name_filter).count()
+                    
+                    full_name_filter = db.or_(
+                        Athlete.full_name_xml.like(f'%{search_lower}%'),
+                        Athlete.full_name_xml.like(f'%{search_upper}%'),
+                        Athlete.full_name_xml.like(f'%{search_title}%'),
+                        Athlete.full_name_xml.like(f'%{normalized}%')
+                    )
+                    full_name_count = db.session.query(Athlete).filter(full_name_filter).count() if Athlete.full_name_xml else 0
+                    
+                    patronymic_filter = db.or_(
+                        Athlete.patronymic.like(f'%{search_lower}%'),
+                        Athlete.patronymic.like(f'%{search_upper}%'),
+                        Athlete.patronymic.like(f'%{search_title}%'),
+                        Athlete.patronymic.like(f'%{normalized}%')
+                    )
+                    patronymic_count = db.session.query(Athlete).filter(patronymic_filter).count() if Athlete.patronymic else 0
+                    
                     logger.info(f"  По first_name: {first_name_count}, last_name: {last_name_count}, full_name_xml: {full_name_count}, patronymic: {patronymic_count}")
             except Exception as e:
                 logger.warning(f"Ошибка при проверке простого запроса: {e}")

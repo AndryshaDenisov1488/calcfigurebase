@@ -48,12 +48,18 @@ function initializeSearch() {
     }
     
     // Ищем все input поля (не только type="search")
+    // НО исключаем поле поиска спортсменов по ID
     const searchInputs = document.querySelectorAll('input[type="search"], input[type="text"]');
     searchInputs.forEach(input => {
-        // Проверяем, что это не поле поиска спортсменов
-        if (input.id === 'searchInput' || input.closest('#athletesTable')) {
+        // Строгая проверка: пропускаем поле поиска спортсменов
+        if (input.id === 'searchInput') {
             console.log('[initializeSearch] Пропущено поле поиска спортсменов:', input.id);
             return; // Пропускаем поле поиска спортсменов
+        }
+        // Также пропускаем, если поле находится внутри контейнера спортсменов
+        if (input.closest('#athletesTable') || input.closest('.athletes-container')) {
+            console.log('[initializeSearch] Пропущено поле внутри контейнера спортсменов');
+            return;
         }
         input.addEventListener('input', debounce(handleSearch, 300));
     });
@@ -64,23 +70,32 @@ function handleSearch(event) {
     // КРИТИЧЕСКАЯ проверка в самом начале - полностью отключаем для страницы спортсменов
     const pathname = window.location.pathname;
     if (pathname === '/athletes' || pathname.startsWith('/athletes/')) {
-        console.log('[handleSearch] Отключен для страницы спортсменов');
+        console.log('[handleSearch] Отключен для страницы спортсменов (pathname:', pathname, ')');
         return;
     }
     
     // Проверяем наличие события и цели
     if (!event || !event.target) {
+        console.log('[handleSearch] Нет события или цели');
         return;
     }
     
-    // Проверяем, что это не поле поиска спортсменов
+    // Строгая проверка: пропускаем поле поиска спортсменов
     const targetId = event.target.id;
-    const targetType = event.target.type;
     
-    if (targetId === 'searchInput' || 
-        (event.target.closest && event.target.closest('#athletesTable')) ||
-        (event.target.closest && event.target.closest('.card') && event.target.closest('.card').querySelector('#athletesTable'))) {
-        console.log('[handleSearch] Пропущен - поле поиска спортсменов');
+    // Если это поле поиска спортсменов - сразу выходим
+    if (targetId === 'searchInput') {
+        console.log('[handleSearch] Пропущен - поле поиска спортсменов (ID: searchInput)');
+        return;
+    }
+    
+    // Также проверяем, находится ли поле внутри контейнера спортсменов
+    if (event.target.closest && (
+        event.target.closest('#athletesTable') ||
+        event.target.closest('.athletes-container') ||
+        (event.target.closest('.card') && event.target.closest('.card').querySelector('#athletesTable'))
+    )) {
+        console.log('[handleSearch] Пропущен - поле внутри контейнера спортсменов');
         return;
     }
     

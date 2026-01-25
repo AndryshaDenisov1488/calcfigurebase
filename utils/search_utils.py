@@ -47,9 +47,19 @@ def create_search_filter(model_field, search_term):
     
     normalized_search = normalize_search_term(search_term)
     
-    # Используем LOWER() для поиска без учета регистра
-    # Это работает надежно как в SQLite, так и в PostgreSQL
-    return func.lower(model_field).like(f'%{normalized_search}%')
+    # Для SQLite используем поиск в разных регистрах (более надежно, чем func.lower)
+    # Это работает лучше с кириллицей в SQLite
+    from sqlalchemy import or_
+    search_lower = normalized_search.lower()
+    search_upper = normalized_search.upper()
+    search_title = normalized_search.capitalize()
+    
+    return or_(
+        model_field.like(f'%{search_lower}%'),
+        model_field.like(f'%{search_upper}%'),
+        model_field.like(f'%{search_title}%'),
+        model_field.like(f'%{normalized_search}%')
+    )
 
 
 def create_multi_field_search_filter(search_term, *fields):
@@ -92,8 +102,20 @@ def create_multi_field_search_filter(search_term, *fields):
         filters = []
         for field in fields:
             if field is not None:
-                # Используем LOWER() для поиска без учета регистра (работает в SQLite и PostgreSQL)
-                filters.append(func.lower(field).like(f'%{word}%'))
+                # Для SQLite используем поиск в разных регистрах (более надежно, чем func.lower)
+                # Это работает лучше с кириллицей в SQLite
+                word_lower = word.lower()
+                word_upper = word.upper()
+                word_title = word.capitalize()
+                
+                # Поиск в нижнем регистре
+                filters.append(field.like(f'%{word_lower}%'))
+                # Поиск в верхнем регистре
+                filters.append(field.like(f'%{word_upper}%'))
+                # Поиск с заглавной буквы
+                filters.append(field.like(f'%{word_title}%'))
+                # Поиск в исходном регистре (на случай, если пользователь ввел с заглавной)
+                filters.append(field.like(f'%{word}%'))
         return or_(*filters) if filters else None
     
     # Если несколько слов - максимально гибкий поиск
@@ -103,10 +125,23 @@ def create_multi_field_search_filter(search_term, *fields):
     for field in fields:
         if field is not None:
             # Поле должно содержать все слова (AND между словами)
-            # Используем LOWER() для поиска без учета регистра
-            word_filters = [func.lower(field).like(f'%{word}%') for word in search_words]
-            if word_filters:
-                field_filters.append(and_(*word_filters))
+            # Для каждого слова создаем фильтры в разных регистрах
+            word_combinations = []
+            for word in search_words:
+                word_lower = word.lower()
+                word_upper = word.upper()
+                word_title = word.capitalize()
+                # Создаем OR для всех вариантов регистра одного слова
+                word_variants = [
+                    field.like(f'%{word_lower}%'),
+                    field.like(f'%{word_upper}%'),
+                    field.like(f'%{word_title}%'),
+                    field.like(f'%{word}%')
+                ]
+                word_combinations.append(or_(*word_variants))
+            # Все слова должны быть найдены (AND между словами)
+            if word_combinations:
+                field_filters.append(and_(*word_combinations))
     
     # Стратегия 2: слова могут быть распределены по разным полям
     # Например: "Иван" в имени + "Петров" в фамилии
@@ -117,8 +152,16 @@ def create_multi_field_search_filter(search_term, *fields):
         word_field_filters = []
         for field in fields:
             if field is not None:
-                # Используем LOWER() для поиска без учета регистра
-                word_field_filters.append(func.lower(field).like(f'%{word}%'))
+                # Для каждого слова создаем фильтры в разных регистрах
+                word_lower = word.lower()
+                word_upper = word.upper()
+                word_title = word.capitalize()
+                word_field_filters.extend([
+                    field.like(f'%{word_lower}%'),
+                    field.like(f'%{word_upper}%'),
+                    field.like(f'%{word_title}%'),
+                    field.like(f'%{word}%')
+                ])
         if word_field_filters:
             word_or_filters.append(or_(*word_field_filters))
     
