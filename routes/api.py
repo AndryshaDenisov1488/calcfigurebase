@@ -11,6 +11,7 @@ from models import Event, Category, Athlete, Participant, Club, Segment, Perform
 from season_utils import get_season_from_date
 from services.rank_service import normalize_category_name, get_rank_weight
 from utils.search_utils import normalize_search_term, create_multi_field_search_filter
+from utils.normalizers import normalize_string
 
 logger = logging.getLogger(__name__)
 api_bp = Blueprint('api', __name__, url_prefix='/api')
@@ -564,19 +565,8 @@ def api_athletes():
         Athlete, Club
     ).outerjoin(Club, Athlete.club_id == Club.id)
     
-    # Универсальный поиск по имени, фамилии, отчеству и полному имени (нечувствительный к регистру)
-    if search:
-        search_filter = create_multi_field_search_filter(
-            search,
-            Athlete.first_name,
-            Athlete.last_name,
-            Athlete.full_name_xml,
-            Athlete.patronymic
-        )
-        if search_filter is not None:
-            athletes_query = athletes_query.filter(search_filter)
-    
-    # Добавляем JOIN с Participant и Category для сортировки по разрядам
+    # Добавляем JOIN с Participant и Category для сортировки по разрядам (если нужно)
+    # Делаем это ДО применения фильтра поиска, чтобы фильтр работал правильно
     if sort_by == 'rank' or rank_filter or sort_by in ['participations', 'best_place']:
         athletes_query = athletes_query.outerjoin(
             Participant, Athlete.id == Participant.athlete_id
@@ -588,7 +578,27 @@ def api_athletes():
             if rank_filter:
                 athletes_query = athletes_query.filter(Category.normalized_name == rank_filter)
     
+    # Универсальный поиск по имени, фамилии, отчеству и полному имени (нечувствительный к регистру)
+    # Применяем ПОСЛЕ JOIN'ов, но ПЕРЕД group_by
+    if search:
+        search_filter = create_multi_field_search_filter(
+            search,
+            Athlete.first_name,
+            Athlete.last_name,
+            Athlete.full_name_xml,
+            Athlete.patronymic
+        )
+        if search_filter is not None:
+            athletes_query = athletes_query.filter(search_filter)
+        else:
+            # Если фильтр не создан (например, слишком короткий запрос), возвращаем пустой результат
+            # Но только если это действительно поиск, а не пустая строка
+            if search.strip():
+                # Для отладки - логируем, почему фильтр не создан
+                logger.warning(f"Поисковый фильтр не создан для запроса: '{search}' (нормализовано: '{normalize_search_term(search) if search else ''}')")
+    
     # Добавляем group_by для агрегатных функций
+    # Делаем это ПОСЛЕ фильтра поиска, чтобы фильтр применялся к базовым записям
     if sort_by in ['participations', 'best_place'] or sort_by == 'rank' or rank_filter:
         athletes_query = athletes_query.group_by(Athlete.id, Club.id)
     
@@ -617,9 +627,20 @@ def api_athletes():
         else:
             athletes_query = athletes_query.order_by(order_column.asc())
     
+    # Для отладки - логируем SQL запрос (только если есть поиск)
+    if search:
+        try:
+            logger.debug(f"SQL запрос для поиска '{search}': {str(athletes_query.statement)}")
+        except:
+            pass
+    
     athletes = athletes_query.paginate(
         page=page, per_page=per_page, error_out=False
     )
+    
+    # Для отладки - логируем количество найденных результатов
+    if search:
+        logger.info(f"Поиск '{search}': найдено {athletes.total} спортсменов")
     
     # Получаем данные участников для всех спортсменов одним запросом
     athlete_ids = [athlete.id for athlete, club in athletes.items]

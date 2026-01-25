@@ -41,14 +41,15 @@ function initializeTables() {
 // Инициализация поиска
 function initializeSearch() {
     // Исключаем страницу спортсменов - там свой поиск через API
-    if (window.location.pathname === '/athletes') {
+    const pathname = window.location.pathname;
+    if (pathname === '/athletes' || pathname.startsWith('/athletes/')) {
         return; // Не инициализируем поиск на странице спортсменов
     }
     
     const searchInputs = document.querySelectorAll('input[type="search"]');
     searchInputs.forEach(input => {
         // Проверяем, что это не поле поиска спортсменов
-        if (input.id !== 'searchInput') {
+        if (input.id !== 'searchInput' && !input.closest('#athletesTable')) {
             input.addEventListener('input', debounce(handleSearch, 300));
         }
     });
@@ -56,6 +57,17 @@ function initializeSearch() {
 
 // Обработка поиска (только для статических таблиц)
 function handleSearch(event) {
+    // Дополнительная проверка - не обрабатываем поиск на странице спортсменов
+    const pathname = window.location.pathname;
+    if (pathname === '/athletes' || pathname.startsWith('/athletes/')) {
+        return;
+    }
+    
+    // Проверяем, что это не поле поиска спортсменов
+    if (event.target.id === 'searchInput' || event.target.closest('#athletesTable')) {
+        return;
+    }
+    
     const searchTerm = event.target.value.toLowerCase();
     const card = event.target.closest('.card');
     
@@ -65,17 +77,24 @@ function handleSearch(event) {
     
     const table = card.querySelector('table');
     
-    if (table) {
-        const rows = table.querySelectorAll('tbody tr');
-        rows.forEach(row => {
-            const text = row.textContent.toLowerCase();
-            if (text.includes(searchTerm)) {
-                row.style.display = '';
-            } else {
-                row.style.display = 'none';
-            }
-        });
+    if (!table) {
+        return; // Если нет таблицы, выходим
     }
+    
+    const tbody = table.querySelector('tbody');
+    if (!tbody) {
+        return; // Если нет tbody, выходим
+    }
+    
+    const rows = tbody.querySelectorAll('tr');
+    rows.forEach(row => {
+        const text = row.textContent.toLowerCase();
+        if (text.includes(searchTerm)) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
 }
 
 // Функция debounce для оптимизации поиска
