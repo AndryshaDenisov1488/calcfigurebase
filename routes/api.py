@@ -587,6 +587,20 @@ def api_athletes():
                 # Если есть спортсмены без JOIN'ов, но нет с JOIN'ами - проблема в запросе
                 if simple_count > 0:
                     logger.warning(f"ВНИМАНИЕ: Найдено {simple_count} спортсменов БЕЗ JOIN'ов, но 0 С JOIN'ами. Возможна проблема с применением фильтра после JOIN.")
+                    
+                    # Показываем примеры найденных спортсменов для отладки
+                    sample_athletes = db.session.query(Athlete).filter(search_filter).limit(3).all()
+                    for athlete in sample_athletes:
+                        logger.info(f"  Пример: ID={athlete.id}, first_name='{athlete.first_name}', last_name='{athlete.last_name}', full_name_xml='{athlete.full_name_xml}', patronymic='{athlete.patronymic}'")
+                else:
+                    # Если не найдено, проверяем альтернативные варианты поиска
+                    logger.info(f"Не найдено спортсменов с '{search}'. Проверяю альтернативные варианты...")
+                    # Проверяем поиск по каждому полю отдельно
+                    first_name_count = db.session.query(Athlete).filter(Athlete.first_name.ilike(f'%{normalized}%')).count()
+                    last_name_count = db.session.query(Athlete).filter(Athlete.last_name.ilike(f'%{normalized}%')).count()
+                    full_name_count = db.session.query(Athlete).filter(Athlete.full_name_xml.ilike(f'%{normalized}%')).count() if Athlete.full_name_xml else 0
+                    patronymic_count = db.session.query(Athlete).filter(Athlete.patronymic.ilike(f'%{normalized}%')).count() if Athlete.patronymic else 0
+                    logger.info(f"  По first_name: {first_name_count}, last_name: {last_name_count}, full_name_xml: {full_name_count}, patronymic: {patronymic_count}")
             except Exception as e:
                 logger.warning(f"Ошибка при проверке простого запроса: {e}")
         else:
