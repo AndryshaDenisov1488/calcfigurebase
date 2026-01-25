@@ -563,13 +563,13 @@ def api_athletes():
     # Универсальный поиск по имени, фамилии, отчеству и полному имени (нечувствительный к регистру)
     # Создаем фильтр ДО построения основного запроса
     search_filter = None
-            if search and search.strip():
-                normalized = normalize_search_term(search)
-                logger.info(f"Поиск: '{search}' -> нормализовано: '{normalized}' (длина: {len(normalized)}, байты: {normalized.encode('utf-8')})")
-                # Проверяем, что нормализация не изменила строку неправильно
-                if search != normalized:
-                    logger.info(f"  Исходная строка: '{search}' (байты: {search.encode('utf-8')})")
-                    logger.info(f"  Нормализованная: '{normalized}' (байты: {normalized.encode('utf-8')})")
+    if search and search.strip():
+        normalized = normalize_search_term(search)
+        logger.info(f"Поиск: '{search}' -> нормализовано: '{normalized}' (длина: {len(normalized)}, байты: {normalized.encode('utf-8')})")
+        # Проверяем, что нормализация не изменила строку неправильно
+        if search != normalized:
+            logger.info(f"  Исходная строка: '{search}' (байты: {search.encode('utf-8')})")
+            logger.info(f"  Нормализованная: '{normalized}' (байты: {normalized.encode('utf-8')})")
         
         search_filter = create_multi_field_search_filter(
             search,
