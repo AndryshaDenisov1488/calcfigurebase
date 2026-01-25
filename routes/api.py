@@ -1048,19 +1048,27 @@ def api_participant_performance_details(participant_id):
                             break  # Если нет оценки, дальше тоже не будет
                 
                 # Форматируем базовую стоимость и GOE
+                # В БД все значения хранятся ×100 (60 = 0.60, 5500 = 55.00)
+                # Поэтому всегда делим на 100, но проверяем разумные границы
                 base_value = None
                 if elem.base_value is not None:
-                    base_value = elem.base_value / 100.0 if elem.base_value > 100 else elem.base_value
+                    # Если значение > 10, значит оно в формате ×100 (например, 60 = 0.60, 110 = 1.10)
+                    # Если значение <= 10, возможно уже правильное, но обычно это тоже ×100
+                    # Для безопасности: если > 1, делим на 100
+                    base_value = elem.base_value / 100.0 if abs(elem.base_value) > 1 else elem.base_value
                 
                 goe_result = None
                 if elem.goe_result is not None:
-                    goe_result = elem.goe_result / 100.0 if abs(elem.goe_result) > 5 else elem.goe_result
+                    # GOE может быть отрицательным, проверяем абсолютное значение
+                    # Если > 1, значит ×100 (например, 55 = 0.55, -36 = -0.36)
+                    goe_result = elem.goe_result / 100.0 if abs(elem.goe_result) > 1 else elem.goe_result
                 
                 element_score = None
                 if elem.result is not None:
                     try:
                         result_num = float(elem.result) if isinstance(elem.result, str) else elem.result
-                        element_score = result_num / 100.0 if result_num > 100 else result_num
+                        # Если > 1, значит ×100 (например, 55 = 0.55, 64 = 0.64)
+                        element_score = result_num / 100.0 if abs(result_num) > 1 else result_num
                     except (ValueError, TypeError):
                         element_score = elem.result
                 elif base_value is not None and goe_result is not None:
@@ -1108,11 +1116,13 @@ def api_participant_performance_details(participant_id):
                             break
                 
                 # Вычисляем итоговую оценку компонента
+                # В БД все значения хранятся ×100
                 component_result = None
                 if comp.result is not None:
                     try:
                         result_num = float(comp.result) if isinstance(comp.result, str) else comp.result
-                        component_result = result_num / 100.0 if result_num > 100 else result_num
+                        # Если > 1, значит ×100 (например, 513 = 5.13, 500 = 5.00)
+                        component_result = result_num / 100.0 if abs(result_num) > 1 else result_num
                     except (ValueError, TypeError):
                         component_result = comp.result
                 elif judge_scores_list and comp.factor:
@@ -1141,24 +1151,34 @@ def api_participant_performance_details(participant_id):
                 })
             
             # Форматируем общие баллы
+            # В БД все значения хранятся ×100
             tes_total = None
             if perf.tes_total is not None:
-                tes_total = perf.tes_total / 100.0 if perf.tes_total > 1000 else perf.tes_total
+                # Если > 10, значит ×100 (например, 74500 = 745.00, 1810 = 18.10)
+                tes_total = perf.tes_total / 100.0 if abs(perf.tes_total) > 10 else perf.tes_total
             
             pcs_total = None
             if perf.pcs_total is not None:
-                pcs_total = perf.pcs_total / 100.0 if perf.pcs_total > 1000 else perf.pcs_total
+                # Если > 10, значит ×100 (например, 2013 = 20.13, 1013 = 10.13)
+                pcs_total = perf.pcs_total / 100.0 if abs(perf.pcs_total) > 10 else perf.pcs_total
             
             deductions = None
             if perf.deductions is not None:
-                deductions = abs(perf.deductions) / 100.0 if abs(perf.deductions) > 10 else abs(perf.deductions)
+                # Если > 1, значит ×100 (например, 0 = 0.00, 100 = 1.00)
+                deductions = abs(perf.deductions) / 100.0 if abs(perf.deductions) > 1 else abs(perf.deductions)
+            
+            # Нормализуем points (сумма за сегмент)
+            segment_points = None
+            if perf.points is not None:
+                # Если > 10, значит ×100 (например, 1758 = 17.58, 1496 = 14.96)
+                segment_points = perf.points / 100.0 if abs(perf.points) > 10 else perf.points
             
             performances_data.append({
                 'id': perf.id,
                 'segment_name': segment.name if segment else 'Неизвестный сегмент',
                 'segment_type': segment.segment_type if segment else None,
                 'place': perf.place,
-                'points': round(perf.points, 2) if perf.points else None,
+                'points': round(segment_points, 2) if segment_points is not None else None,
                 'tes_total': round(tes_total, 2) if tes_total is not None else None,
                 'pcs_total': round(pcs_total, 2) if pcs_total is not None else None,
                 'deductions': round(deductions, 2) if deductions is not None else 0.00,

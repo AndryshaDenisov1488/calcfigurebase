@@ -55,13 +55,14 @@ def create_multi_field_search_filter(search_term, *fields):
     """Создает фильтр для поиска по нескольким полям
     
     Поддерживает:
-    - Поиск по части слова
-    - Поиск по нескольким словам (AND логика)
+    - Поиск по части слова (от 2 символов)
+    - Поиск по нескольким словам в любом порядке
     - Поиск без учета регистра
     - Поиск по любому из полей (OR логика)
+    - Гибкий поиск: "Иван Петров" найдет "Петров Иван", "Иван Петрович" и т.д.
     
     Args:
-        search_term: Поисковый запрос
+        search_term: Поисковый запрос (может быть коротким, от 2 символов)
         *fields: SQLAlchemy поля для поиска
         
     Returns:
@@ -74,28 +75,56 @@ def create_multi_field_search_filter(search_term, *fields):
     
     normalized_search = normalize_search_term(search_term)
     
-    # Разбиваем поисковый запрос на слова
-    search_words = normalized_search.split()
+    # Минимальная длина для поиска - 2 символа
+    if len(normalized_search) < 2:
+        return None
     
-    # Если одно слово - простой поиск
+    # Разбиваем поисковый запрос на слова
+    search_words = [w for w in normalized_search.split() if len(w) >= 2]
+    
+    if not search_words:
+        return None
+    
+    # Если одно слово - простой поиск по всем полям
     if len(search_words) == 1:
+        word = search_words[0]
         filters = []
         for field in fields:
             if field is not None:
-                filters.append(field.ilike(f'%{normalized_search}%'))
+                # Поиск по части слова (ILIKE уже нечувствителен к регистру)
+                filters.append(field.ilike(f'%{word}%'))
         return or_(*filters) if filters else None
     
-    # Если несколько слов - ищем все слова в любом из полей
-    # Это более гибкий поиск: "Иван Петров" найдет и "Иван Петров", и "Петров Иван"
-    filters = []
+    # Если несколько слов - максимально гибкий поиск
+    # Стратегия 1: все слова в одном поле (в любом порядке)
+    # Например: "Иван Петров" найдет "Иван Петров", "Петров Иван" в любом поле
+    field_filters = []
     for field in fields:
         if field is not None:
-            # Каждое слово должно быть найдено в поле (AND между словами)
+            # Поле должно содержать все слова (AND между словами)
             word_filters = [field.ilike(f'%{word}%') for word in search_words]
             if word_filters:
-                filters.append(and_(*word_filters))
+                field_filters.append(and_(*word_filters))
     
-    return or_(*filters) if filters else None
+    # Стратегия 2: слова могут быть распределены по разным полям
+    # Например: "Иван" в имени + "Петров" в фамилии
+    # Каждое слово должно быть найдено хотя бы в одном поле (OR для каждого слова)
+    # Но все слова должны быть найдены (AND между словами)
+    word_or_filters = []
+    for word in search_words:
+        word_field_filters = []
+        for field in fields:
+            if field is not None:
+                word_field_filters.append(field.ilike(f'%{word}%'))
+        if word_field_filters:
+            word_or_filters.append(or_(*word_field_filters))
+    
+    # Объединяем обе стратегии: либо все слова в одном поле, либо распределены
+    all_filters = field_filters
+    if word_or_filters:
+        all_filters.append(and_(*word_or_filters))
+    
+    return or_(*all_filters) if all_filters else None
 
 
 def normalize_for_client_side_search(text):
