@@ -21,89 +21,93 @@ admin_bp = Blueprint('admin', __name__)
 
 @admin_bp.route('/upload', methods=['GET', 'POST'])
 @admin_required
-@limiter.limit("5 per minute")
+@limiter.limit("100 per minute")  # Увеличено для загрузки множественных файлов
 def upload_file():
     """Загрузка и парсинг XML файла(ов)"""
     if request.method == 'POST':
-        logger.info(f"File upload attempt from {request.remote_addr}")
-        if 'file' not in request.files:
-            logger.warning(f"No file in request from {request.remote_addr}")
-            return jsonify({'error': 'Файл не выбран'}), 400
-        
-        # Поддержка множественной загрузки
-        files = request.files.getlist('file')
-        if not files or all(f.filename == '' for f in files):
-            return jsonify({'error': 'Файл не выбран'}), 400
-        
-        uploaded_files = []
-        errors = []
-        
-        for file in files:
-            if file.filename == '':
-                continue
-            if not file.filename.lower().endswith('.xml'):
-                errors.append(f'Файл "{file.filename}" не является XML файлом')
-                continue
+        try:
+            logger.info(f"File upload attempt from {request.remote_addr}")
+            if 'file' not in request.files:
+                logger.warning(f"No file in request from {request.remote_addr}")
+                return jsonify({'error': 'Файл не выбран'}), 400
             
-            filename = secure_filename(file.filename)
-            # Добавляем timestamp для уникальности при множественной загрузке
-            import time
-            timestamp = int(time.time() * 1000)
-            name, ext = os.path.splitext(filename)
-            filename = f"{name}_{timestamp}{ext}"
-            filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
+            # Поддержка множественной загрузки
+            files = request.files.getlist('file')
+            if not files or all(f.filename == '' for f in files):
+                return jsonify({'error': 'Файл не выбран'}), 400
             
-            try:
-                file.save(filepath)
-                try:
-                    ET.parse(filepath)
-                except ET.ParseError as e:
-                    os.remove(filepath)
-                    errors.append(f'Файл "{file.filename}" не является корректным XML: {str(e)}')
+            uploaded_files = []
+            errors = []
+            
+            for file in files:
+                if file.filename == '':
+                    continue
+                if not file.filename.lower().endswith('.xml'):
+                    errors.append(f'Файл "{file.filename}" не является XML файлом')
                     continue
                 
-                uploaded_files.append({'filepath': filepath, 'filename': file.filename, 'saved_filename': filename})
-            except Exception as e:
-                if os.path.exists(filepath):
-                    os.remove(filepath)
-                errors.append(f'Ошибка обработки файла "{file.filename}": {str(e)}')
-        
-        if not uploaded_files:
-            return jsonify({'error': 'Не удалось загрузить ни одного файла. ' + '; '.join(errors)}), 400
-        
-        # Очищаем старые файлы из сессии и с диска перед загрузкой новых
-        if 'uploaded_files' in session and session['uploaded_files']:
-            logger.info(f"Очистка {len(session['uploaded_files'])} старых файлов из сессии")
-            for old_file in session['uploaded_files']:
-                old_filepath = old_file.get('filepath')
-                if old_filepath and os.path.exists(old_filepath):
+                filename = secure_filename(file.filename)
+                # Добавляем timestamp для уникальности при множественной загрузке
+                import time
+                timestamp = int(time.time() * 1000)
+                name, ext = os.path.splitext(filename)
+                filename = f"{name}_{timestamp}{ext}"
+                filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
+                
+                try:
+                    file.save(filepath)
                     try:
-                        os.remove(old_filepath)
-                        logger.debug(f"Удален старый файл: {old_filepath}")
-                    except Exception as e:
-                        logger.warning(f"Не удалось удалить старый файл {old_filepath}: {str(e)}")
-        
-        # Очищаем старые данные парсера
-        if 'parser_data' in session:
-            old_parser_data = session.pop('parser_data', None)
-            logger.debug("Очищены старые данные парсера из сессии")
-        
-        # Сохраняем новый список файлов в сессии (заменяем, а не добавляем)
-        session['uploaded_files'] = uploaded_files
-        session.modified = True
-        logger.info(f"Загружено {len(uploaded_files)} новых файлов в сессию")
-        
-        message = f'Загружено файлов: {len(uploaded_files)}'
-        if errors:
-            message += f'. Ошибки: {len(errors)}'
-        
-        return jsonify({
-            'success': True,
-            'message': message + '. Используйте кнопку "Обработать XML" для анализа и нормализации категорий.',
-            'uploaded_count': len(uploaded_files),
-            'errors': errors if errors else None,
-            'requires_normalization': True
-        })
+                        ET.parse(filepath)
+                    except ET.ParseError as e:
+                        os.remove(filepath)
+                        errors.append(f'Файл "{file.filename}" не является корректным XML: {str(e)}')
+                        continue
+                    
+                    uploaded_files.append({'filepath': filepath, 'filename': file.filename, 'saved_filename': filename})
+                except Exception as e:
+                    if os.path.exists(filepath):
+                        os.remove(filepath)
+                    errors.append(f'Ошибка обработки файла "{file.filename}": {str(e)}')
+            
+            if not uploaded_files:
+                return jsonify({'error': 'Не удалось загрузить ни одного файла. ' + '; '.join(errors)}), 400
+            
+            # Очищаем старые файлы из сессии и с диска перед загрузкой новых
+            if 'uploaded_files' in session and session['uploaded_files']:
+                logger.info(f"Очистка {len(session['uploaded_files'])} старых файлов из сессии")
+                for old_file in session['uploaded_files']:
+                    old_filepath = old_file.get('filepath')
+                    if old_filepath and os.path.exists(old_filepath):
+                        try:
+                            os.remove(old_filepath)
+                            logger.debug(f"Удален старый файл: {old_filepath}")
+                        except Exception as e:
+                            logger.warning(f"Не удалось удалить старый файл {old_filepath}: {str(e)}")
+            
+            # Очищаем старые данные парсера
+            if 'parser_data' in session:
+                old_parser_data = session.pop('parser_data', None)
+                logger.debug("Очищены старые данные парсера из сессии")
+            
+            # Сохраняем новый список файлов в сессии (заменяем, а не добавляем)
+            session['uploaded_files'] = uploaded_files
+            session.modified = True
+            logger.info(f"Загружено {len(uploaded_files)} новых файлов в сессию")
+            
+            message = f'Загружено файлов: {len(uploaded_files)}'
+            if errors:
+                message += f'. Ошибки: {len(errors)}'
+            
+            return jsonify({
+                'success': True,
+                'message': message + '. Используйте кнопку "Обработать XML" для анализа и нормализации категорий.',
+                'uploaded_count': len(uploaded_files),
+                'errors': errors if errors else None,
+                'requires_normalization': True
+            })
+        except Exception as e:
+            logger.error(f"Критическая ошибка при загрузке файлов: {str(e)}", exc_info=True)
+            return jsonify({'error': f'Внутренняя ошибка сервера: {str(e)}'}), 500
     return render_template('upload.html')
 
 @admin_bp.route('/analyze-xml', methods=['POST'])
@@ -111,7 +115,8 @@ def upload_file():
 @limiter.limit("10 per minute")
 def analyze_xml():
     """Анализ XML файла(ов) без сохранения в базу"""
-    logger.info(f"Запрос на анализ XML. Сессия содержит uploaded_files: {'uploaded_files' in session}")
+    try:
+        logger.info(f"Запрос на анализ XML. Сессия содержит uploaded_files: {'uploaded_files' in session}")
     
     # Проверяем, есть ли файлы в сессии (множественная загрузка)
     if 'uploaded_files' in session and session['uploaded_files']:
@@ -234,9 +239,12 @@ def analyze_xml():
         })
     except Exception as e:
         logger.error(f"Ошибка анализа файла: {str(e)}", exc_info=True)
-        if os.path.exists(filepath):
+        if 'filepath' in locals() and os.path.exists(filepath):
             os.remove(filepath)
         return jsonify({'error': f'Ошибка анализа файла: {str(e)}'}), 500
+    except Exception as e:
+        logger.error(f"Критическая ошибка при анализе XML (внешний обработчик): {str(e)}", exc_info=True)
+        return jsonify({'error': f'Внутренняя ошибка сервера при анализе XML: {str(e)}'}), 500
 
 @admin_bp.route('/normalize-categories', methods=['GET', 'POST'])
 @admin_required
