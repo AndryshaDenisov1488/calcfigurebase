@@ -142,6 +142,7 @@
     .table {
         border-collapse: separate;
         border-spacing: 0;
+        width: 100%;
     }
     
     .table thead th {
@@ -153,6 +154,7 @@
         letter-spacing: 0.5px;
         border: none;
         padding: 1rem;
+        white-space: nowrap;
     }
     
     .table tbody tr {
@@ -169,6 +171,36 @@
     .table tbody td {
         padding: 1rem;
         vertical-align: middle;
+        word-wrap: break-word;
+    }
+    
+    /* История выступлений - расширенная таблица */
+    .performance-history-card {
+        width: 100%;
+        max-width: 100%;
+    }
+    
+    .performance-history-card .table-responsive {
+        width: 100%;
+        max-width: 100%;
+        margin: 0;
+        padding: 0;
+    }
+    
+    .performance-history-card .table {
+        width: 100%;
+        table-layout: auto;
+    }
+    
+    .performance-history-card .card-body {
+        padding: 1.5rem;
+    }
+    
+    @media (min-width: 992px) {
+        .performance-history-card {
+            margin-left: 0;
+            margin-right: 0;
+        }
     }
     
     /* Badge с градиентами */
@@ -722,22 +754,22 @@
         </div>
         
         <!-- История выступлений -->
-        <div class="card">
+        <div class="card performance-history-card">
             <div class="card-header">
                 <h4><i class="fas fa-history"></i> История выступлений</h4>
             </div>
             <div class="card-body">
                 {% if participations %}
-                    <div class="table-responsive" style="overflow-x: auto; width: 100%;">
+                    <div class="table-responsive">
                         <table class="table table-hover">
                             <thead>
                                 <tr>
-                                    <th style="width: 30px;"></th>
-                                    <th>Турнир</th>
-                                    <th>Категория</th>
-                                    <th>Дата</th>
-                                    <th>Место</th>
-                                    <th>Баллы</th>
+                                    <th style="width: 50px; min-width: 50px;"></th>
+                                    <th style="min-width: 200px;">Турнир</th>
+                                    <th style="min-width: 150px;">Категория</th>
+                                    <th style="min-width: 120px;">Дата</th>
+                                    <th style="width: 80px; min-width: 80px;">Место</th>
+                                    <th style="width: 100px; min-width: 100px;">Баллы</th>
                                 </tr>
                             </thead>
                             <tbody>
