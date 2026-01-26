@@ -1407,21 +1407,40 @@ def api_participant_performance_details(participant_id):
                 })
             
             # Форматируем общие баллы
-            # В БД все значения хранятся ×100
+            # tes_total и pcs_total сохраняются БЕЗ нормализации через _parse_score, поэтому всегда в формате ×100
+            # deductions тоже сохраняется без нормализации
             tes_total = None
             if perf.tes_total is not None:
-                # Если > 10, значит ×100 (например, 74500 = 745.00, 1810 = 18.10)
-                tes_total = perf.tes_total / 100.0 if abs(perf.tes_total) > 10 else perf.tes_total
+                # tes_total всегда в формате ×100 (например, 6360 = 63.60, 74500 = 745.00)
+                # Но проверяем на случай старых данных: если значение < 1000 и есть дробная часть, уже нормализовано
+                if abs(perf.tes_total) < 1000 and perf.tes_total != int(perf.tes_total):
+                    # Есть дробная часть и значение маленькое - уже нормализовано
+                    tes_total = perf.tes_total
+                else:
+                    # Значение в формате ×100
+                    tes_total = perf.tes_total / 100.0
             
             pcs_total = None
             if perf.pcs_total is not None:
-                # Если > 10, значит ×100 (например, 2013 = 20.13, 1013 = 10.13)
-                pcs_total = perf.pcs_total / 100.0 if abs(perf.pcs_total) > 10 else perf.pcs_total
+                # pcs_total всегда в формате ×100 (например, 4319 = 43.19, 2013 = 20.13)
+                # Но проверяем на случай старых данных: если значение < 1000 и есть дробная часть, уже нормализовано
+                if abs(perf.pcs_total) < 1000 and perf.pcs_total != int(perf.pcs_total):
+                    # Есть дробная часть и значение маленькое - уже нормализовано
+                    pcs_total = perf.pcs_total
+                else:
+                    # Значение в формате ×100
+                    pcs_total = perf.pcs_total / 100.0
             
             deductions = None
             if perf.deductions is not None:
-                # Если > 1, значит ×100 (например, 0 = 0.00, 100 = 1.00)
-                deductions = abs(perf.deductions) / 100.0 if abs(perf.deductions) > 1 else abs(perf.deductions)
+                # deductions обычно маленькие (0-5), сохраняется без нормализации, поэтому в формате ×100
+                # Но проверяем на случай старых данных: если значение < 10 и есть дробная часть, уже нормализовано
+                if abs(perf.deductions) < 10 and perf.deductions != int(perf.deductions):
+                    # Есть дробная часть и значение маленькое - уже нормализовано
+                    deductions = abs(perf.deductions)
+                else:
+                    # Значение в формате ×100 (например, 100 = 1.00, 0 = 0.00)
+                    deductions = abs(perf.deductions) / 100.0
             
             # Нормализуем points (сумма за сегмент)
             # В БД points уже нормализован через _parse_score (делится на 100 при сохранении)
@@ -1459,12 +1478,24 @@ def api_participant_performance_details(participant_id):
         
         # Формируем итоговые данные
         # participant.total_points уже нормализован при сохранении через _parse_score
-        # Но могут быть старые данные в формате ×100
+        # _parse_score нормализует значения, поэтому total_points в БД уже в правильном формате (170.40, а не 17040)
+        # НО могут быть старые данные в формате ×100, поэтому проверяем
         total_points_normalized = None
         if participant.total_points is not None:
-            # Если значение > 100, значит оно в формате ×100 (например, 1758 = 17.58)
-            # Если значение <= 100, значит уже нормализовано (например, 17.58)
-            total_points_normalized = participant.total_points / 100.0 if abs(participant.total_points) > 100 else participant.total_points
+            # _parse_score нормализует значения при сохранении, поэтому новые данные уже нормализованы
+            # Старые данные могут быть в формате ×100
+            # Проверяем: если значение > 1000, значит точно в формате ×100 (например, 17040 = 170.40)
+            # Если значение <= 1000, но > 100 и целое число, тоже может быть ×100
+            # Но если есть дробная часть и значение разумное (например, 170.40), то уже нормализовано
+            if abs(participant.total_points) > 1000:
+                # Значение точно в формате ×100 (например, 17040 = 170.40)
+                total_points_normalized = participant.total_points / 100.0
+            elif abs(participant.total_points) > 100 and participant.total_points == int(participant.total_points):
+                # Целое число > 100, вероятно старые данные в формате ×100 (например, 17040)
+                total_points_normalized = participant.total_points / 100.0
+            else:
+                # Значение уже нормализовано (может быть 170.40 или меньше 100)
+                total_points_normalized = participant.total_points
         
         result = {
             'participant': {
