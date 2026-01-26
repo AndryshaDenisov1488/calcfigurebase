@@ -293,9 +293,32 @@
             background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
         }
         
-        .col-lg-4,
-        .col-lg-8 {
+        .col-lg-3,
+        .col-lg-9 {
             margin-bottom: 1.5rem;
+        }
+        
+        /* Настройка ширины колонок для страницы спортсмена */
+        .athlete-info-column {
+            flex: 0 0 25%;
+            max-width: 25%;
+        }
+        
+        .athlete-content-column {
+            flex: 0 0 75%;
+            max-width: 75%;
+        }
+        
+        @media (min-width: 992px) {
+            .athlete-info-column {
+                flex: 0 0 22%;
+                max-width: 22%;
+            }
+            
+            .athlete-content-column {
+                flex: 0 0 78%;
+                max-width: 78%;
+            }
         }
         
         .athlete-avatar i {
@@ -593,7 +616,7 @@
 <div id="athleteData" data-athlete-id="{{ athlete.id }}" style="display: none;"></div>
 
 <div class="row">
-    <div class="col-lg-4">
+    <div class="col-lg-3 athlete-info-column">
         <!-- Информация о спортсмене -->
         <div class="card">
             <div class="card-header">
@@ -726,7 +749,7 @@
         </div>
     </div>
     
-    <div class="col-lg-8">
+    <div class="col-lg-9 athlete-content-column">
         <!-- График результатов -->
         <div class="card mb-4">
             <div class="card-header">
