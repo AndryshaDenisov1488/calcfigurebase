@@ -52,7 +52,7 @@
                     </div>
                     <div class="card-body">
                         {% for category in categories_analysis %}
-                        <div class="row mb-3 p-3 border rounded border-warning bg-light">
+                        <div class="row mb-3 p-3 border rounded border-warning bg-light category-item" data-category-index="{{ loop.index0 }}">
                             <div class="col-md-4">
                                 <strong>Оригинальное название:</strong><br>
                                 <span class="text-primary">{{ category.original_name }}</span>
@@ -66,23 +66,29 @@
                             <div class="col-md-4">
                                 <strong>Нормализованное название:</strong><br>
                                 {% if category.needs_manual %}
-                                <select name="normalize_{{ loop.index0 }}" class="form-select" required>
+                                <select name="normalize_{{ loop.index0 }}" class="form-select category-normalize-select" required>
                                     <option value="">Выберите разряд...</option>
                                     {% for rank in all_ranks %}
                                     <option value="{{ rank }}" {% if category.normalized == rank %}selected{% endif %}>{{ rank }}</option>
                                     {% endfor %}
                                 </select>
                                 {% else %}
-                                <span class="text-success">{{ category.normalized }}</span>
+                                <span class="text-success category-normalized-name">{{ category.normalized }}</span>
                                 {% endif %}
                             </div>
-                            <div class="col-md-2">
+                            <div class="col-md-1">
                                 <strong>Статус:</strong><br>
                                 {% if category.needs_manual %}
                                 <span class="badge bg-warning">Требует нормализации</span>
                                 {% else %}
                                 <span class="badge bg-success">Нормализовано</span>
                                 {% endif %}
+                            </div>
+                            <div class="col-md-1 text-end">
+                                <button type="button" class="btn btn-sm btn-danger delete-category-btn" title="Удалить категорию" data-category-index="{{ loop.index0 }}">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                                <input type="hidden" name="delete_{{ loop.index0 }}" class="category-delete-flag" value="0">
                             </div>
                         </div>
                         {% endfor %}
@@ -164,5 +170,75 @@
 .bg-gold { background-color: #ffd700 !important; color: #000 !important; }
 .bg-silver { background-color: #c0c0c0 !important; color: #000 !important; }
 .bg-bronze { background-color: #cd7f32 !important; }
+.category-item.deleted {
+    opacity: 0.5;
+    background-color: #f8f9fa !important;
+    border-color: #dc3545 !important;
+}
+.category-item.deleted .category-normalize-select {
+    display: none;
+}
+.category-item.deleted .category-normalized-name {
+    text-decoration: line-through;
+    opacity: 0.6;
+}
+.delete-category-btn {
+    margin-top: 0.5rem;
+}
 </style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Обработка удаления категорий
+    const deleteButtons = document.querySelectorAll('.delete-category-btn');
+    
+    deleteButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const categoryIndex = this.getAttribute('data-category-index');
+            const categoryItem = this.closest('.category-item');
+            const deleteFlag = categoryItem.querySelector('.category-delete-flag');
+            const normalizeSelect = categoryItem.querySelector('.category-normalize-select');
+            
+            if (categoryItem.classList.contains('deleted')) {
+                // Восстановление категории
+                categoryItem.classList.remove('deleted');
+                deleteFlag.value = '0';
+                if (normalizeSelect) {
+                    normalizeSelect.style.display = 'block';
+                    normalizeSelect.required = true;
+                }
+                this.innerHTML = '<i class="fas fa-times"></i>';
+                this.title = 'Удалить категорию';
+            } else {
+                // Удаление категории
+                if (confirm('Вы уверены, что хотите исключить эту категорию из импорта? Категория не будет добавлена в базу данных.')) {
+                    categoryItem.classList.add('deleted');
+                    deleteFlag.value = '1';
+                    if (normalizeSelect) {
+                        normalizeSelect.style.display = 'none';
+                        normalizeSelect.required = false;
+                        normalizeSelect.value = '';
+                    }
+                    this.innerHTML = '<i class="fas fa-undo"></i>';
+                    this.title = 'Восстановить категорию';
+                }
+            }
+        });
+    });
+    
+    // Предупреждение при отправке формы, если есть удаленные категории
+    const form = document.querySelector('form');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            const deletedCount = document.querySelectorAll('.category-item.deleted').length;
+            if (deletedCount > 0) {
+                if (!confirm(`Вы собираетесь исключить ${deletedCount} категорий из импорта. Продолжить?`)) {
+                    e.preventDefault();
+                    return false;
+                }
+            }
+        });
+    }
+});
+</script>
 {% endblock %}

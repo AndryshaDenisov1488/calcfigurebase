@@ -314,25 +314,55 @@ def normalize_categories():
             try:
                 category_index = 0
                 total_athletes = 0
+                deleted_indices = set(parser_data.get('deleted_category_indices', []))
+                
                 for file_info in parser_data['files']:
                     parser = ISUCalcFSParser(file_info['filepath'])
                     parser.parse()
                     
-                    # Применяем нормализацию к категориям этого файла
+                    # Применяем нормализацию к категориям этого файла и исключаем удаленные
                     file_categories_count = file_info['categories_count']
+                    categories_to_save = []
+                    deleted_category_ids = set()  # ID категорий, которые нужно исключить
+                    
                     for i, category in enumerate(parser.categories):
                         if category_index < len(categories_analysis):
-                            category['normalized_name'] = categories_analysis[category_index]['normalized']
+                            # Пропускаем удаленные категории
+                            if category_index not in deleted_indices:
+                                category['normalized_name'] = categories_analysis[category_index]['normalized']
+                                categories_to_save.append(category)
+                            else:
+                                # Сохраняем ID удаленной категории для фильтрации сегментов и участников
+                                deleted_category_ids.add(category.get('id'))
                             category_index += 1
+                        else:
+                            # Если индекс выходит за пределы, все равно добавляем
+                            categories_to_save.append(category)
                     
-                    save_to_database(parser)
-                    total_athletes += len(parser.get_athletes_with_results())
+                    # Заменяем список категорий на отфильтрованный
+                    parser.categories = categories_to_save
+                    
+                    # Фильтруем сегменты - исключаем те, что относятся к удаленным категориям
+                    if deleted_category_ids:
+                        parser.segments = [s for s in parser.segments if s.get('category_id') not in deleted_category_ids]
+                        # Фильтруем участников - исключаем тех, что относятся к удаленным категориям
+                        parser.participants = [p for p in parser.participants if p.get('category_id') not in deleted_category_ids]
+                    
+                    # Сохраняем только если есть категории для сохранения
+                    if parser.categories:
+                        save_to_database(parser)
+                        total_athletes += len(parser.get_athletes_with_results())
+                    
                     os.remove(file_info['filepath'])
                 
                 # Очищаем сессию
                 session.pop('parser_data', None)
                 session.pop('uploaded_files', None)
-                flash(f'Успешно загружено файлов: {len(parser_data["files"])}. Добавлено спортсменов: {total_athletes}', 'success')
+                deleted_count = len(deleted_indices)
+                if deleted_count > 0:
+                    flash(f'Успешно загружено файлов: {len(parser_data["files"])}. Добавлено спортсменов: {total_athletes}. Исключено категорий: {deleted_count}', 'success')
+                else:
+                    flash(f'Успешно загружено файлов: {len(parser_data["files"])}. Добавлено спортсменов: {total_athletes}', 'success')
                 return redirect(url_for('public.index'))
             except Exception as e:
                 logger.error(f"Ошибка при сохранении нормализованных данных: {str(e)}")
@@ -356,25 +386,73 @@ def normalize_categories():
         categories_analysis = parser_data['categories_analysis']
         if request.method == 'POST':
             normalizations = {}
+            deleted_indices = set()
+            
+            # Собираем нормализации и удаленные категории
             for key, value in request.form.items():
                 if key.startswith('normalize_'):
                     category_index = int(key.replace('normalize_', ''))
                     normalizations[category_index] = value
+                elif key.startswith('delete_'):
+                    category_index = int(key.replace('delete_', ''))
+                    if value == '1':  # Категория помечена как удаленная
+                        deleted_indices.add(category_index)
+            
+            # Применяем нормализации (только для не удаленных категорий)
             for index, normalized_name in normalizations.items():
-                if index < len(categories_analysis):
+                if index not in deleted_indices and index < len(categories_analysis):
                     categories_analysis[index]['normalized'] = normalized_name
                     categories_analysis[index]['needs_manual'] = False
+            
+            # Помечаем удаленные категории
+            for index in deleted_indices:
+                if index < len(categories_analysis):
+                    categories_analysis[index]['deleted'] = True
+            
             session['parser_data']['categories_analysis'] = categories_analysis
+            session['parser_data']['deleted_category_indices'] = list(deleted_indices)
+            
             try:
                 parser = ISUCalcFSParser(parser_data['filepath'])
                 parser.parse()
+                
+                # Применяем нормализацию и исключаем удаленные категории
+                categories_to_save = []
+                deleted_category_ids = set()  # ID категорий, которые нужно исключить
+                
                 for i, category in enumerate(parser.categories):
                     if i < len(categories_analysis):
-                        category['normalized_name'] = categories_analysis[i]['normalized']
-                save_to_database(parser)
+                        # Пропускаем удаленные категории
+                        if i not in deleted_indices:
+                            category['normalized_name'] = categories_analysis[i]['normalized']
+                            categories_to_save.append(category)
+                        else:
+                            # Сохраняем ID удаленной категории для фильтрации сегментов и участников
+                            deleted_category_ids.add(category.get('id'))
+                    else:
+                        categories_to_save.append(category)
+                
+                # Заменяем список категорий на отфильтрованный
+                parser.categories = categories_to_save
+                
+                # Фильтруем сегменты - исключаем те, что относятся к удаленным категориям
+                if deleted_category_ids:
+                    parser.segments = [s for s in parser.segments if s.get('category_id') not in deleted_category_ids]
+                    # Фильтруем участников - исключаем тех, что относятся к удаленным категориям
+                    parser.participants = [p for p in parser.participants if p.get('category_id') not in deleted_category_ids]
+                
+                # Сохраняем только если есть категории для сохранения
+                deleted_count = len(deleted_indices)
+                if parser.categories:
+                    save_to_database(parser)
+                    if deleted_count > 0:
+                        flash(f'Файл успешно загружен и обработан с нормализацией категорий! Исключено категорий: {deleted_count}', 'success')
+                    else:
+                        flash('Файл успешно загружен и обработан с нормализацией категорий!', 'success')
+                else:
+                    flash('Файл обработан, но все категории были исключены из импорта.', 'warning')
                 os.remove(parser_data['filepath'])
                 session.pop('parser_data', None)
-                flash('Файл успешно загружен и обработан с нормализацией категорий!', 'success')
                 return redirect(url_for('public.index'))
             except Exception as e:
                 logger.error(f"Ошибка при сохранении нормализованных данных: {str(e)}")
