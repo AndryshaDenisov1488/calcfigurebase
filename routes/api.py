@@ -1258,7 +1258,7 @@ def api_participant_performance_details(participant_id):
                     'goe_result': round(goe_result, 2) if goe_result is not None else None,
                     'penalty': elem.penalty,
                     'result': round(element_score, 2) if element_score is not None else None,
-                    'judge_scores': judge_scores_list[:3],  # Первые 3 судьи для отображения
+                    'judge_scores': judge_scores_list,  # Все оценки судей (может быть 3, 5, 7 и т.д.)
                     'is_second_half': is_second_half  # Флаг бонуса за вторую половину программы
                 })
             
@@ -1323,7 +1323,7 @@ def api_participant_performance_details(participant_id):
                     'type': comp.component_type,
                     'name': component_name,
                     'factor': comp.factor,
-                    'judge_scores': judge_scores_list[:3] if len(judge_scores_list) >= 3 else judge_scores_list,
+                    'judge_scores': judge_scores_list,  # Все оценки судей (может быть 3, 5, 7 и т.д.)
                     'result': round(component_result, 2) if component_result is not None else None
                 })
             

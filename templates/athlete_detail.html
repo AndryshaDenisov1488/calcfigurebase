@@ -1215,21 +1215,34 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Элементы
             if (perf.elements && perf.elements.length > 0) {
+                // Определяем максимальное количество судей среди всех элементов
+                let maxJudges = 0;
+                perf.elements.forEach(elem => {
+                    const judgeCount = (elem.judge_scores || []).length;
+                    if (judgeCount > maxJudges) {
+                        maxJudges = judgeCount;
+                    }
+                });
+                
+                // Создаем заголовки таблицы с динамическим количеством судей
+                let headerRow = `
+                    <tr>
+                        <th>#</th>
+                        <th>Выполненные элементы</th>
+                        <th>Info</th>
+                        <th>Базовая стоимость</th>
+                        <th>GOE</th>
+                `;
+                for (let j = 1; j <= maxJudges; j++) {
+                    headerRow += `<th>J${j}</th>`;
+                }
+                headerRow += `<th>Оценка бригады</th></tr>`;
+                
                 html += `
                     <h6 style="background: #28a745; margin-top: 1rem;">Выполненные элементы</h6>
                     <table class="printout-table">
                         <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>Выполненные элементы</th>
-                                <th>Info</th>
-                                <th>Базовая стоимость</th>
-                                <th>GOE</th>
-                                <th>J1</th>
-                                <th>J2</th>
-                                <th>J3</th>
-                                <th>Оценка бригады</th>
-                            </tr>
+                            ${headerRow}
                         </thead>
                         <tbody>
                 `;
@@ -1241,25 +1254,36 @@ document.addEventListener('DOMContentLoaded', function() {
                     const baseValueDisplay = elem.base_value !== null 
                         ? `${elem.base_value.toFixed(2)}${isSecondHalf ? ' x' : ''}` 
                         : '-';
-                    html += `
+                    
+                    let row = `
                         <tr>
                             <td>${elem.order_num || index + 1}</td>
                             <td class="element-code">${elem.executed_code || '-'}</td>
                             <td>${elem.info_code || ''}</td>
                             <td>${baseValueDisplay}</td>
                             <td>${elem.goe_result !== null ? (elem.goe_result >= 0 ? '+' : '') + elem.goe_result.toFixed(2) : '-'}</td>
-                            <td class="judge-score">${judgeScores[0] !== undefined ? (judgeScores[0] >= 0 ? '+' : '') + Math.round(judgeScores[0]) : '-'}</td>
-                            <td class="judge-score">${judgeScores[1] !== undefined ? (judgeScores[1] >= 0 ? '+' : '') + Math.round(judgeScores[1]) : '-'}</td>
-                            <td class="judge-score">${judgeScores[2] !== undefined ? (judgeScores[2] >= 0 ? '+' : '') + Math.round(judgeScores[2]) : '-'}</td>
-                            <td class="score-value">${elem.result !== null ? elem.result.toFixed(2) : '-'}</td>
-                        </tr>
                     `;
+                    
+                    // Добавляем ячейки для всех судей
+                    for (let j = 0; j < maxJudges; j++) {
+                        const score = judgeScores[j];
+                        if (score !== undefined && score !== null) {
+                            const displayScore = Math.round(score);
+                            row += `<td class="judge-score">${displayScore >= 0 ? '+' : ''}${displayScore}</td>`;
+                        } else {
+                            row += `<td class="judge-score">-</td>`;
+                        }
+                    }
+                    
+                    row += `<td class="score-value">${elem.result !== null ? elem.result.toFixed(2) : '-'}</td></tr>`;
+                    html += row;
                 });
                 
-                // Итоговая строка для элементов
+                // Итоговая строка для элементов (5 базовых колонок + судьи + итоговая оценка)
+                const totalColspan = 5 + maxJudges + 1;
                 html += `
                         <tr class="printout-total">
-                            <td colspan="8"><strong>Сумма в технической оценке</strong></td>
+                            <td colspan="${totalColspan}"><strong>Сумма в технической оценке</strong></td>
                             <td><strong>${perf.tes_total !== null ? perf.tes_total.toFixed(2) : '-'}</strong></td>
                         </tr>
                     </tbody>
@@ -1269,40 +1293,62 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Компоненты программы
             if (perf.components && perf.components.length > 0) {
+                // Определяем максимальное количество судей среди всех компонентов
+                let maxJudges = 0;
+                perf.components.forEach(comp => {
+                    const judgeCount = (comp.judge_scores || []).length;
+                    if (judgeCount > maxJudges) {
+                        maxJudges = judgeCount;
+                    }
+                });
+                
+                // Создаем заголовки таблицы с динамическим количеством судей
+                let headerRow = `
+                    <tr>
+                        <th>Компоненты программы</th>
+                        <th>Фактор</th>
+                `;
+                for (let j = 1; j <= maxJudges; j++) {
+                    headerRow += `<th>J${j}</th>`;
+                }
+                headerRow += `<th>Результат</th></tr>`;
+                
                 html += `
                     <h6 style="background: #17a2b8; margin-top: 1.5rem;">Компоненты программы</h6>
                     <table class="printout-table">
                         <thead>
-                            <tr>
-                                <th>Компоненты программы</th>
-                                <th>Фактор</th>
-                                <th>J1</th>
-                                <th>J2</th>
-                                <th>J3</th>
-                                <th>Результат</th>
-                            </tr>
+                            ${headerRow}
                         </thead>
                         <tbody>
                 `;
                 
                 perf.components.forEach(comp => {
                     const judgeScores = comp.judge_scores || [];
-                    html += `
+                    let row = `
                         <tr>
                             <td style="text-align: left;"><strong>${comp.name}</strong></td>
                             <td>${comp.factor !== null ? comp.factor.toFixed(2) : '-'}</td>
-                            <td class="judge-score">${judgeScores[0] !== undefined ? judgeScores[0].toFixed(2) : '-'}</td>
-                            <td class="judge-score">${judgeScores[1] !== undefined ? judgeScores[1].toFixed(2) : '-'}</td>
-                            <td class="judge-score">${judgeScores[2] !== undefined ? judgeScores[2].toFixed(2) : '-'}</td>
-                            <td class="score-value">${comp.result !== null ? comp.result.toFixed(2) : '-'}</td>
-                        </tr>
                     `;
+                    
+                    // Добавляем ячейки для всех судей
+                    for (let j = 0; j < maxJudges; j++) {
+                        const score = judgeScores[j];
+                        if (score !== undefined && score !== null) {
+                            row += `<td class="judge-score">${score.toFixed(2)}</td>`;
+                        } else {
+                            row += `<td class="judge-score">-</td>`;
+                        }
+                    }
+                    
+                    row += `<td class="score-value">${comp.result !== null ? comp.result.toFixed(2) : '-'}</td></tr>`;
+                    html += row;
                 });
                 
-                // Итоговая строка для компонентов
+                // Итоговая строка для компонентов (2 базовые колонки + судьи + итоговая оценка)
+                const componentTotalColspan = 2 + maxJudges + 1;
                 html += `
                         <tr class="printout-total">
-                            <td colspan="5"><strong>Сумма за компоненты программы (умноженная)</strong></td>
+                            <td colspan="${componentTotalColspan}"><strong>Сумма за компоненты программы (умноженная)</strong></td>
                             <td><strong>${perf.pcs_total !== null ? perf.pcs_total.toFixed(2) : '-'}</strong></td>
                         </tr>
                     </tbody>
