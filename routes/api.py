@@ -1195,12 +1195,10 @@ def api_participant_performance_details(participant_id):
                     
                     if score is not None:
                         # Декодируем оценку судьи из кода XML в значение GOE
-                        # Оценки судей могут храниться в БД как:
-                        # 1. Коды (0-15) - новые данные, нужно декодировать
-                        # 2. Декодированные значения (-5 до +3) - старые данные, нужно исправить +1
+                        # Оценки судей хранятся в БД как коды (0-15), декодируем при чтении
                         try:
                             from parsers.isu_calcfs_parser import ISUCalcFSParser
-                            # Если это число (код или декодированное значение)
+                            # Если это число (код)
                             if isinstance(score, (int, str)):
                                 score_num = int(score) if isinstance(score, str) else score
                                 
@@ -1208,19 +1206,15 @@ def api_participant_performance_details(participant_id):
                                 if 0 <= score_num <= 15:
                                     decoded_score = ISUCalcFSParser._decode_judge_score_xml(score_num)
                                     judge_scores_list.append(decoded_score)
-                                # Если значение в диапазоне старых декодированных значений (-5 до +3)
-                                # Это старые данные, которые были декодированы с неправильной формулой
-                                # Нужно исправить: добавляем +1
-                                elif -5 <= score_num <= 3:
-                                    corrected_score = score_num + 1
-                                    judge_scores_list.append(corrected_score)
                                 else:
-                                    # Если значение вне известных диапазонов, используем как есть
+                                    # Если значение вне диапазона кодов, используем как есть (на случай ошибок)
+                                    logger.warning(f"Неожиданное значение оценки судьи: {score_num} (ожидается 0-15)")
                                     judge_scores_list.append(score_num)
                             else:
                                 judge_scores_list.append(score)
-                        except (ValueError, TypeError):
+                        except (ValueError, TypeError) as e:
                             # Если не удалось преобразовать, оставляем как есть
+                            logger.warning(f"Ошибка декодирования оценки судьи '{score}': {e}")
                             judge_scores_list.append(score)
                     else:
                         break  # Если нет оценки, дальше тоже не будет
@@ -1252,6 +1246,10 @@ def api_participant_performance_details(participant_id):
                 elif base_value is not None and goe_result is not None:
                     element_score = base_value + goe_result
                 
+                # Проверяем, есть ли бонус за вторую половину программы
+                judge_scores_dict = elem.judge_scores or {}
+                is_second_half = judge_scores_dict.get('half') == 2 or judge_scores_dict.get('wbp') == 1
+                
                 elements_data.append({
                     'order_num': elem.order_num,
                     'executed_code': elem.executed_code or elem.planned_code or '',
@@ -1260,7 +1258,8 @@ def api_participant_performance_details(participant_id):
                     'goe_result': round(goe_result, 2) if goe_result is not None else None,
                     'penalty': elem.penalty,
                     'result': round(element_score, 2) if element_score is not None else None,
-                    'judge_scores': judge_scores_list[:3]  # Первые 3 судьи для отображения
+                    'judge_scores': judge_scores_list[:3],  # Первые 3 судьи для отображения
+                    'is_second_half': is_second_half  # Флаг бонуса за вторую половину программы
                 })
             
             # Получаем компоненты программы

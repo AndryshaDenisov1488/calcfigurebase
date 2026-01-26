@@ -1236,12 +1236,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 perf.elements.forEach((elem, index) => {
                     const judgeScores = elem.judge_scores || [];
+                    // Проверяем, есть ли бонус за вторую половину программы
+                    const isSecondHalf = elem.is_second_half || false;
+                    const baseValueDisplay = elem.base_value !== null 
+                        ? `${elem.base_value.toFixed(2)}${isSecondHalf ? ' x' : ''}` 
+                        : '-';
                     html += `
                         <tr>
                             <td>${elem.order_num || index + 1}</td>
                             <td class="element-code">${elem.executed_code || '-'}</td>
                             <td>${elem.info_code || ''}</td>
-                            <td>${elem.base_value !== null ? elem.base_value.toFixed(2) : '-'}</td>
+                            <td>${baseValueDisplay}</td>
                             <td>${elem.goe_result !== null ? (elem.goe_result >= 0 ? '+' : '') + elem.goe_result.toFixed(2) : '-'}</td>
                             <td class="judge-score">${judgeScores[0] !== undefined ? (judgeScores[0] >= 0 ? '+' : '') + Math.round(judgeScores[0]) : '-'}</td>
                             <td class="judge-score">${judgeScores[1] !== undefined ? (judgeScores[1] >= 0 ? '+' : '') + Math.round(judgeScores[1]) : '-'}</td>
