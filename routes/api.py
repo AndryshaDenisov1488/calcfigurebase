@@ -1185,39 +1185,85 @@ def api_participant_performance_details(participant_id):
                 judge_scores = elem.judge_scores or {}
                 # Извлекаем оценки судей J1, J2, J3 и т.д.
                 judge_scores_list = []
-                for j in range(1, 16):  # Обычно до 9 судей, но на всякий случай до 15
-                    key = f'J{j:02d}'
-                    score = judge_scores.get(key)
-                    if score is None:
-                        # Пробуем без нуля впереди
-                        key_alt = f'J{j}'
-                        score = judge_scores.get(key_alt)
-                    
-                    if score is not None:
-                        # Декодируем оценку судьи из кода XML в значение GOE
-                        # Оценки судей хранятся в БД как коды (0-15), декодируем при чтении
+                # Проверяем все возможные ключи судей в словаре
+                found_judges = set()
+                for key in judge_scores.keys():
+                    if isinstance(key, str) and key.startswith('J'):
                         try:
-                            from parsers.isu_calcfs_parser import ISUCalcFSParser
-                            # Если это число (код)
-                            if isinstance(score, (int, str)):
-                                score_num = int(score) if isinstance(score, str) else score
-                                
-                                # Если значение в диапазоне кодов (0-15), декодируем
-                                if 0 <= score_num <= 15:
-                                    decoded_score = ISUCalcFSParser._decode_judge_score_xml(score_num)
-                                    judge_scores_list.append(decoded_score)
+                            # Извлекаем номер судьи из ключа (J01, J1, J02, J2 и т.д.)
+                            judge_num_str = key[1:].lstrip('0') or '0'
+                            judge_num = int(judge_num_str)
+                            if 1 <= judge_num <= 15:
+                                found_judges.add(judge_num)
+                        except (ValueError, TypeError):
+                            pass
+                
+                # Если нашли судей через ключи, используем их
+                if found_judges:
+                    max_judge = max(found_judges)
+                    for j in range(1, max_judge + 1):
+                        # Пробуем оба формата ключа
+                        key1 = f'J{j:02d}'
+                        key2 = f'J{j}'
+                        score = judge_scores.get(key1) or judge_scores.get(key2)
+                        
+                        if score is not None:
+                            # Декодируем оценку судьи из кода XML в значение GOE
+                            # Оценки судей хранятся в БД как коды (0-15), декодируем при чтении
+                            try:
+                                from parsers.isu_calcfs_parser import ISUCalcFSParser
+                                # Если это число (код)
+                                if isinstance(score, (int, str)):
+                                    score_num = int(score) if isinstance(score, str) else score
+                                    
+                                    # Если значение в диапазоне кодов (0-15), декодируем
+                                    if 0 <= score_num <= 15:
+                                        decoded_score = ISUCalcFSParser._decode_judge_score_xml(score_num)
+                                        judge_scores_list.append(decoded_score)
+                                    else:
+                                        # Если значение вне диапазона кодов, используем как есть (на случай ошибок)
+                                        logger.warning(f"Неожиданное значение оценки судьи: {score_num} (ожидается 0-15)")
+                                        judge_scores_list.append(score_num)
                                 else:
-                                    # Если значение вне диапазона кодов, используем как есть (на случай ошибок)
-                                    logger.warning(f"Неожиданное значение оценки судьи: {score_num} (ожидается 0-15)")
-                                    judge_scores_list.append(score_num)
-                            else:
+                                    judge_scores_list.append(score)
+                            except (ValueError, TypeError) as e:
+                                # Если не удалось преобразовать, оставляем как есть
+                                logger.warning(f"Ошибка декодирования оценки судьи '{score}': {e}")
                                 judge_scores_list.append(score)
-                        except (ValueError, TypeError) as e:
-                            # Если не удалось преобразовать, оставляем как есть
-                            logger.warning(f"Ошибка декодирования оценки судьи '{score}': {e}")
-                            judge_scores_list.append(score)
-                    else:
-                        break  # Если нет оценки, дальше тоже не будет
+                        else:
+                            # Если нет оценки для этого судьи, добавляем None (пропуск)
+                            judge_scores_list.append(None)
+                else:
+                    # Fallback: старый способ поиска по порядку
+                    for j in range(1, 16):
+                        key = f'J{j:02d}'
+                        score = judge_scores.get(key)
+                        if score is None:
+                            key_alt = f'J{j}'
+                            score = judge_scores.get(key_alt)
+                        
+                        if score is not None:
+                            try:
+                                from parsers.isu_calcfs_parser import ISUCalcFSParser
+                                if isinstance(score, (int, str)):
+                                    score_num = int(score) if isinstance(score, str) else score
+                                    if 0 <= score_num <= 15:
+                                        decoded_score = ISUCalcFSParser._decode_judge_score_xml(score_num)
+                                        judge_scores_list.append(decoded_score)
+                                    else:
+                                        judge_scores_list.append(score_num)
+                                else:
+                                    judge_scores_list.append(score)
+                            except (ValueError, TypeError) as e:
+                                logger.warning(f"Ошибка декодирования оценки судьи '{score}': {e}")
+                                judge_scores_list.append(score)
+                        else:
+                            # Прерываем только если прошли несколько судей подряд без оценок
+                            # (например, если есть J1, J2, J3, но нет J4, J5, J6, J7)
+                            if j > 3 and len(judge_scores_list) == 0:
+                                break
+                            elif j > len(judge_scores_list) + 2:
+                                break
                 
                 # Форматируем базовую стоимость и GOE
                 # В БД все значения хранятся ×100 (60 = 0.60, 5500 = 55.00)
@@ -1250,6 +1296,9 @@ def api_participant_performance_details(participant_id):
                 judge_scores_dict = elem.judge_scores or {}
                 is_second_half = judge_scores_dict.get('half') == 2 or judge_scores_dict.get('wbp') == 1
                 
+                # Фильтруем None значения из списка оценок судей
+                judge_scores_filtered = [s for s in judge_scores_list if s is not None]
+                
                 elements_data.append({
                     'order_num': elem.order_num,
                     'executed_code': elem.executed_code or elem.planned_code or '',
@@ -1258,7 +1307,7 @@ def api_participant_performance_details(participant_id):
                     'goe_result': round(goe_result, 2) if goe_result is not None else None,
                     'penalty': elem.penalty,
                     'result': round(element_score, 2) if element_score is not None else None,
-                    'judge_scores': judge_scores_list,  # Все оценки судей (может быть 3, 5, 7 и т.д.)
+                    'judge_scores': judge_scores_filtered,  # Все оценки судей (может быть 3, 5, 7 и т.д.), без None
                     'is_second_half': is_second_half  # Флаг бонуса за вторую половину программы
                 })
             
@@ -1269,28 +1318,55 @@ def api_participant_performance_details(participant_id):
                 judge_scores = comp.judge_scores or {}
                 # Извлекаем оценки судей
                 judge_scores_list = []
-                for j in range(1, 16):
-                    key = f'J{j:02d}'
-                    score = judge_scores.get(key)
-                    if score is not None:
-                        # Преобразуем в число, если это строка
+                # Проверяем все возможные ключи судей в словаре
+                found_judges = set()
+                for key in judge_scores.keys():
+                    if isinstance(key, str) and key.startswith('J'):
                         try:
-                            score_num = float(score) if isinstance(score, str) else score
-                            judge_scores_list.append(score_num / 100.0 if score_num > 10 else score_num)
+                            judge_num_str = key[1:].lstrip('0') or '0'
+                            judge_num = int(judge_num_str)
+                            if 1 <= judge_num <= 15:
+                                found_judges.add(judge_num)
                         except (ValueError, TypeError):
-                            judge_scores_list.append(score)
-                    else:
-                        key_alt = f'J{j}'
-                        score = judge_scores.get(key_alt)
+                            pass
+                
+                # Если нашли судей через ключи, используем их
+                if found_judges:
+                    max_judge = max(found_judges)
+                    for j in range(1, max_judge + 1):
+                        key1 = f'J{j:02d}'
+                        key2 = f'J{j}'
+                        score = judge_scores.get(key1) or judge_scores.get(key2)
+                        
                         if score is not None:
-                            # Преобразуем в число, если это строка
                             try:
                                 score_num = float(score) if isinstance(score, str) else score
                                 judge_scores_list.append(score_num / 100.0 if score_num > 10 else score_num)
                             except (ValueError, TypeError):
                                 judge_scores_list.append(score)
                         else:
-                            break
+                            judge_scores_list.append(None)
+                else:
+                    # Fallback: старый способ поиска по порядку
+                    for j in range(1, 16):
+                        key = f'J{j:02d}'
+                        score = judge_scores.get(key)
+                        if score is None:
+                            key_alt = f'J{j}'
+                            score = judge_scores.get(key_alt)
+                        
+                        if score is not None:
+                            try:
+                                score_num = float(score) if isinstance(score, str) else score
+                                judge_scores_list.append(score_num / 100.0 if score_num > 10 else score_num)
+                            except (ValueError, TypeError):
+                                judge_scores_list.append(score)
+                        else:
+                            # Прерываем только если прошли несколько судей подряд без оценок
+                            if j > 3 and len(judge_scores_list) == 0:
+                                break
+                            elif j > len(judge_scores_list) + 2:
+                                break
                 
                 # Вычисляем итоговую оценку компонента
                 # В БД все значения хранятся ×100
@@ -1319,11 +1395,14 @@ def api_participant_performance_details(participant_id):
                 }
                 component_name = component_name_map.get(comp.component_type, comp.component_type or 'Компонент')
                 
+                # Фильтруем None значения из списка оценок судей
+                judge_scores_filtered = [s for s in judge_scores_list if s is not None]
+                
                 components_data.append({
                     'type': comp.component_type,
                     'name': component_name,
                     'factor': comp.factor,
-                    'judge_scores': judge_scores_list,  # Все оценки судей (может быть 3, 5, 7 и т.д.)
+                    'judge_scores': judge_scores_filtered,  # Все оценки судей (может быть 3, 5, 7 и т.д.), без None
                     'result': round(component_result, 2) if component_result is not None else None
                 })
             

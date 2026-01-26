@@ -1216,9 +1216,11 @@ document.addEventListener('DOMContentLoaded', function() {
             // Элементы
             if (perf.elements && perf.elements.length > 0) {
                 // Определяем максимальное количество судей среди всех элементов
+                // Фильтруем None значения при подсчете
                 let maxJudges = 0;
                 perf.elements.forEach(elem => {
-                    const judgeCount = (elem.judge_scores || []).length;
+                    const judgeScores = (elem.judge_scores || []).filter(s => s !== null && s !== undefined && s !== 'None');
+                    const judgeCount = judgeScores.length;
                     if (judgeCount > maxJudges) {
                         maxJudges = judgeCount;
                     }
@@ -1267,7 +1269,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Добавляем ячейки для всех судей
                     for (let j = 0; j < maxJudges; j++) {
                         const score = judgeScores[j];
-                        if (score !== undefined && score !== null) {
+                        if (score !== undefined && score !== null && score !== 'None') {
                             const displayScore = Math.round(score);
                             row += `<td class="judge-score">${displayScore >= 0 ? '+' : ''}${displayScore}</td>`;
                         } else {
@@ -1294,9 +1296,11 @@ document.addEventListener('DOMContentLoaded', function() {
             // Компоненты программы
             if (perf.components && perf.components.length > 0) {
                 // Определяем максимальное количество судей среди всех компонентов
+                // Фильтруем None значения при подсчете
                 let maxJudges = 0;
                 perf.components.forEach(comp => {
-                    const judgeCount = (comp.judge_scores || []).length;
+                    const judgeScores = (comp.judge_scores || []).filter(s => s !== null && s !== undefined && s !== 'None');
+                    const judgeCount = judgeScores.length;
                     if (judgeCount > maxJudges) {
                         maxJudges = judgeCount;
                     }
@@ -1333,7 +1337,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Добавляем ячейки для всех судей
                     for (let j = 0; j < maxJudges; j++) {
                         const score = judgeScores[j];
-                        if (score !== undefined && score !== null) {
+                        if (score !== undefined && score !== null && score !== 'None') {
                             row += `<td class="judge-score">${score.toFixed(2)}</td>`;
                         } else {
                             row += `<td class="judge-score">-</td>`;
