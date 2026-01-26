@@ -1520,7 +1520,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 `;
             }
             
-            // Снижения
+            // Снижения и итоговая сумма за сегмент
+            // Пересчитываем сумму за сегмент из TES + PCS - Deductions для проверки
+            const calculatedSegmentTotal = (perf.tes_total !== null ? perf.tes_total : 0) + 
+                                          (perf.pcs_total !== null ? perf.pcs_total : 0) - 
+                                          (perf.deductions !== null ? perf.deductions : 0);
+            
             html += `
                 <div class="printout-summary" style="margin-top: 1.5rem;">
                     <table>
@@ -1530,7 +1535,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         </tr>
                         <tr style="background: #e9ecef; font-weight: 700;">
                             <td>Сумма за ${perf.segment_name}</td>
-                            <td><strong>${perf.points !== null ? perf.points.toFixed(2) : '-'}</strong></td>
+                            <td><strong>${perf.points !== null ? perf.points.toFixed(2) : calculatedSegmentTotal.toFixed(2)}</strong></td>
                         </tr>
                     </table>
                 </div>
