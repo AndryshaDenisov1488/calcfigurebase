@@ -120,76 +120,76 @@ def analyze_xml():
         
         # Проверяем, есть ли файлы в сессии (множественная загрузка)
         if 'uploaded_files' in session and session['uploaded_files']:
-        uploaded_files = session['uploaded_files']
-        logger.info(f"Анализ {len(uploaded_files)} файлов из сессии")
-        
-        all_categories_analysis = []
-        all_parser_summaries = []
-        all_file_data = []
-        errors = []
-        
-        for file_info in uploaded_files:
-            filepath = file_info['filepath']
-            if not os.path.exists(filepath):
-                error_msg = f'Файл "{file_info["filename"]}" не найден на сервере'
-                logger.error(error_msg)
-                errors.append(error_msg)
-                continue
-                
-            try:
-                parser = ISUCalcFSParser(filepath)
-                parser.parse()
-                categories_analysis = analyze_categories_from_xml(parser)
-                
-                all_categories_analysis.extend(categories_analysis)
-                all_parser_summaries.append({
-                    'filename': file_info['filename'],
-                    'events': len(parser.events),
-                    'categories': len(parser.categories),
-                    'segments': len(parser.segments),
-                    'persons': len(parser.persons),
-                    'clubs': len(parser.clubs),
-                    'participants': len(parser.participants),
-                    'performances': len(parser.performances)
-                })
-                all_file_data.append({
-                    'filepath': filepath,
-                    'filename': file_info['filename'],
-                    'saved_filename': file_info['saved_filename'],
-                    'categories_count': len(categories_analysis)
-                })
-                logger.info(f"Файл {file_info['filename']} успешно проанализирован")
-            except Exception as e:
-                error_msg = f'Ошибка анализа файла "{file_info["filename"]}": {str(e)}'
-                logger.error(error_msg, exc_info=True)
-                errors.append(error_msg)
-        
-        if not all_file_data:
-            return jsonify({'error': 'Не удалось проанализировать ни одного файла. ' + '; '.join(errors)}), 500
-        
-        # Сохраняем данные всех файлов в сессии
-        session['parser_data'] = {
-            'files': all_file_data,
-            'categories_analysis': all_categories_analysis,
-            'parser_summaries': all_parser_summaries
-        }
-        session.modified = True
-        
-        total_categories = len(all_categories_analysis)
-        total_files = len(all_file_data)
-        
-        message = f'Проанализировано файлов: {total_files}. Найдено категорий: {total_categories}'
-        if errors:
-            message += f'. Ошибок: {len(errors)}'
-        
-        return jsonify({
-            'success': True,
-            'categories_analysis': all_categories_analysis,
-            'parser_summaries': all_parser_summaries,
-            'files_count': total_files,
-            'message': message,
-            'errors': errors if errors else None
-        })
+            uploaded_files = session['uploaded_files']
+            logger.info(f"Анализ {len(uploaded_files)} файлов из сессии")
+            
+            all_categories_analysis = []
+            all_parser_summaries = []
+            all_file_data = []
+            errors = []
+            
+            for file_info in uploaded_files:
+                filepath = file_info['filepath']
+                if not os.path.exists(filepath):
+                    error_msg = f'Файл "{file_info["filename"]}" не найден на сервере'
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+                    continue
+                    
+                try:
+                    parser = ISUCalcFSParser(filepath)
+                    parser.parse()
+                    categories_analysis = analyze_categories_from_xml(parser)
+                    
+                    all_categories_analysis.extend(categories_analysis)
+                    all_parser_summaries.append({
+                        'filename': file_info['filename'],
+                        'events': len(parser.events),
+                        'categories': len(parser.categories),
+                        'segments': len(parser.segments),
+                        'persons': len(parser.persons),
+                        'clubs': len(parser.clubs),
+                        'participants': len(parser.participants),
+                        'performances': len(parser.performances)
+                    })
+                    all_file_data.append({
+                        'filepath': filepath,
+                        'filename': file_info['filename'],
+                        'saved_filename': file_info['saved_filename'],
+                        'categories_count': len(categories_analysis)
+                    })
+                    logger.info(f"Файл {file_info['filename']} успешно проанализирован")
+                except Exception as e:
+                    error_msg = f'Ошибка анализа файла "{file_info["filename"]}": {str(e)}'
+                    logger.error(error_msg, exc_info=True)
+                    errors.append(error_msg)
+            
+            if not all_file_data:
+                return jsonify({'error': 'Не удалось проанализировать ни одного файла. ' + '; '.join(errors)}), 500
+            
+            # Сохраняем данные всех файлов в сессии
+            session['parser_data'] = {
+                'files': all_file_data,
+                'categories_analysis': all_categories_analysis,
+                'parser_summaries': all_parser_summaries
+            }
+            session.modified = True
+            
+            total_categories = len(all_categories_analysis)
+            total_files = len(all_file_data)
+            
+            message = f'Проанализировано файлов: {total_files}. Найдено категорий: {total_categories}'
+            if errors:
+                message += f'. Ошибок: {len(errors)}'
+            
+            return jsonify({
+                'success': True,
+                'categories_analysis': all_categories_analysis,
+                'parser_summaries': all_parser_summaries,
+                'files_count': total_files,
+                'message': message,
+                'errors': errors if errors else None
+            })
         
         # Если файлов нет в сессии, возвращаем ошибку
         logger.warning("Нет файлов в сессии для анализа. Проверяем прямой запрос с файлом...")
