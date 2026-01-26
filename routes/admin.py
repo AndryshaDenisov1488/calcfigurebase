@@ -36,6 +36,13 @@ def upload_file():
             if not files or all(f.filename == '' for f in files):
                 return jsonify({'error': 'Файл не выбран'}), 400
             
+            # Ограничение на количество файлов за раз (из-за ограничений сессии Flask)
+            MAX_FILES_PER_UPLOAD = 15
+            if len(files) > MAX_FILES_PER_UPLOAD:
+                return jsonify({
+                    'error': f'Слишком много файлов выбрано ({len(files)}). Максимальное количество файлов за раз: {MAX_FILES_PER_UPLOAD}. Пожалуйста, загрузите файлы порциями по {MAX_FILES_PER_UPLOAD} штук.'
+                }), 400
+            
             uploaded_files = []
             errors = []
             
@@ -108,7 +115,7 @@ def upload_file():
                         except:
                             pass
                 return jsonify({
-                    'error': f'Ошибка сохранения данных: слишком много файлов для сессии. Попробуйте загрузить меньше файлов за раз (рекомендуется не более 10-15 файлов).'
+                    'error': f'Ошибка сохранения данных: слишком много файлов для сессии. Пожалуйста, загрузите файлы порциями по 10-15 штук.'
                 }), 500
             
             message = f'Загружено файлов: {len(uploaded_files)}'
