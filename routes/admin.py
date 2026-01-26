@@ -622,20 +622,53 @@ def admin_export_google_sheets():
     credentials_exists = os.path.exists(credentials_path) and os.access(credentials_path, os.R_OK)
     
     if request.method == 'POST':
+        # Проверяем, что запрос ожидает JSON (AJAX запрос)
+        wants_json = request.headers.get('Content-Type') == 'application/json' or \
+                     request.headers.get('Accept', '').find('application/json') != -1
+        
         if not credentials_exists:
-            flash('Файл google_credentials.json не найден или недоступен для чтения', 'error')
-            return render_template('admin_export_google_sheets.html', 
-                                 credentials_exists=credentials_exists,
-                                 spreadsheet_id=DEFAULT_SPREADSHEET_ID)
+            if wants_json:
+                return jsonify({
+                    'success': False,
+                    'message': 'Файл google_credentials.json не найден или недоступен для чтения'
+                }), 400
+            else:
+                flash('Файл google_credentials.json не найден или недоступен для чтения', 'error')
+                return render_template('admin_export_google_sheets.html', 
+                                     credentials_exists=credentials_exists,
+                                     spreadsheet_id=DEFAULT_SPREADSHEET_ID)
+        
         try:
             result = export_to_google_sheets()
-            if result.get('success'):
-                flash('Данные успешно экспортированы в Google Sheets!', 'success')
+            if wants_json:
+                # Возвращаем JSON для AJAX запросов
+                if result.get('success'):
+                    return jsonify({
+                        'success': True,
+                        'message': result.get('message', 'Данные успешно экспортированы в Google Sheets!'),
+                        'url': result.get('url'),
+                        'spreadsheet_id': result.get('spreadsheet_id')
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'message': result.get('message', 'Неизвестная ошибка')
+                    }), 500
             else:
-                flash(f'Ошибка экспорта: {result.get("message", "Неизвестная ошибка")}', 'error')
+                # Возвращаем HTML с flash сообщениями для обычных POST запросов
+                if result.get('success'):
+                    flash('Данные успешно экспортированы в Google Sheets!', 'success')
+                else:
+                    flash(f'Ошибка экспорта: {result.get("message", "Неизвестная ошибка")}', 'error')
         except Exception as e:
             logger.error(f"Ошибка экспорта в Google Sheets: {e}", exc_info=True)
-            flash(f'Ошибка экспорта: {str(e)}', 'error')
+            if wants_json:
+                return jsonify({
+                    'success': False,
+                    'message': f'Ошибка экспорта: {str(e)}'
+                }), 500
+            else:
+                flash(f'Ошибка экспорта: {str(e)}', 'error')
     
     return render_template('admin_export_google_sheets.html', 
                          credentials_exists=credentials_exists,
