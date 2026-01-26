@@ -47,11 +47,13 @@ def upload_file():
                     continue
                 
                 filename = secure_filename(file.filename)
-                # Добавляем timestamp для уникальности при множественной загрузке
+                # Добавляем timestamp и случайное число для уникальности при множественной загрузке
                 import time
+                import random
                 timestamp = int(time.time() * 1000)
+                random_suffix = random.randint(1000, 9999)
                 name, ext = os.path.splitext(filename)
-                filename = f"{name}_{timestamp}{ext}"
+                filename = f"{name}_{timestamp}_{random_suffix}{ext}"
                 filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
                 
                 try:
@@ -90,9 +92,24 @@ def upload_file():
                 logger.debug("Очищены старые данные парсера из сессии")
             
             # Сохраняем новый список файлов в сессии (заменяем, а не добавляем)
-            session['uploaded_files'] = uploaded_files
-            session.modified = True
-            logger.info(f"Загружено {len(uploaded_files)} новых файлов в сессию")
+            # Ограничиваем размер данных в сессии - сохраняем только необходимую информацию
+            try:
+                session['uploaded_files'] = uploaded_files
+                session.modified = True
+                logger.info(f"Загружено {len(uploaded_files)} новых файлов в сессию")
+            except Exception as session_error:
+                logger.error(f"Ошибка сохранения в сессию: {str(session_error)}", exc_info=True)
+                # Если не удалось сохранить в сессию, удаляем загруженные файлы
+                for uploaded_file in uploaded_files:
+                    filepath = uploaded_file.get('filepath')
+                    if filepath and os.path.exists(filepath):
+                        try:
+                            os.remove(filepath)
+                        except:
+                            pass
+                return jsonify({
+                    'error': f'Ошибка сохранения данных: слишком много файлов для сессии. Попробуйте загрузить меньше файлов за раз (рекомендуется не более 10-15 файлов).'
+                }), 500
             
             message = f'Загружено файлов: {len(uploaded_files)}'
             if errors:
@@ -107,7 +124,20 @@ def upload_file():
             })
         except Exception as e:
             logger.error(f"Критическая ошибка при загрузке файлов: {str(e)}", exc_info=True)
-            return jsonify({'error': f'Внутренняя ошибка сервера: {str(e)}'}), 500
+            # Очищаем частично загруженные файлы при ошибке
+            if 'uploaded_files' in locals():
+                for uploaded_file in uploaded_files:
+                    filepath = uploaded_file.get('filepath')
+                    if filepath and os.path.exists(filepath):
+                        try:
+                            os.remove(filepath)
+                        except:
+                            pass
+            error_message = str(e)
+            # Если ошибка связана с сессией, даем более понятное сообщение
+            if 'session' in error_message.lower() or 'too large' in error_message.lower():
+                error_message = 'Слишком много файлов для обработки за раз. Попробуйте загрузить меньше файлов (рекомендуется не более 10-15 файлов за раз).'
+            return jsonify({'error': f'Внутренняя ошибка сервера: {error_message}'}), 500
     return render_template('upload.html')
 
 @admin_bp.route('/analyze-xml', methods=['POST'])
