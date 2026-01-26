@@ -117,9 +117,9 @@ def analyze_xml():
     """Анализ XML файла(ов) без сохранения в базу"""
     try:
         logger.info(f"Запрос на анализ XML. Сессия содержит uploaded_files: {'uploaded_files' in session}")
-    
-    # Проверяем, есть ли файлы в сессии (множественная загрузка)
-    if 'uploaded_files' in session and session['uploaded_files']:
+        
+        # Проверяем, есть ли файлы в сессии (множественная загрузка)
+        if 'uploaded_files' in session and session['uploaded_files']:
         uploaded_files = session['uploaded_files']
         logger.info(f"Анализ {len(uploaded_files)} файлов из сессии")
         
@@ -190,25 +190,25 @@ def analyze_xml():
             'message': message,
             'errors': errors if errors else None
         })
-    
-    # Если файлов нет в сессии, возвращаем ошибку
-    logger.warning("Нет файлов в сессии для анализа. Проверяем прямой запрос с файлом...")
-    
-    # Обработка одного файла (старая логика для совместимости - прямой запрос с файлом)
-    # Это используется только если файл отправляется напрямую в запросе
-    if 'file' not in request.files:
-        return jsonify({
-            'error': 'Нет загруженных файлов для анализа. Сначала загрузите файлы через форму загрузки, затем нажмите "Обработать XML".'
-        }), 400
-    
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'Файл не выбран'}), 400
-    if not file.filename.lower().endswith('.xml'):
-        return jsonify({'error': f'Неверный формат файла. Ожидается .xml, получен: {file.filename}'}), 400
-    filename = secure_filename(file.filename)
-    filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
-    try:
+        
+        # Если файлов нет в сессии, возвращаем ошибку
+        logger.warning("Нет файлов в сессии для анализа. Проверяем прямой запрос с файлом...")
+        
+        # Обработка одного файла (старая логика для совместимости - прямой запрос с файлом)
+        # Это используется только если файл отправляется напрямую в запросе
+        if 'file' not in request.files:
+            return jsonify({
+                'error': 'Нет загруженных файлов для анализа. Сначала загрузите файлы через форму загрузки, затем нажмите "Обработать XML".'
+            }), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'error': 'Файл не выбран'}), 400
+        if not file.filename.lower().endswith('.xml'):
+            return jsonify({'error': f'Неверный формат файла. Ожидается .xml, получен: {file.filename}'}), 400
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
+        try:
         file.save(filepath)
         try:
             ET.parse(filepath)
@@ -231,17 +231,17 @@ def analyze_xml():
                 'performances': len(parser.performances)
             }
         }
-        return jsonify({
-            'success': True,
-            'categories_analysis': categories_analysis,
-            'parser_summary': session['parser_data']['parser_summary'],
-            'message': f'Файл проанализирован. Найдено {len(categories_analysis)} категорий'
-        })
-    except Exception as e:
-        logger.error(f"Ошибка анализа файла: {str(e)}", exc_info=True)
-        if 'filepath' in locals() and os.path.exists(filepath):
-            os.remove(filepath)
-        return jsonify({'error': f'Ошибка анализа файла: {str(e)}'}), 500
+            return jsonify({
+                'success': True,
+                'categories_analysis': categories_analysis,
+                'parser_summary': session['parser_data']['parser_summary'],
+                'message': f'Файл проанализирован. Найдено {len(categories_analysis)} категорий'
+            })
+        except Exception as e:
+            logger.error(f"Ошибка анализа файла: {str(e)}", exc_info=True)
+            if 'filepath' in locals() and os.path.exists(filepath):
+                os.remove(filepath)
+            return jsonify({'error': f'Ошибка анализа файла: {str(e)}'}), 500
     except Exception as e:
         logger.error(f"Критическая ошибка при анализе XML (внешний обработчик): {str(e)}", exc_info=True)
         return jsonify({'error': f'Внутренняя ошибка сервера при анализе XML: {str(e)}'}), 500
