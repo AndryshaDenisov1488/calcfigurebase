@@ -594,6 +594,104 @@
         border: 1px solid #f5c6cb;
     }
     
+    /* Модальное окно для распечатки */
+    .printout-modal-content {
+        border-radius: 16px;
+        border: none;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        overflow: hidden;
+    }
+    
+    .printout-modal-header {
+        background: var(--primary-gradient);
+        color: white;
+        border: none;
+        padding: 1.5rem 2rem;
+    }
+    
+    .printout-modal-header .modal-title {
+        font-weight: 600;
+        font-size: 1.25rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+    
+    .printout-modal-body {
+        padding: 2rem;
+        max-height: calc(100vh - 200px);
+        overflow-y: auto;
+        background: #f8f9fa;
+    }
+    
+    .printout-modal-body::-webkit-scrollbar {
+        width: 8px;
+    }
+    
+    .printout-modal-body::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 10px;
+    }
+    
+    .printout-modal-body::-webkit-scrollbar-thumb {
+        background: #007bff;
+        border-radius: 10px;
+    }
+    
+    .printout-modal-body::-webkit-scrollbar-thumb:hover {
+        background: #0056b3;
+    }
+    
+    /* Адаптивная таблица в модальном окне */
+    .printout-modal-body .printout-table {
+        width: 100%;
+        table-layout: auto;
+        font-size: 0.9rem;
+        background: white;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    
+    .printout-modal-body .printout-table th {
+        white-space: nowrap;
+        padding: 0.75rem 0.5rem;
+        font-size: 0.8rem;
+        background: var(--primary-gradient);
+        color: white;
+    }
+    
+    .printout-modal-body .printout-table td {
+        padding: 0.75rem 0.5rem;
+        word-wrap: break-word;
+    }
+    
+    /* Адаптивность для мобильных */
+    @media (max-width: 768px) {
+        .printout-modal-body {
+            padding: 1rem;
+        }
+        
+        .printout-modal-body .printout-table {
+            font-size: 0.75rem;
+        }
+        
+        .printout-modal-body .printout-table th,
+        .printout-modal-body .printout-table td {
+            padding: 0.5rem 0.25rem;
+        }
+    }
+    
+    /* Кнопка показа распечатки */
+    .show-printout-modal {
+        transition: all 0.3s ease;
+    }
+    
+    .show-printout-modal:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 123, 255, 0.3);
+    }
+    
     @media (max-width: 768px) {
         .printout-container {
             padding: 1rem;
@@ -799,10 +897,10 @@
                                 {% for event, category, participant in participations %}
                                 <tr data-participant-id="{{ participant.id }}" {% if participant.pct_ppname == 'БЕСП' %}class="table-success"{% elif participant.status == 'R' or participant.status == 'W' %}class="table-warning"{% endif %}>
                                     <td>
-                                        <button class="btn btn-sm btn-outline-primary toggle-printout" 
+                                        <button class="btn btn-sm btn-outline-primary show-printout-modal" 
                                                 data-participant-id="{{ participant.id }}"
-                                                title="Показать распечатку">
-                                            <i class="fas fa-chevron-down"></i>
+                                                title="Показать детальную распечатку">
+                                            <i class="fas fa-file-alt"></i> Детали
                                         </button>
                                     </td>
                                     <td>
@@ -857,18 +955,6 @@
                                         {% endif %}
                                     </td>
                                 </tr>
-                                <tr class="printout-row" data-participant-id="{{ participant.id }}" style="display: none;">
-                                    <td colspan="6">
-                                        <div class="printout-container" data-participant-id="{{ participant.id }}">
-                                            <div class="text-center py-3">
-                                                <div class="spinner-border text-primary" role="status">
-                                                    <span class="visually-hidden">Загрузка...</span>
-                                                </div>
-                                                <p class="mt-2 text-muted">Загрузка распечатки...</p>
-                                            </div>
-                                        </div>
-                                    </td>
-                                </tr>
                                 {% endfor %}
                             </tbody>
                         </table>
@@ -884,6 +970,29 @@
         </div>
     </div>
 </div>
+
+<!-- Модальное окно для детальной распечатки -->
+<div class="modal fade" id="printoutModal" tabindex="-1" aria-labelledby="printoutModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen-lg-down modal-xl">
+        <div class="modal-content printout-modal-content">
+            <div class="modal-header printout-modal-header">
+                <h5 class="modal-title" id="printoutModalLabel">
+                    <i class="fas fa-file-alt"></i> Детальная распечатка выступления
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body printout-modal-body" id="printoutModalBody">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                        <span class="visually-hidden">Загрузка...</span>
+                    </div>
+                    <p class="mt-3 text-muted">Загрузка данных распечатки...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 
@@ -1170,42 +1279,37 @@ document.addEventListener('DOMContentLoaded', function() {
             chartCard.parentNode.insertBefore(errorMessage, chartCard);
         });
     
-    // Управление распечаткой выступлений
-    const toggleButtons = document.querySelectorAll('.toggle-printout');
-    const loadedPrintouts = new Set(); // Храним ID уже загруженных распечаток
+    // Управление модальным окном распечатки
+    const printoutModal = new bootstrap.Modal(document.getElementById('printoutModal'));
+    const printoutModalBody = document.getElementById('printoutModalBody');
+    const loadedPrintouts = new Map(); // Храним загруженные данные распечаток
     
-    toggleButtons.forEach(button => {
+    document.querySelectorAll('.show-printout-modal').forEach(button => {
         button.addEventListener('click', function() {
             const participantId = this.dataset.participantId;
-            const printoutRow = document.querySelector(`tr.printout-row[data-participant-id="${participantId}"]`);
-            const container = document.querySelector(`.printout-container[data-participant-id="${participantId}"]`);
             
-            if (!printoutRow || !container) return;
+            // Показываем модальное окно
+            printoutModal.show();
             
-            const isExpanded = printoutRow.style.display !== 'none';
-            
-            if (isExpanded) {
-                // Сворачиваем
-                printoutRow.style.display = 'none';
-                this.classList.remove('expanded');
-                this.querySelector('i').classList.remove('fa-chevron-up');
-                this.querySelector('i').classList.add('fa-chevron-down');
+            // Если данные уже загружены, показываем их сразу
+            if (loadedPrintouts.has(participantId)) {
+                printoutModalBody.innerHTML = loadedPrintouts.get(participantId);
             } else {
-                // Раскрываем
-                printoutRow.style.display = 'table-row';
-                this.classList.add('expanded');
-                this.querySelector('i').classList.remove('fa-chevron-down');
-                this.querySelector('i').classList.add('fa-chevron-up');
-                
-                // Загружаем данные, если еще не загружены
-                if (!loadedPrintouts.has(participantId)) {
-                    loadPrintoutData(participantId, container);
-                }
+                // Показываем загрузку и загружаем данные
+                printoutModalBody.innerHTML = `
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                            <span class="visually-hidden">Загрузка...</span>
+                        </div>
+                        <p class="mt-3 text-muted">Загрузка данных распечатки...</p>
+                    </div>
+                `;
+                loadPrintoutData(participantId);
             }
         });
     });
     
-    function loadPrintoutData(participantId, container) {
+    function loadPrintoutData(participantId) {
         fetch(`/api/participant/${participantId}/performance-details`)
             .then(response => {
                 if (!response.ok) {
@@ -1214,12 +1318,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 return response.json();
             })
             .then(data => {
-                loadedPrintouts.add(participantId);
-                renderPrintout(data, container);
+                const html = renderPrintout(data);
+                loadedPrintouts.set(participantId, html);
+                printoutModalBody.innerHTML = html;
             })
             .catch(error => {
                 console.error('Ошибка загрузки распечатки:', error);
-                container.innerHTML = `
+                printoutModalBody.innerHTML = `
                     <div class="printout-error">
                         <i class="fas fa-exclamation-triangle"></i> 
                         Ошибка загрузки данных распечатки. Попробуйте обновить страницу.
@@ -1228,7 +1333,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
     }
     
-    function renderPrintout(data, container) {
+    function renderPrintout(data) {
         const { participant, event, category, athlete, performances } = data;
         
         let html = `
@@ -1470,7 +1575,7 @@ document.addEventListener('DOMContentLoaded', function() {
             `;
         }
         
-        container.innerHTML = html;
+        return html;
     }
 });
 </script>
