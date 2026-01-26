@@ -98,8 +98,9 @@
                             <a href="{{ url_for('admin.upload_file') }}" class="btn btn-secondary">
                                 <i class="fas fa-arrow-left"></i> Назад к загрузке
                             </a>
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-save"></i> Сохранить и обработать файл
+                            <button type="submit" class="btn btn-primary" id="submit-btn">
+                                <i class="fas fa-save"></i> <span class="btn-text">Сохранить и обработать файл</span>
+                                <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
                             </button>
                         </div>
                     </div>
@@ -185,6 +186,13 @@
 .delete-category-btn {
     margin-top: 0.5rem;
 }
+#submit-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+#submit-btn .spinner-border {
+    margin-left: 0.5rem;
+}
 </style>
 
 <script>
@@ -226,10 +234,19 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
-    // Предупреждение при отправке формы, если есть удаленные категории
+    // Защита от двойного клика и предупреждение при отправке формы
     const form = document.querySelector('form');
-    if (form) {
+    const submitBtn = document.getElementById('submit-btn');
+    let isSubmitting = false;
+    
+    if (form && submitBtn) {
         form.addEventListener('submit', function(e) {
+            // Предотвращаем повторную отправку
+            if (isSubmitting) {
+                e.preventDefault();
+                return false;
+            }
+            
             const deletedCount = document.querySelectorAll('.category-item.deleted').length;
             if (deletedCount > 0) {
                 if (!confirm(`Вы собираетесь исключить ${deletedCount} категорий из импорта. Продолжить?`)) {
@@ -237,6 +254,20 @@ document.addEventListener('DOMContentLoaded', function() {
                     return false;
                 }
             }
+            
+            // Блокируем повторную отправку
+            isSubmitting = true;
+            submitBtn.disabled = true;
+            submitBtn.classList.add('disabled');
+            
+            // Показываем индикатор загрузки
+            const btnText = submitBtn.querySelector('.btn-text');
+            const spinner = submitBtn.querySelector('.spinner-border');
+            if (btnText) btnText.textContent = 'Обработка...';
+            if (spinner) spinner.classList.remove('d-none');
+            
+            // Разрешаем отправку формы
+            return true;
         });
     }
 });

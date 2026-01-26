@@ -317,7 +317,17 @@ def normalize_categories():
                 deleted_indices = set(parser_data.get('deleted_category_indices', []))
                 
                 for file_info in parser_data['files']:
-                    parser = ISUCalcFSParser(file_info['filepath'])
+                    filepath = file_info.get('filepath')
+                    if not filepath:
+                        logger.warning(f"Пропущен файл без пути: {file_info.get('filename', 'unknown')}")
+                        continue
+                    
+                    if not os.path.exists(filepath):
+                        logger.error(f"Файл не найден: {filepath}")
+                        flash(f'Ошибка: файл {os.path.basename(filepath)} не найден. Возможно, он был удален. Попробуйте загрузить файлы заново.', 'error')
+                        continue
+                    
+                    parser = ISUCalcFSParser(filepath)
                     parser.parse()
                     
                     # Применяем нормализацию к категориям этого файла и исключаем удаленные
@@ -353,7 +363,14 @@ def normalize_categories():
                         save_to_database(parser)
                         total_athletes += len(parser.get_athletes_with_results())
                     
-                    os.remove(file_info['filepath'])
+                    # Удаляем файл только если он существует
+                    if os.path.exists(filepath):
+                        try:
+                            os.remove(filepath)
+                        except OSError as e:
+                            logger.warning(f"Не удалось удалить файл {filepath}: {str(e)}")
+                    else:
+                        logger.warning(f"Файл уже не существует при попытке удаления: {filepath}")
                 
                 # Очищаем сессию
                 session.pop('parser_data', None)
@@ -413,7 +430,18 @@ def normalize_categories():
             session['parser_data']['deleted_category_indices'] = list(deleted_indices)
             
             try:
-                parser = ISUCalcFSParser(parser_data['filepath'])
+                filepath = parser_data.get('filepath')
+                if not filepath:
+                    flash('Ошибка: путь к файлу не найден в данных сессии. Попробуйте загрузить файл заново.', 'error')
+                    return redirect(url_for('admin.upload'))
+                
+                if not os.path.exists(filepath):
+                    logger.error(f"Файл не найден: {filepath}")
+                    flash(f'Ошибка: файл {os.path.basename(filepath)} не найден. Возможно, он был удален. Попробуйте загрузить файл заново.', 'error')
+                    session.pop('parser_data', None)
+                    return redirect(url_for('admin.upload'))
+                
+                parser = ISUCalcFSParser(filepath)
                 parser.parse()
                 
                 # Применяем нормализацию и исключаем удаленные категории
@@ -451,7 +479,16 @@ def normalize_categories():
                         flash('Файл успешно загружен и обработан с нормализацией категорий!', 'success')
                 else:
                     flash('Файл обработан, но все категории были исключены из импорта.', 'warning')
-                os.remove(parser_data['filepath'])
+                
+                # Удаляем файл только если он существует
+                if os.path.exists(filepath):
+                    try:
+                        os.remove(filepath)
+                    except OSError as e:
+                        logger.warning(f"Не удалось удалить файл {filepath}: {str(e)}")
+                else:
+                    logger.warning(f"Файл уже не существует при попытке удаления: {filepath}")
+                
                 session.pop('parser_data', None)
                 return redirect(url_for('public.index'))
             except Exception as e:

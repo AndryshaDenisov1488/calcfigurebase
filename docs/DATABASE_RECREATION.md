@@ -175,6 +175,49 @@ LIMIT 10;
 
 Ожидаемый результат: `j01_code`, `j02_code`, `j03_code` должны быть числами от 0 до 15 (или NULL для кода 9).
 
+## Исправление прав доступа к базе данных
+
+Если вы получаете ошибку `sqlite3.OperationalError: attempt to write a readonly database`, это означает, что у процесса gunicorn нет прав на запись в файл БД.
+
+### Определение пользователя gunicorn
+
+```bash
+# Проверьте, от какого пользователя запускается gunicorn
+ps aux | grep gunicorn | grep calc.figurebase
+```
+
+Обычно это `www-data` или `root`.
+
+### Исправление прав доступа
+
+```bash
+# Если gunicorn запускается от www-data:
+chown www-data:www-data instance/figure_skating.db
+chown www-data:www-data instance/
+chmod 664 instance/figure_skating.db
+chmod 775 instance/
+
+# Если gunicorn запускается от root:
+chown root:root instance/figure_skating.db
+chown root:root instance/
+chmod 664 instance/figure_skating.db
+chmod 775 instance/
+
+# Проверьте права
+ls -la instance/figure_skating.db
+ls -ld instance/
+```
+
+### Проверка после исправления
+
+```bash
+# Перезапустите приложение
+sudo systemctl restart calc-figurebase
+
+# Проверьте логи
+journalctl -u calc-figurebase -f
+```
+
 ## Откат (если что-то пошло не так)
 
 Если после пересоздания что-то пошло не так:
