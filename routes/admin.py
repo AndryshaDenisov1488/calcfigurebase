@@ -209,28 +209,28 @@ def analyze_xml():
         filename = secure_filename(file.filename)
         filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
         try:
-        file.save(filepath)
-        try:
-            ET.parse(filepath)
-        except ET.ParseError as e:
-            os.remove(filepath)
-            return jsonify({'error': f'Файл не является корректным XML: {str(e)}'}), 400
-        parser = ISUCalcFSParser(filepath)
-        parser.parse()
-        categories_analysis = analyze_categories_from_xml(parser)
-        session['parser_data'] = {
-            'filepath': filepath,
-            'categories_analysis': categories_analysis,
-            'parser_summary': {
-                'events': len(parser.events),
-                'categories': len(parser.categories),
-                'segments': len(parser.segments),
-                'persons': len(parser.persons),
-                'clubs': len(parser.clubs),
-                'participants': len(parser.participants),
-                'performances': len(parser.performances)
+            file.save(filepath)
+            try:
+                ET.parse(filepath)
+            except ET.ParseError as e:
+                os.remove(filepath)
+                return jsonify({'error': f'Файл не является корректным XML: {str(e)}'}), 400
+            parser = ISUCalcFSParser(filepath)
+            parser.parse()
+            categories_analysis = analyze_categories_from_xml(parser)
+            session['parser_data'] = {
+                'filepath': filepath,
+                'categories_analysis': categories_analysis,
+                'parser_summary': {
+                    'events': len(parser.events),
+                    'categories': len(parser.categories),
+                    'segments': len(parser.segments),
+                    'persons': len(parser.persons),
+                    'clubs': len(parser.clubs),
+                    'participants': len(parser.participants),
+                    'performances': len(parser.performances)
+                }
             }
-        }
             return jsonify({
                 'success': True,
                 'categories_analysis': categories_analysis,
