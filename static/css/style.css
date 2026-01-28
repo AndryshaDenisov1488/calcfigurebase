@@ -19,6 +19,9 @@ body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background: linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%);
     min-height: 100vh;
+    /* Глобальный автоматический перенос длинных слов/строк */
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
 }
 
 /* Навигация */
@@ -194,6 +197,9 @@ body {
 .table tbody td {
     padding: 1rem;
     vertical-align: middle;
+    /* Чтобы длинные значения не ломали вёрстку */
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
 }
 
 /* Статистика */
