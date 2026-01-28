@@ -605,8 +605,8 @@ def admin_logout():
 @admin_bp.route('/admin/export-google-sheets', methods=['GET', 'POST'])
 @admin_required
 def admin_export_google_sheets():
-    """Экспорт данных в Google Sheets"""
-    from google_sheets_sync import export_to_google_sheets, DEFAULT_SPREADSHEET_ID
+    """Экспорт данных в Google Sheets и подготовка ссылок PDF по ключевым таблицам."""
+    from google_sheets_sync import export_to_google_sheets, DEFAULT_SPREADSHEET_ID, get_pdf_export_urls
     
     # Проверяем наличие файла credentials (используем тот же способ, что и в google_sheets_sync.py)
     import os
@@ -620,6 +620,15 @@ def admin_export_google_sheets():
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     credentials_path = os.environ.get('GOOGLE_CREDENTIALS_PATH') or os.path.join(base_dir, 'google_credentials.json')
     credentials_exists = os.path.exists(credentials_path) and os.access(credentials_path, os.R_OK)
+
+    pdf_urls = {}
+    if credentials_exists and request.method == 'GET':
+        # Пытаемся заранее подготовить ссылки экспорта в PDF для нужных таблиц
+        try:
+            pdf_urls = get_pdf_export_urls()
+        except Exception as e:
+            logger.error(f"Не удалось подготовить PDF ссылки для Google Sheets: {e}", exc_info=True)
+            pdf_urls = {}
     
     if request.method == 'POST':
         # Проверяем, что запрос ожидает JSON (AJAX запрос)
@@ -634,9 +643,12 @@ def admin_export_google_sheets():
                 }), 400
             else:
                 flash('Файл google_credentials.json не найден или недоступен для чтения', 'error')
-                return render_template('admin_export_google_sheets.html', 
-                                     credentials_exists=credentials_exists,
-                                     spreadsheet_id=DEFAULT_SPREADSHEET_ID)
+                return render_template(
+                    'admin_export_google_sheets.html',
+                    credentials_exists=credentials_exists,
+                    spreadsheet_id=DEFAULT_SPREADSHEET_ID,
+                    pdf_urls={}
+                )
         
         try:
             result = export_to_google_sheets()
@@ -670,9 +682,20 @@ def admin_export_google_sheets():
             else:
                 flash(f'Ошибка экспорта: {str(e)}', 'error')
     
-    return render_template('admin_export_google_sheets.html', 
-                         credentials_exists=credentials_exists,
-                         spreadsheet_id=DEFAULT_SPREADSHEET_ID)
+    # GET-запрос: просто показываем страницу с текущим статусом и, если возможно, ссылками для PDF
+    if credentials_exists and not pdf_urls:
+        try:
+            pdf_urls = get_pdf_export_urls()
+        except Exception as e:
+            logger.error(f"Не удалось подготовить PDF ссылки для Google Sheets (GET): {e}", exc_info=True)
+            pdf_urls = {}
+
+    return render_template(
+        'admin_export_google_sheets.html',
+        credentials_exists=credentials_exists,
+        spreadsheet_id=DEFAULT_SPREADSHEET_ID,
+        pdf_urls=pdf_urls
+    )
 
 @admin_bp.route('/admin/free-participation', methods=['GET', 'POST'])
 @admin_required

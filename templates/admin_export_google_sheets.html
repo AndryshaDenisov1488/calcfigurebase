@@ -52,7 +52,7 @@
             </div>
             
             <!-- Кнопка экспорта -->
-            <div class="mt-4">
+            <div class="mt-4 mb-3">
                 <button type="button" 
                         class="btn btn-primary btn-lg" 
                         id="exportBtn"
@@ -66,6 +66,38 @@
                     </span>
                 </button>
             </div>
+            
+            {% if credentials_exists and pdf_urls %}
+            <!-- Быстрая выгрузка ключевых таблиц в PDF -->
+            <div class="mt-2">
+                <h6>Выгрузка таблиц в PDF:</h6>
+                <div class="d-flex flex-wrap gap-2">
+                    {% if pdf_urls.free_stats %}
+                    <a href="{{ pdf_urls.free_stats }}" target="_blank" class="btn btn-outline-success btn-sm">
+                        3 таблица — Общее количество бесплатных участий в Москве
+                    </a>
+                    {% endif %}
+                    {% if pdf_urls.unique_participations %}
+                    <a href="{{ pdf_urls.unique_participations }}" target="_blank" class="btn btn-outline-info btn-sm">
+                        4 таблица — Уникальные участия
+                    </a>
+                    {% endif %}
+                    {% if pdf_urls.total_participations %}
+                    <a href="{{ pdf_urls.total_participations }}" target="_blank" class="btn btn-outline-primary btn-sm">
+                        5 таблица — Общее количество участий
+                    </a>
+                    {% endif %}
+                    {% if pdf_urls.summary %}
+                    <a href="{{ pdf_urls.summary }}" target="_blank" class="btn btn-outline-secondary btn-sm">
+                        7 таблица — Общая сводка
+                    </a>
+                    {% endif %}
+                </div>
+                <small class="text-muted d-block mt-1">
+                    PDF формируются напрямую из Google Sheets в том же виде, что и при ручном экспорте.
+                </small>
+            </div>
+            {% endif %}
             
             <!-- Результат -->
             <div id="exportResult" class="mt-4" style="display: none;"></div>
