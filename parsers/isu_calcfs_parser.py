@@ -247,8 +247,27 @@ class ISUCalcFSParser:
             }
             self.segments.append(segment_data)
 
+    @staticmethod
+    def _wug_to_role_code(wug):
+        """Преобразует код WUG из атрибута сегмента SCP_WUGxx в код роли судьи (ISU Calc).
+        6=Referee, 7=Technical Controller, 8=Data Operator, 9=Technical Specialist, 10=Assistant TS."""
+        if wug is None:
+            return None
+        try:
+            n = int(str(wug).strip())
+        except (ValueError, TypeError):
+            return None
+        wug_roles = {
+            6: 'REF',
+            7: 'TC',
+            8: 'DO',   # Оператор ввода данных (в XML часто все JDG, роль задаётся WUG)
+            9: 'TS',
+            10: 'ATS',
+        }
+        return wug_roles.get(n)
+
     def _parse_judges(self, root):
-        """Парсинг судейских бригад по сегментам"""
+        """Парсинг судейских бригад по сегментам. Роль берётся из SCP_WUGxx сегмента, если есть."""
         seen_judges = set()
         for segment in root.findall('.//Segment'):
             segment_id = segment.get('SCP_ID')
@@ -273,11 +292,16 @@ class ISUCalcFSParser:
                 if judge_id and judge_id not in seen_judges:
                     self.judges.append(judge_data)
                     seen_judges.add(judge_id)
+                # Роль из SCP_WUGxx сегмента (порядок в списке = порядок слотов), иначе из PCT_AFUNCT
+                wug = segment.get('SCP_WUG%02d' % order_num) or segment.get('SCP_WUG%d' % order_num)
+                role_code = self._wug_to_role_code(wug) if wug else normalize_string(judge.get('PCT_AFUNCT'))
+                if not role_code:
+                    role_code = normalize_string(judge.get('PCT_AFUNCT'))
                 self.judge_panels.append({
                     'segment_id': segment_id,
                     'category_id': category_id,
                     'judge_id': judge_id,
-                    'role_code': normalize_string(judge.get('PCT_AFUNCT')),
+                    'role_code': role_code,
                     'panel_group': normalize_string(judge.get('PCT_COMPOF')),
                     'order_num': order_num,
                 })
