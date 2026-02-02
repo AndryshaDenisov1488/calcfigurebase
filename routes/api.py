@@ -339,13 +339,20 @@ def api_category_statistics():
     result = sorted(rank_stats.values(), key=lambda x: x['total_participants'], reverse=True)
     return jsonify(result)
 
+# Разряды МС и КМС — исключаются из подсчёта на странице бесплатного участия (как и везде: только 3 юн–1 сп)
+FREE_PARTICIPATION_EXCLUDED_RANKS = {
+    'МС, Женщины', 'МС, Мужчины', 'МС, Пары', 'МС, Танцы',
+    'КМС, Девушки', 'КМС, Юноши', 'КМС, Пары', 'КМС, Танцы'
+}
+
+
 @api_bp.route('/analytics/free-participation')
 def api_free_participation():
-    """API для получения спортсменов с бесплатным участием"""
+    """API для получения спортсменов с бесплатным участием (без МС и КМС, только 3 юн–1 сп)."""
     try:
         from services.rank_service import build_rank_groups
-        
-        # Получаем данные о бесплатных участиях
+
+        # Получаем данные о бесплатных участиях только по разрядам без МС/КМС
         free_participants = db.session.query(
             Athlete.id,
             Athlete.first_name,
@@ -367,6 +374,11 @@ def api_free_participation():
             Event, Category.event_id == Event.id
         ).filter(
             Participant.pct_ppname == 'БЕСП'
+        ).filter(
+            db.or_(
+                Category.normalized_name.is_(None),
+                Category.normalized_name.notin_(FREE_PARTICIPATION_EXCLUDED_RANKS)
+            )
         ).order_by(
             Event.begin_date.desc(), Athlete.last_name, Athlete.first_name
         ).all()
@@ -422,9 +434,11 @@ def api_free_participation():
                 athlete_data['dominant_rank'] = athlete_data['ranks'][0]['name']
         
         athletes_list = sorted(athletes_data.values(), key=lambda x: x['free_participations'], reverse=True)
-        
+
         # Получаем данные по разрядам (только для спортсменов с бесплатным участием)
         rank_groups_data = build_rank_groups(event_id=None)
+        # Исключаем МС и КМС — на странице считаем только 3 юн–1 сп
+        rank_groups_data = [g for g in rank_groups_data if g.get('display_name') not in FREE_PARTICIPATION_EXCLUDED_RANKS]
         # Фильтруем только разряды с бесплатными участиями
         filtered_rank_groups = []
         for group in rank_groups_data:
