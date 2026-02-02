@@ -41,11 +41,25 @@ class ClubRegistry:
             return 1.0
         
         # Проверка на вхождение одного названия в другое
-        # Если короткое название содержится в длинном и составляет >70% длины, это очень похоже
+        # Если короткое название содержится в длинном и составляет ≥90% длины, это очень похоже
+        # Порог 90% предотвращает объединение "Академия спорта" и "Академия спорта Стрижи"
         if norm1 in norm2 or norm2 in norm1:
-            shorter = min(len(norm1), len(norm2))
-            longer = max(len(norm1), len(norm2))
-            if longer > 0 and shorter / longer >= 0.70 and shorter >= 10:
+            shorter_name = norm1 if len(norm1) < len(norm2) else norm2
+            longer_name = norm2 if len(norm1) < len(norm2) else norm1
+            shorter = len(shorter_name)
+            longer = len(longer_name)
+            
+            # Дополнительная проверка: если есть отличающиеся слова, это разные школы
+            # Например: "ООО Академия спорта" vs "ООО Академия спорта Стрижи"
+            # Остаток: "Стрижи" - это целое слово, значит разные школы
+            if longer_name.startswith(shorter_name):
+                remainder = longer_name[len(shorter_name):].strip()
+                # Если остаток содержит хотя бы одно слово (не пустой и не только пробелы)
+                if remainder and len(remainder.split()) >= 1:
+                    # Это разные школы - есть дополнительные слова
+                    return 0.70  # Низкая схожесть - не объединять
+            
+            if longer > 0 and shorter / longer >= 0.90 and shorter >= 10:
                 return 0.95  # Очень высокая схожесть
         
         # Используем SequenceMatcher для вычисления общей схожести
