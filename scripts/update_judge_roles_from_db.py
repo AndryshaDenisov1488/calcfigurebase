@@ -4,9 +4,9 @@
 Обновление ролей судей (role_code) в БД по правилу порядка в сегменте.
 Проходит по JudgePanel в базе, без XML.
 
-Правило (как в ISU Calc / ваших выгрузках):
-- Если в сегменте 7 человек: 7-й по порядку = Оператор ввода данных (DO).
-- Если в сегменте 10 человек: 7=TC, 8=TS, 9=ATS, 10=DO.
+Правило: полевых судей может быть от 3 до 7 (и больше).
+- Последний в сегменте (order_num == размер бригады) всегда = ОВД (DO).
+- При 10 участниках: 7=TC, 8=TS, 9=ATS, 10=DO.
 
 Обновляются только записи с role_code в ('JDG','J', None), остальные не трогаем.
 Запуск из корня: python scripts/update_judge_roles_from_db.py [--dry-run]
@@ -24,7 +24,7 @@ from extensions import db
 from models import JudgePanel, Segment
 
 
-# Роли по позиции при 10 участниках в бригаде (стандарт ISU)
+# При 10 участниках в бригаде (стандарт ISU)
 ORDER_TO_ROLE_10 = {
     7: 'TC',   # Технический контролер
     8: 'TS',   # Технический специалист
@@ -32,23 +32,18 @@ ORDER_TO_ROLE_10 = {
     10: 'DO',  # Оператор ввода данных
 }
 
-# При 7 участниках последний (7-й) часто = Оператор ввода данных
-ORDER_TO_ROLE_7 = {
-    7: 'DO',
-}
-
 
 def role_for_order(order_num, total_in_segment):
-    """Возвращает код роли по порядковому номеру и количеству человек в сегменте."""
+    """Роль по порядковому номеру и размеру бригады.
+    Последний в сегменте (3–7 или больше) = ОВД (DO). При 10 участниках: 7=TC, 8=TS, 9=ATS, 10=DO."""
     if order_num is None or total_in_segment is None:
         return None
+    # Последний по счёту в сегменте всегда ОВД (при 3, 4, 5, 6, 7 полевых судьях и т.д.)
+    if order_num == total_in_segment:
+        return 'DO'
+    # При 10 участниках — фиксированные роли для 7, 8, 9
     if total_in_segment >= 10 and order_num in ORDER_TO_ROLE_10:
         return ORDER_TO_ROLE_10[order_num]
-    if total_in_segment == 7 and order_num in ORDER_TO_ROLE_7:
-        return ORDER_TO_ROLE_7[order_num]
-    # При 8–9 участниках можно расширить при необходимости
-    if total_in_segment >= 8 and order_num in ORDER_TO_ROLE_10:
-        return ORDER_TO_ROLE_10.get(order_num)
     return None
 
 
