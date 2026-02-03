@@ -49,52 +49,6 @@ def get_google_sheets_client():
         logger.error(f"Ошибка подключения к Google Sheets: {e}")
         raise
 
-
-def get_pdf_export_urls():
-    """Возвращает готовые ссылки экспорта в PDF для ключевых листов.
-
-    Используются названия листов:
-    - "Общее количество бесплатных участий в Москве" (3-й лист)
-    - "Уникальные участия" (4-й лист)
-    - "Общее количество участий" (5-й лист)
-    - "Общая сводка" (7-й лист)
-    """
-    client = get_google_sheets_client()
-    spreadsheet = client.open_by_key(DEFAULT_SPREADSHEET_ID)
-
-    title_map = {
-        'free_stats': "Общее количество бесплатных участий в Москве",
-        'unique_participations': "Уникальные участия",
-        'total_participations': "Общее количество участий",
-        'summary': "Общая сводка",
-    }
-
-    base_export = f"https://docs.google.com/spreadsheets/d/{spreadsheet.id}/export"
-
-    urls = {}
-    for key, title in title_map.items():
-        try:
-            worksheet = spreadsheet.worksheet(title)
-            gid = worksheet.id
-            # Параметры экспорта подобраны под стандартный вид PDF из Google Sheets
-            params = (
-                f"format=pdf"
-                f"&gid={gid}"
-                f"&size=A4"
-                f"&portrait=false"
-                f"&fitw=true"
-                f"&sheetnames=false"
-                f"&printtitle=false"
-                f"&pagenumbers=false"
-                f"&gridlines=false"
-                f"&fzr=false"
-            )
-            urls[key] = f"{base_export}?{params}"
-        except Exception as e:
-            logger.warning(f"Не удалось получить лист '{title}' для PDF: {e}")
-
-    return urls
-
 def safe_api_call(func, *args, max_retries=3, delay=1, **kwargs):
     """
     Безопасный вызов API с обработкой rate limiting и retry
@@ -1849,10 +1803,10 @@ def export_to_google_sheets(spreadsheet_id=None):
         logger.info("[OK] Второй лист 'Анализ по школам' создан!")
         
         # ========================================
-        # ТРЕТИЙ ЛИСТ: ОБЩЕЕ КОЛИЧЕСТВО БЕСПЛАТНЫХ УЧАСТИЙ В МОСКВЕ
+        # ТРЕТИЙ ЛИСТ: СТАТИСТИКА БЕСПЛАТНЫХ УЧАСТИЙ
         # ========================================
         
-        logger.info("Создание третьего листа 'Общее количество бесплатных участий в Москве'...")
+        logger.info("Создание третьего листа 'Статистика'...")
         
         # ВАЖНО: Получаем данные заново, т.к. athletes_by_rank уже использовался
         logger.info("Получение данных для статистики...")
@@ -1939,7 +1893,7 @@ def export_to_google_sheets(spreadsheet_id=None):
         
         # Создаём или получаем третий лист
         try:
-            worksheet3 = spreadsheet.worksheet("Общее количество бесплатных участий в Москве")
+            worksheet3 = spreadsheet.worksheet("Статистика")
             sheet_id3 = worksheet3.id
             
             # Очистка третьего листа
@@ -1978,16 +1932,12 @@ def export_to_google_sheets(spreadsheet_id=None):
                 worksheet3.clear()
             
         except:
-            worksheet3 = spreadsheet.add_worksheet(
-                title="Общее количество бесплатных участий в Москве", rows=100, cols=5
-            )
+            worksheet3 = spreadsheet.add_worksheet(title="Статистика", rows=100, cols=5)
             sheet_id3 = worksheet3.id
         
         # Заголовок третьего листа
-        worksheet3.update_acell(
-            'A1',
-            f'ОБЩЕЕ КОЛИЧЕСТВО БЕСПЛАТНЫХ УЧАСТИЙ В МОСКВЕ - Обновлено: {datetime.now().strftime("%d.%m.%Y %H:%M")}'
-        )
+        worksheet3.update_acell('A1', 
+            f'СТАТИСТИКА БЕСПЛАТНЫХ УЧАСТИЙ - Обновлено: {datetime.now().strftime("%d.%m.%Y %H:%M")}')
         worksheet3.format('A1:D1', {
             'textFormat': {'bold': True, 'fontSize': 14},
             'horizontalAlignment': 'CENTER',
@@ -2203,17 +2153,17 @@ def export_to_google_sheets(spreadsheet_id=None):
         
         worksheet3.freeze(rows=1)
         
-        logger.info("[OK] Третий лист 'Общее количество бесплатных участий в Москве' создан!")
+        logger.info("[OK] Третий лист 'Статистика' создан!")
         
         # ========================================
-        # ЧЕТВЁРТЫЙ ЛИСТ: УНИКАЛЬНЫЕ УЧАСТИЯ (ранее 'Общая статистика')
+        # ЧЕТВЁРТЫЙ ЛИСТ: ОБЩАЯ СТАТИСТИКА (был 5-й)
         # ========================================
         
-        logger.info("Создание четвертого листа 'Уникальные участия'...")
+        logger.info("Создание четвертого листа 'Общая статистика'...")
         general_stats = get_general_statistics_data()
         
         try:
-            worksheet4 = spreadsheet.worksheet("Уникальные участия")
+            worksheet4 = spreadsheet.worksheet("Общая статистика")
             sheet_id4 = worksheet4.id
             
             logger.info("Очистка четвертого листа...")
@@ -2250,21 +2200,19 @@ def export_to_google_sheets(spreadsheet_id=None):
                 worksheet4.clear()
             
         except:
-            worksheet4 = spreadsheet.add_worksheet(title="Уникальные участия", rows=100, cols=5)
+            worksheet4 = spreadsheet.add_worksheet(title="Общая статистика", rows=100, cols=5)
             sheet_id4 = worksheet4.id
         
-        # Заголовок четвертого листа
-        worksheet4.update_acell(
-            'A1',
-            f'УНИКАЛЬНЫЕ УЧАСТИЯ (без МС/КМС) - Обновлено: {datetime.now().strftime("%d.%m.%Y %H:%M")}'
-        )
+        # Заголовок пятого листа
+        worksheet4.update_acell('A1', 
+            f'ОБЩАЯ СТАТИСТИКА: Уникальные спортсмены (без МС/КМС) - Обновлено: {datetime.now().strftime("%d.%m.%Y %H:%M")}')
         worksheet4.format('A1:C1', {
             'textFormat': {'bold': True, 'fontSize': 14},
             'horizontalAlignment': 'CENTER',
             'backgroundColor': {'red': 0.29, 'green': 0.53, 'blue': 0.91}
         })
         
-        # Объединение главного заголовка четвертого листа
+        # Объединение главного заголовка пятого листа
         try:
             main_header_merge5 = {
                 'mergeCells': {
@@ -2282,7 +2230,7 @@ def export_to_google_sheets(spreadsheet_id=None):
         except Exception as e:
             logger.debug(f"Объединение заголовка пятого листа: {e}")
         
-        # Формируем данные для четвертого листа
+        # Формируем данные для пятого листа
         stats_data5 = []
         current_row = 3
         
@@ -2311,7 +2259,7 @@ def export_to_google_sheets(spreadsheet_id=None):
         end_row = current_row + len(stats_data5) - 1
         worksheet4.update(f'A{current_row}:C{end_row}', stats_data5)
         
-        # Форматирование четвертого листа
+        # Форматирование пятого листа
         format_requests5 = []
         
         # Заголовок таблицы
@@ -2363,7 +2311,7 @@ def export_to_google_sheets(spreadsheet_id=None):
         if format_requests5:
             worksheet4.batch_format(format_requests5)
         
-        # Ширина колонок четвертого листа
+        # Ширина колонок пятого листа
         width_batch_requests5 = [
             {
                 'updateDimensionProperties': {
@@ -2408,17 +2356,17 @@ def export_to_google_sheets(spreadsheet_id=None):
         
         worksheet4.freeze(rows=1)
         
-        logger.info("[OK] Четвертый лист 'Уникальные участия' создан!")
+        logger.info("[OK] Четвертый лист 'Общая статистика' создан!")
         
         # ========================================
-        # ПЯТЫЙ ЛИСТ: ОБЩЕЕ КОЛИЧЕСТВО УЧАСТИЙ
+        # ПЯТЫЙ ЛИСТ: СТАТИСТИКА УЧАСТИЙ
         # ========================================
         
-        logger.info("Создание пятого листа 'Общее количество участий'...")
+        logger.info("Создание пятого листа 'Статистика участий'...")
         participations_stats = get_participations_statistics_data()
         
         try:
-            worksheet5 = spreadsheet.worksheet("Общее количество участий")
+            worksheet5 = spreadsheet.worksheet("Статистика участий")
             sheet_id5 = worksheet5.id
             
             logger.info("Очистка пятого листа...")
@@ -2455,14 +2403,12 @@ def export_to_google_sheets(spreadsheet_id=None):
                 worksheet5.clear()
             
         except:
-            worksheet5 = spreadsheet.add_worksheet(title="Общее количество участий", rows=100, cols=5)
+            worksheet5 = spreadsheet.add_worksheet(title="Статистика участий", rows=100, cols=5)
             sheet_id5 = worksheet5.id
         
         # Заголовок пятого листа
-        worksheet5.update_acell(
-            'A1',
-            f'ОБЩЕЕ КОЛИЧЕСТВО УЧАСТИЙ (без МС/КМС) - Обновлено: {datetime.now().strftime("%d.%m.%Y %H:%M")}'
-        )
+        worksheet5.update_acell('A1', 
+            f'СТАТИСТИКА УЧАСТИЙ (без МС/КМС) - Обновлено: {datetime.now().strftime("%d.%m.%Y %H:%M")}')
         worksheet5.format('A1:C1', {
             'textFormat': {'bold': True, 'fontSize': 14},
             'horizontalAlignment': 'CENTER',
@@ -2622,7 +2568,7 @@ def export_to_google_sheets(spreadsheet_id=None):
         
         worksheet5.freeze(rows=1)
         
-        logger.info("[OK] Пятый лист 'Общее количество участий' создан!")
+        logger.info("[OK] Пятый лист 'Статистика участий' создан!")
         
         # ========================================
         # ШЕСТОЙ ЛИСТ: ОТЧЕТ ПО ТУРНИРАМ С НОВИЧКАМИ
@@ -3053,14 +2999,14 @@ def export_to_google_sheets(spreadsheet_id=None):
         logger.info("[OK] Шестой лист 'Турниры: новички и повторяющиеся' создан!")
         
         # ========================================
-        # СЕДЬМОЙ ЛИСТ: ОБЩАЯ СВОДКА
+        # СЕДЬМОЙ ЛИСТ: СВОДНАЯ СТАТИСТИКА
         # ========================================
         
-        logger.info("Создание седьмого листа 'Общая сводка'...")
+        logger.info("Создание седьмого листа 'сводная статистика'...")
         summary_stats = get_summary_statistics_data()
         
         try:
-            worksheet7 = spreadsheet.worksheet("Общая сводка")
+            worksheet7 = spreadsheet.worksheet("сводная статистика")
             sheet_id7 = worksheet7.id
             
             logger.info("Очистка седьмого листа...")
@@ -3097,7 +3043,7 @@ def export_to_google_sheets(spreadsheet_id=None):
                 worksheet7.clear()
             
         except:
-            worksheet7 = spreadsheet.add_worksheet(title="Общая сводка", rows=1000, cols=6)
+            worksheet7 = spreadsheet.add_worksheet(title="сводная статистика", rows=1000, cols=6)
             sheet_id7 = worksheet7.id
         
         # Заголовок седьмого листа
@@ -3390,13 +3336,13 @@ def export_to_google_sheets(spreadsheet_id=None):
                 f'Экспорт завершен! Создано 7 листов: '
                 f'"Список спортсменов" ({total_athletes} спортсменов), '
                 f'"Анализ по школам" ({total_schools} школ), '
-                f'"Общее количество бесплатных участий в Москве" ({total_free} бесплатных участий), '
-                f'"Уникальные участия" ({general_stats["total_events"]} турниров, {total_participants} участников), '
-                f'"Общее количество участий" ({participations_stats["total_participations"]} участий), '
+                f'"Статистика" ({total_free} бесплатных участий), '
+                f'"Общая статистика" ({general_stats["total_events"]} турниров, {total_participants} участников), '
+                f'"Статистика участий" ({participations_stats["total_participations"]} участий), '
                 f'"Турниры: новички и повторяющиеся" ({len(first_timers_events)} турниров, '
                 f'{first_timers_totals["total_children"]} участий, '
                 f'{first_timers_totals["total_first_timers"]} новичков / {first_timers_totals["total_repeaters"]} повторяющихся) и '
-                f'"Общая сводка".'
+                f'"сводная статистика" (Общая сводка).'
             )
         }
         
