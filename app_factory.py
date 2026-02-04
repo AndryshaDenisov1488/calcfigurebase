@@ -42,4 +42,9 @@ def create_app():
     app.register_blueprint(analytics_bp)
     register_error_handlers(app)
 
+    # Убираем 404 в логах от запросов браузера к /favicon.ico
+    @app.route('/favicon.ico')
+    def favicon():
+        return '', 204
+
     return app

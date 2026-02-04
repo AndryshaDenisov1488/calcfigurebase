@@ -53,6 +53,21 @@ body {
     transform: translateY(-1px);
 }
 
+/* На десктопе пункты меню в одну строку, без переноса по буквам */
+@media (min-width: 992px) {
+    .navbar-nav {
+        flex-wrap: nowrap;
+    }
+    .navbar-nav .nav-item {
+        flex-shrink: 0;
+    }
+    .navbar-nav .nav-link {
+        white-space: nowrap;
+        overflow-wrap: normal;
+        word-wrap: normal;
+    }
+}
+
 /* Карточки */
 .card {
     border: none;
