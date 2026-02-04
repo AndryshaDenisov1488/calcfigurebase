@@ -66,39 +66,31 @@
                         </a>
                     </li>
                     {% if session.admin_logged_in %}
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('admin.upload_file') }}">
-                            <i class="fas fa-upload"></i> Загрузить файл
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="navbarAdmin" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-cog"></i> Админ
                         </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('admin.admin_free_participation') }}">
-                            <i class="fas fa-gift"></i> Бесплатное участие
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('admin.admin_export_google_sheets') }}">
-                            <i class="fas fa-table"></i> Экспорт в Google Sheets
-                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarAdmin">
+                            <li><a class="dropdown-item" href="{{ url_for('admin.upload_file') }}"><i class="fas fa-upload"></i> Загрузить файл</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('admin.admin_free_participation') }}"><i class="fas fa-gift"></i> Бесплатное участие</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('admin.admin_export_google_sheets') }}"><i class="fas fa-table"></i> Экспорт в Google Sheets</a></li>
+                        </ul>
                     </li>
                     {% endif %}
                 </ul>
                 
                 <ul class="navbar-nav">
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('analytics.free_participation') }}">
-                            <i class="fas fa-gift"></i> Бесплатное участие
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="navbarAnalytics" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-chart-bar"></i> Аналитика
                         </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('analytics.free_participation_analysis') }}">
-                            <i class="fas fa-chart-line"></i> Анализ участий
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('analytics.club_free_analysis') }}">
-                            <i class="fas fa-school"></i> Анализ по школам
-                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="navbarAnalytics">
+                            <li><a class="dropdown-item" href="{{ url_for('analytics.free_participation') }}"><i class="fas fa-gift"></i> Бесплатное участие</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('analytics.free_participation_analysis') }}"><i class="fas fa-chart-line"></i> Анализ участий</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('analytics.club_free_analysis') }}"><i class="fas fa-school"></i> Анализ по школам</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('analytics.first_timers_detail') }}"><i class="fas fa-user-friends"></i> Новички и повторяющиеся</a></li>
+                        </ul>
                     </li>
                     {% if session.admin_logged_in %}
                     <li class="nav-item">

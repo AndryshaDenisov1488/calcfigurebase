@@ -24,3 +24,11 @@ def club_free_analysis():
 def free_participation_analysis():
     """Страница анализа бесплатного участия с фильтрацией"""
     return render_template('free_participation_analysis.html')
+
+
+@analytics_bp.route('/first-timers-detail')
+def first_timers_detail():
+    """Детальный отчёт «Новички и повторяющиеся»: по каждому турниру и разряду — кто повторяющийся и откуда (где выступал раньше)."""
+    from google_sheets_sync import get_events_first_timers_report_data
+    report = get_events_first_timers_report_data()
+    return render_template('first_timers_detail.html', report=report)

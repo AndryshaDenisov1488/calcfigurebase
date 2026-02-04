@@ -854,8 +854,8 @@ def get_events_first_timers_report_data():
         
         participants_sorted = sorted(participants_query_detailed, key=_participant_sort_key)
         
-        # Словарь для отслеживания первых выступлений: {(athlete_id, rank): event_date}
-        first_appearances = {}
+        # Все выступления по (athlete_id, rank): [(event_id, event_date), ...] в хронологическом порядке — для детализации «все предыдущие» и «очередной раз»
+        appearances_by_athlete_rank = {}
         
         # Множество для отслеживания уникальных спортсменов-новичков (тех, кто выступает впервые в разряде)
         unique_first_timers = set()
@@ -884,38 +884,60 @@ def get_events_first_timers_report_data():
                 }
             
             event_entry = events_map[event_id]
-            # Считаем участия (не уникальных спортсменов)
             event_entry['participations_count'] += 1
             
             if rank_name not in event_entry['rank_stats']:
                 event_entry['rank_stats'][rank_name] = {
                     'participations_count': 0,
                     'free_participations_count': 0,
-                    'first_timers_count': 0,  # Новички - выступают в этом разряде впервые
-                    'repeaters_count': 0  # Повторяющиеся - уже выступали в этом разряде
+                    'first_timers_count': 0,
+                    'repeaters_count': 0,
+                    'repeaters_detail': []  # список {athlete_id, previous_appearances: [(event_id, date), ...], total_previous_count, appearance_number}
                 }
             
             rank_entry = event_entry['rank_stats'][rank_name]
             rank_entry['participations_count'] += 1
             
-            # Проверяем, выступал ли спортсмен в этом разряде раньше
             key = (athlete_id, rank_name)
+            previous_list = appearances_by_athlete_rank.get(key, [])
             
-            if key not in first_appearances:
-                # Это первое выступление спортсмена в этом разряде - он новичок
-                first_appearances[key] = event_date
+            if not previous_list:
+                # Первое выступление в этом разряде — новичок
                 rank_entry['first_timers_count'] += 1
-                # Добавляем в множество уникальных новичков
                 unique_first_timers.add(athlete_id)
+                appearances_by_athlete_rank[key] = [(event_id, event_date)]
             else:
-                # Спортсмен уже выступал в этом разряде раньше
+                # Повторяющийся: уже выступал — сохраняем все предыдущие выступления и номер текущего (2-й раз, 3-й раз…)
                 rank_entry['repeaters_count'] += 1
+                total_previous = len(previous_list)
+                appearance_number = total_previous + 1  # текущее выступление по счёту
+                rank_entry['repeaters_detail'].append({
+                    'athlete_id': athlete_id,
+                    'previous_appearances': list(previous_list),  # все предыдущие (event_id, event_date)
+                    'total_previous_count': total_previous,
+                    'appearance_number': appearance_number,
+                })
+                appearances_by_athlete_rank[key] = previous_list + [(event_id, event_date)]
             
             if row.pct_ppname == 'БЕСП':
                 event_entry['free_participations_count'] += 1
                 rank_entry['free_participations_count'] += 1
         
-        # Формируем данные для экспорта
+        # Собираем все athlete_id из repeaters_detail для подгрузки ФИО
+        repeater_athlete_ids = set()
+        for event_info in events_map.values():
+            for rank_stats in event_info.get('rank_stats', {}).values():
+                for rec in rank_stats.get('repeaters_detail', []):
+                    repeater_athlete_ids.add(rec['athlete_id'])
+        athletes_dict_by_id = {}
+        if repeater_athlete_ids:
+            from models import Athlete
+            athletes = Athlete.query.filter(Athlete.id.in_(repeater_athlete_ids)).all()
+            for a in athletes:
+                parts = [a.last_name or '', a.first_name or '', a.patronymic or '']
+                athletes_dict_by_id[a.id] = ' '.join(p for p in parts if p).strip() or f'ID {a.id}'
+        
+        # Формируем данные для экспорта (включая детализацию: все предыдущие выступления и счётчик «очередной раз»)
         events_data = []
         
         for event_id, event_info in events_map.items():
@@ -934,13 +956,29 @@ def get_events_first_timers_report_data():
                 
                 first_timers_count = rank_stats['first_timers_count']
                 repeaters_count = rank_stats['repeaters_count']
+                # Детализация: для каждого повторяющегося — ФИО, все предыдущие турниры, количество раз, «N-й раз»
+                repeaters_detail = []
+                for rec in rank_stats.get('repeaters_detail', []):
+                    previous_events = []
+                    for (eid, edate) in rec.get('previous_appearances', []):
+                        ev = events_dict.get(eid) if eid else None
+                        name = ev.name if ev else '—'
+                        d = edate.strftime('%d.%m.%Y') if edate else '—'
+                        previous_events.append({'event_name': name, 'event_date': d})
+                    repeaters_detail.append({
+                        'athlete_name': athletes_dict_by_id.get(rec['athlete_id'], f"ID {rec['athlete_id']}"),
+                        'previous_appearances': previous_events,
+                        'total_previous_count': rec.get('total_previous_count', 0),
+                        'appearance_number': rec.get('appearance_number', 0),
+                    })
                 
                 rank_stats_prepared.append({
                     'rank': rank_name,
                     'total_children': total_rank_children,
                     'free_children': rank_stats['free_participations_count'],
                     'first_timers': first_timers_count,
-                    'repeaters': repeaters_count
+                    'repeaters': repeaters_count,
+                    'repeaters_detail': repeaters_detail,
                 })
             
             # Сортируем разряды согласно приоритету
