@@ -90,6 +90,7 @@
                             <li><a class="dropdown-item" href="{{ url_for('analytics.club_free_analysis') }}"><i class="fas fa-school"></i> Анализ по школам</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="{{ url_for('analytics.first_timers_detail') }}"><i class="fas fa-user-friends"></i> Новички и повторяющиеся</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('analytics.first_timers_detail_free') }}"><i class="fas fa-gift"></i> Новички и повторяющиеся (только бесплатные)</a></li>
                         </ul>
                     </li>
                     {% if session.admin_logged_in %}
