@@ -1,5 +1,8 @@
 """PDF generator for detailed judging protocols."""
 
+import io
+import os
+
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import landscape, A4
 from reportlab.lib.styles import getSampleStyleSheet
@@ -7,6 +10,8 @@ from reportlab.lib.units import mm
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
 from models import Performance, Element, ComponentScore
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 
 def _format_score(value, divide_100=False):
@@ -18,6 +23,165 @@ def _format_score(value, divide_100=False):
         return f"{float(value):.2f}"
     except (ValueError, TypeError):
         return ''
+
+
+def _register_cyrillic_font():
+    """Регистрирует шрифт с поддержкой кириллицы, если доступен в системе.
+
+    Возвращает fontName (str), который можно использовать в стилях ReportLab.
+    """
+    candidates = [
+        # Linux (обычно в контейнере/VM)
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        # Windows (для локальной генерации)
+        r"C:\Windows\Fonts\arial.ttf",
+    ]
+
+    # Если уже зарегистрирован ранее (в рамках процесса) — просто используем.
+    try:
+        if "AppCyrillic" in pdfmetrics.getRegisteredFontNames():
+            return "AppCyrillic"
+    except Exception:
+        pass
+
+    for path in candidates:
+        try:
+            if path and os.path.exists(path):
+                pdfmetrics.registerFont(TTFont("AppCyrillic", path))
+                return "AppCyrillic"
+        except Exception:
+            # Если не получилось — просто пробуем следующий кандидат
+            continue
+    return "Helvetica"
+
+
+def generate_first_timers_detail_pdf_bytes(report):
+    """Генерирует PDF (bytes) для отчёта «Новички и повторяющиеся — детальный»."""
+    font_name = _register_cyrillic_font()
+    styles = getSampleStyleSheet()
+
+    # Подправляем базовые стили под компактный вид
+    title_style = styles["Title"].clone("TitleCyr")
+    title_style.fontName = font_name
+    title_style.fontSize = 14
+    title_style.leading = 16
+
+    h2_style = styles["Heading2"].clone("H2Cyr")
+    h2_style.fontName = font_name
+    h2_style.fontSize = 11
+    h2_style.leading = 13
+    h2_style.spaceBefore = 8
+    h2_style.spaceAfter = 4
+
+    h3_style = styles["Heading3"].clone("H3Cyr")
+    h3_style.fontName = font_name
+    h3_style.fontSize = 9
+    h3_style.leading = 11
+    h3_style.spaceBefore = 6
+    h3_style.spaceAfter = 3
+
+    normal_style = styles["Normal"].clone("NormalCyr")
+    normal_style.fontName = font_name
+    normal_style.fontSize = 8
+    normal_style.leading = 10
+
+    small_style = styles["Normal"].clone("SmallCyr")
+    small_style.fontName = font_name
+    small_style.fontSize = 7
+    small_style.leading = 9
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        leftMargin=4 * mm,
+        rightMargin=4 * mm,
+        topMargin=4 * mm,
+        bottomMargin=4 * mm,
+        title="Новички и повторяющиеся — детальный отчёт",
+    )
+
+    story = []
+    story.append(Paragraph("Новички и повторяющиеся — детальный отчёт", title_style))
+    story.append(Paragraph(
+        "По каждому турниру и разряду: повторяющиеся спортсмены, номер выступления в разряде и все предыдущие турниры.",
+        normal_style
+    ))
+    story.append(Spacer(1, 6))
+
+    events = (report or {}).get("events") or []
+    if not events:
+        story.append(Paragraph("Нет данных о турнирах.", normal_style))
+        doc.build(story)
+        return buffer.getvalue()
+
+    # Ширина таблицы = doc.width (уже с учётом полей)
+    table_width = doc.width
+    col_widths = [
+        table_width * 0.26,  # ФИО
+        table_width * 0.18,  # Школа
+        table_width * 0.08,  # N-й раз
+        table_width * 0.48,  # Предыдущие
+    ]
+
+    for event in events:
+        event_name = (event.get("event_name") or "—").strip()
+        event_date = event.get("event_date_display") or "—"
+        story.append(Paragraph(f"{event_name} — {event_date}", h2_style))
+
+        rank_stats = event.get("rank_stats") or []
+        ranks_with_repeaters = [r for r in rank_stats if (r.get("repeaters_detail") or [])]
+        if not ranks_with_repeaters:
+            story.append(Paragraph("Нет повторяющихся в этом турнире.", normal_style))
+            story.append(Spacer(1, 4))
+            continue
+
+        for rank_stat in ranks_with_repeaters:
+            rank_name = (rank_stat.get("rank") or "Без разряда").strip()
+            repeaters = rank_stat.get("repeaters") or 0
+            total_children = rank_stat.get("total_children") or 0
+            story.append(Paragraph(f"Разряд: {rank_name} (повторяющихся: {repeaters} из {total_children})", h3_style))
+
+            data = [["ФИО", "Школа", "Очередной раз", "Все предыдущие выступления (турнир — дата)"]]
+            for r in (rank_stat.get("repeaters_detail") or []):
+                athlete_name = (r.get("athlete_name") or "—").strip()
+                athlete_school = (r.get("athlete_school") or "—").strip()
+                appearance_number = r.get("appearance_number") or ((r.get("total_previous_count") or 0) + 1)
+                appearance_text = f"{appearance_number}-й"
+
+                prev_lines = []
+                for prev in (r.get("previous_appearances") or []):
+                    pn = (prev.get("event_name") or "—").strip()
+                    pd = (prev.get("event_date") or "—").strip()
+                    prev_lines.append(f"{pn} — {pd}")
+                prev_html = "<br/>".join(prev_lines) if prev_lines else "—"
+
+                data.append([
+                    Paragraph(athlete_name, small_style),
+                    Paragraph(athlete_school, small_style),
+                    Paragraph(appearance_text, small_style),
+                    Paragraph(prev_html, small_style),
+                ])
+
+            table = Table(data, colWidths=col_widths, repeatRows=1)
+            table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (2, 1), (2, -1), "CENTER"),
+                ("FONTSIZE", (0, 0), (-1, -1), 7),
+                ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("TOPPADDING", (0, 0), (-1, -1), 1.5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
+            ]))
+            story.append(table)
+            story.append(Spacer(1, 6))
+
+    doc.build(story)
+    return buffer.getvalue()
 
 
 def generate_performance_pdf(performance_id, output_path):

@@ -4,64 +4,112 @@
 
 {% block content %}
 <div class="container mt-4">
-    <h2>Новички и повторяющиеся — детальный отчёт</h2>
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <h2 class="mb-0">Новички и повторяющиеся — детальный отчёт</h2>
+        <a class="btn btn-outline-primary btn-sm" href="{{ url_for('analytics.first_timers_detail_pdf') }}">
+            <i class="fas fa-file-pdf"></i> Скачать PDF
+        </a>
+    </div>
     <p class="text-muted">
         По каждому турниру и разряду: кто считается повторяющимся, <strong>какой это по счёту раз</strong> выступления в разряде и <strong>все предыдущие турниры</strong>, где уже выступал.
     </p>
 
     {% if report.events %}
-        {% for event in report.events %}
-            <div class="card mt-4 shadow-sm">
-                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center flex-wrap">
-                    <span><strong>{{ event.event_name }}</strong></span>
-                    <span>{{ event.event_date_display }}</span>
-                </div>
-                <div class="card-body">
-                    {# repeaters_detail = list; selectattr без теста фильтрует по truthy (непустой список) #}
-                    {% set ranks_with_repeaters = event.rank_stats | selectattr('repeaters_detail') | list %}
-                    {% if not ranks_with_repeaters %}
-                        <p class="text-muted mb-0">Нет повторяющихся в этом турнире.</p>
-                    {% else %}
-                        {% for rank_stat in event.rank_stats %}
-                            {% if (rank_stat.repeaters_detail or []) | length > 0 %}
-                                <h6 class="mt-3 mb-2 text-secondary">Разряд: {{ rank_stat.rank }}</h6>
-                                <p class="small text-muted mb-2">
-                                    Повторяющихся: {{ rank_stat.repeaters }} из {{ rank_stat.total_children }}.
-                                </p>
-                                <div class="table-responsive">
-                                    <table class="table table-sm table-bordered table-hover">
-                                        <thead class="table-light">
-                                            <tr>
-                                                <th>ФИО</th>
-                                                <th>Очередной раз</th>
-                                                <th>Все предыдущие выступления (турнир — дата)</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for r in rank_stat.repeaters_detail %}
-                                                <tr>
-                                                    <td>{{ r.athlete_name }}</td>
-                                                    <td>{{ (r.appearance_number or (r.total_previous_count + 1) or '—') }}-й раз</td>
-                                                    <td>
-                                                        {% if r.previous_appearances %}
-                                                            {% for prev in r.previous_appearances %}
-                                                                <span class="d-block">{{ prev.event_name }} — {{ prev.event_date }}</span>
-                                                            {% endfor %}
-                                                        {% else %}
-                                                            —
-                                                        {% endif %}
-                                                    </td>
-                                                </tr>
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
+        <div class="accordion mt-3" id="eventsAccordion">
+            {% for event in report.events %}
+                {% set event_collapse_id = 'eventCollapse' ~ loop.index0 %}
+                {% set event_heading_id = 'eventHeading' ~ loop.index0 %}
+
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="{{ event_heading_id }}">
+                        <button class="accordion-button collapsed d-flex align-items-center gap-2" type="button"
+                                data-bs-toggle="collapse" data-bs-target="#{{ event_collapse_id }}"
+                                aria-expanded="false" aria-controls="{{ event_collapse_id }}">
+                            <span class="me-2"><strong>{{ event.event_name }}</strong></span>
+                            <span class="text-muted small">{{ event.event_date_display }}</span>
+
+                            <span class="ms-auto d-flex flex-wrap gap-2 align-items-center">
+                                <span class="badge rounded-pill bg-secondary">Всего: {{ event.total_children }}</span>
+                                <span class="badge rounded-pill bg-info text-dark">Бесплатно: {{ event.free_children }}</span>
+                                <span class="badge rounded-pill bg-success">Новички: {{ event.first_timers }}</span>
+                                <span class="badge rounded-pill bg-warning text-dark">Повторяющиеся: {{ event.repeaters }}</span>
+                            </span>
+                        </button>
+                    </h2>
+
+                    <div id="{{ event_collapse_id }}" class="accordion-collapse collapse"
+                         aria-labelledby="{{ event_heading_id }}" data-bs-parent="#eventsAccordion">
+                        <div class="accordion-body">
+                            {# repeaters_detail = list; selectattr без теста фильтрует по truthy (непустой список) #}
+                            {% set ranks_with_repeaters = event.rank_stats | selectattr('repeaters_detail') | list %}
+                            {% if not ranks_with_repeaters %}
+                                <p class="text-muted mb-0">Нет повторяющихся в этом турнире.</p>
+                            {% else %}
+                                {% set event_idx = loop.index0 %}
+                                <div class="accordion accordion-flush" id="ranksAccordion{{ event_idx }}">
+                                    {% for rank_stat in event.rank_stats %}
+                                        {% if (rank_stat.repeaters_detail or []) | length > 0 %}
+                                            {% set rank_idx = loop.index0 %}
+                                            {% set rank_collapse_id = 'rankCollapse' ~ event_idx ~ '_' ~ rank_idx %}
+                                            {% set rank_heading_id = 'rankHeading' ~ event_idx ~ '_' ~ rank_idx %}
+
+                                            <div class="accordion-item">
+                                                <h2 class="accordion-header" id="{{ rank_heading_id }}">
+                                                    <button class="accordion-button collapsed py-2" type="button"
+                                                            data-bs-toggle="collapse" data-bs-target="#{{ rank_collapse_id }}"
+                                                            aria-expanded="false" aria-controls="{{ rank_collapse_id }}">
+                                                        <span class="me-2">Разряд: <strong>{{ rank_stat.rank }}</strong></span>
+                                                        <span class="ms-auto small text-muted">
+                                                            Повторяющихся: {{ rank_stat.repeaters }} из {{ rank_stat.total_children }}
+                                                        </span>
+                                                    </button>
+                                                </h2>
+                                                <div id="{{ rank_collapse_id }}" class="accordion-collapse collapse"
+                                                     aria-labelledby="{{ rank_heading_id }}"
+                                                     data-bs-parent="#ranksAccordion{{ event_idx }}">
+                                                    <div class="accordion-body pt-2">
+                                                        <div class="table-responsive">
+                                                            <table class="table table-sm table-bordered table-hover">
+                                                                <thead class="table-light">
+                                                                    <tr>
+                                                                        <th>ФИО</th>
+                                                                        <th>Школа</th>
+                                                                        <th>Очередной раз</th>
+                                                                        <th>Все предыдущие выступления (турнир — дата)</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {% for r in rank_stat.repeaters_detail %}
+                                                                        <tr>
+                                                                            <td>{{ r.athlete_name }}</td>
+                                                                            <td>{{ r.athlete_school or '—' }}</td>
+                                                                            <td>{{ (r.appearance_number or (r.total_previous_count + 1) or '—') }}-й раз</td>
+                                                                            <td>
+                                                                                {% if r.previous_appearances %}
+                                                                                    {% for prev in r.previous_appearances %}
+                                                                                        <span class="d-block">{{ prev.event_name }} — {{ prev.event_date }}</span>
+                                                                                    {% endfor %}
+                                                                                {% else %}
+                                                                                    —
+                                                                                {% endif %}
+                                                                            </td>
+                                                                        </tr>
+                                                                    {% endfor %}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        {% endif %}
+                                    {% endfor %}
                                 </div>
                             {% endif %}
-                        {% endfor %}
-                    {% endif %}
+                        </div>
+                    </div>
                 </div>
-            </div>
-        {% endfor %}
+            {% endfor %}
+        </div>
     {% else %}
         <div class="alert alert-info">Нет данных о турнирах.</div>
     {% endif %}

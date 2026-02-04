@@ -929,13 +929,25 @@ def get_events_first_timers_report_data():
             for rank_stats in event_info.get('rank_stats', {}).values():
                 for rec in rank_stats.get('repeaters_detail', []):
                     repeater_athlete_ids.add(rec['athlete_id'])
-        athletes_dict_by_id = {}
+        athletes_info_by_id = {}
         if repeater_athlete_ids:
-            from models import Athlete
-            athletes = Athlete.query.filter(Athlete.id.in_(repeater_athlete_ids)).all()
-            for a in athletes:
-                parts = [a.last_name or '', a.first_name or '', a.patronymic or '']
-                athletes_dict_by_id[a.id] = ' '.join(p for p in parts if p).strip() or f'ID {a.id}'
+            from models import Athlete, Club
+            # Подтягиваем "школу" (Club) одним запросом, чтобы не ловить N+1.
+            rows = (
+                db.session.query(Athlete, Club.name.label('club_name'))
+                .outerjoin(Club, Athlete.club_id == Club.id)
+                .filter(Athlete.id.in_(repeater_athlete_ids))
+                .all()
+            )
+            for athlete, club_name in rows:
+                athlete_name = (getattr(athlete, 'full_name', None) or '').strip()
+                if not athlete_name:
+                    parts = [athlete.last_name or '', athlete.first_name or '', athlete.patronymic or '']
+                    athlete_name = ' '.join(p for p in parts if p).strip()
+                athletes_info_by_id[athlete.id] = {
+                    'name': athlete_name or f'ID {athlete.id}',
+                    'school': (club_name or '—').strip() or '—',
+                }
         
         # Формируем данные для экспорта (включая детализацию: все предыдущие выступления и счётчик «очередной раз»)
         events_data = []
@@ -966,7 +978,8 @@ def get_events_first_timers_report_data():
                         d = edate.strftime('%d.%m.%Y') if edate else '—'
                         previous_events.append({'event_name': name, 'event_date': d})
                     repeaters_detail.append({
-                        'athlete_name': athletes_dict_by_id.get(rec['athlete_id'], f"ID {rec['athlete_id']}"),
+                        'athlete_name': athletes_info_by_id.get(rec['athlete_id'], {}).get('name', f"ID {rec['athlete_id']}"),
+                        'athlete_school': athletes_info_by_id.get(rec['athlete_id'], {}).get('school', '—'),
                         'previous_appearances': previous_events,
                         'total_previous_count': rec.get('total_previous_count', 0),
                         'appearance_number': rec.get('appearance_number', 0),
@@ -990,6 +1003,10 @@ def get_events_first_timers_report_data():
             )
             
             date_display = event_info['event_date'].strftime('%d.%m.%Y') if event_info['event_date'] else 'Дата не указана'
+
+            # Итоги по турниру (для заголовка в детальном отчёте)
+            event_first_timers = sum(r['first_timers'] for r in rank_stats_prepared)
+            event_repeaters = sum(r['repeaters'] for r in rank_stats_prepared)
             
             events_data.append({
                 'event_id': event_id,
@@ -998,6 +1015,8 @@ def get_events_first_timers_report_data():
                 'event_date_display': date_display,
                 'total_children': total_children,
                 'free_children': free_children,
+                'first_timers': event_first_timers,
+                'repeaters': event_repeaters,
                 'rank_stats': rank_stats_prepared
             })
         

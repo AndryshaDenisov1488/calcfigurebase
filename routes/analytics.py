@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Analytics HTML routes."""
-from flask import Blueprint, render_template
+from datetime import date
+import io
+
+from flask import Blueprint, render_template, send_file
 
 analytics_bp = Blueprint('analytics', __name__)
 
@@ -32,3 +35,21 @@ def first_timers_detail():
     from google_sheets_sync import get_events_first_timers_report_data
     report = get_events_first_timers_report_data()
     return render_template('first_timers_detail.html', report=report)
+
+
+@analytics_bp.route('/first-timers-detail.pdf')
+def first_timers_detail_pdf():
+    """Скачать детальный отчёт «Новички и повторяющиеся» в PDF."""
+    from google_sheets_sync import get_events_first_timers_report_data
+    from services.pdf_generator import generate_first_timers_detail_pdf_bytes
+
+    report = get_events_first_timers_report_data()
+    pdf_bytes = generate_first_timers_detail_pdf_bytes(report)
+    filename = f"first-timers-detail-{date.today().isoformat()}.pdf"
+
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=filename,
+    )
