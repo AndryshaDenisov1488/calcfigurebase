@@ -92,6 +92,11 @@ def generate_first_timers_detail_pdf_bytes(report):
     small_style.fontSize = 7
     small_style.leading = 9
 
+    header_style = styles["Normal"].clone("HeaderCyr")
+    header_style.fontName = font_name
+    header_style.fontSize = 7
+    header_style.leading = 9
+
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -144,7 +149,12 @@ def generate_first_timers_detail_pdf_bytes(report):
             total_children = rank_stat.get("total_children") or 0
             story.append(Paragraph(f"Разряд: {rank_name} (повторяющихся: {repeaters} из {total_children})", h3_style))
 
-            data = [["ФИО", "Школа", "Очередной раз", "Все предыдущие выступления (турнир — дата)"]]
+            data = [[
+                Paragraph("ФИО", header_style),
+                Paragraph("Школа", header_style),
+                Paragraph("Очередной раз", header_style),
+                Paragraph("Все предыдущие выступления (турнир — дата)", header_style),
+            ]]
             for r in (rank_stat.get("repeaters_detail") or []):
                 athlete_name = (r.get("athlete_name") or "—").strip()
                 athlete_school = (r.get("athlete_school") or "—").strip()
@@ -167,6 +177,7 @@ def generate_first_timers_detail_pdf_bytes(report):
 
             table = Table(data, colWidths=col_widths, repeatRows=1)
             table.setStyle(TableStyle([
+                ("FONTNAME", (0, 0), (-1, -1), font_name),
                 ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
                 ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
