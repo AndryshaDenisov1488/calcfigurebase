@@ -23,6 +23,12 @@ SCOPES = [
 # ID основной Google Таблицы (всегда используется эта таблица)
 DEFAULT_SPREADSHEET_ID = '1Db14waZDObeIra4JXm7kvb2oXQUA52_MhjqImgqFXSc'
 
+# Даты турниров, исключаемых из статистики для разряда 1 сп (лист "1 сп: новички и повторяющиеся")
+EXCLUDED_DATES_FOR_1SP_STATS = {
+    date(2025, 12, 11),   # Новогодний турнир Академии спорта
+    date(2026, 1, 21),    # Зимний Турнир Академии спорта
+}
+
 def get_google_sheets_client():
     """Подключается к Google Sheets API"""
     try:
@@ -3414,6 +3420,12 @@ def export_to_google_sheets(spreadsheet_id=None):
         events_1sp = []
         totals_1sp = {'total_children': 0, 'free_children': 0, 'first_timers': 0, 'repeaters': 0}
         for event in first_timers_events:
+            # Исключаем турниры по дате (см. EXCLUDED_DATES_FOR_1SP_STATS)
+            ev_date = event.get('event_date')
+            if ev_date is not None:
+                d = ev_date.date() if hasattr(ev_date, 'date') and callable(ev_date) else ev_date
+                if d in EXCLUDED_DATES_FOR_1SP_STATS:
+                    continue
             rank_stats_1sp = [r for r in event.get('rank_stats', []) if (r.get('rank') or '').startswith('1 Спортивный')]
             if not rank_stats_1sp:
                 continue
