@@ -17,7 +17,8 @@
                     <span>{{ event.event_date_display }}</span>
                 </div>
                 <div class="card-body">
-                    {% set ranks_with_repeaters = event.rank_stats | selectattr('repeaters_detail') | selectattr('repeaters_detail', 'length') | list %}
+                    {# repeaters_detail = list; selectattr без теста фильтрует по truthy (непустой список) #}
+                    {% set ranks_with_repeaters = event.rank_stats | selectattr('repeaters_detail') | list %}
                     {% if not ranks_with_repeaters %}
                         <p class="text-muted mb-0">Нет повторяющихся в этом турнире.</p>
                     {% else %}
