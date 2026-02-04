@@ -6,7 +6,7 @@
 
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime
+from datetime import datetime, date
 import logging
 import time
 from app import app, db
@@ -750,7 +750,10 @@ def get_summary_statistics_data():
         }
 
 def get_events_first_timers_report_data():
-    """Формирует данные по турнирам с подсчетом новичков и повторяющихся по разрядам"""
+    """Формирует данные по турнирам с подсчетом новичков и повторяющихся по разрядам.
+    Новичок = первое хронологическое выступление спортсмена в данном разряде (по дате турнира).
+    Повторяющийся = спортсмен уже выступал в этом разряде на более раннем турнире.
+    Участия обрабатываются в порядке возрастания даты турнира."""
     
     # Разряды, которые нужно исключить из отчета
     excluded_ranks = {
@@ -833,17 +836,28 @@ def get_events_first_timers_report_data():
             events = Event.query.filter(Event.id.in_(event_ids)).all()
             events_dict = {e.id: e for e in events}
         
+        # КРИТИЧНО: сортируем участия по дате турнира (сначала самые ранние), чтобы
+        # "первое появление" (athlete_id, rank) было именно хронологически первым.
+        # Иначе при произвольном порядке все могли бы считаться новичками на позднем турнире.
+        def _participant_sort_key(r):
+            ev = events_dict.get(r.event_id) if r.event_id else None
+            begin_date = getattr(ev, 'begin_date', None) if ev else None
+            # Турниры без даты помещаем в конец
+            sort_date = begin_date if begin_date is not None else date.max
+            return (sort_date, r.event_id or 0, r.participant_id or 0)
+        
+        participants_sorted = sorted(participants_query_detailed, key=_participant_sort_key)
+        
         # Словарь для отслеживания первых выступлений: {(athlete_id, rank): event_date}
         first_appearances = {}
         
         # Множество для отслеживания уникальных спортсменов-новичков (тех, кто выступает впервые в разряде)
         unique_first_timers = set()
         
-        # Обрабатываем участия в хронологическом порядке
+        # Обрабатываем участия в хронологическом порядке (самый ранний турнир — первым)
         events_map = {}
         
-        # Обрабатываем детальный запрос для формирования данных о событиях
-        for row in participants_query_detailed:
+        for row in participants_sorted:
             event_id = row.event_id
             rank_name = (row.rank or 'Без разряда').strip()
             athlete_id = row.athlete_id
