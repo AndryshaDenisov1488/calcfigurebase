@@ -982,6 +982,74 @@ def get_events_first_timers_report_data():
             'rank_order': rank_order
         }
 
+
+# Разряды МС и КМС исключаются (как на странице анализа бесплатного участия)
+FREE_PARTICIPATION_EXCLUDED_RANKS = {
+    'МС, Женщины', 'МС, Мужчины', 'МС, Пары', 'МС, Танцы',
+    'КМС, Девушки', 'КМС, Юноши', 'КМС, Пары', 'КМС, Танцы'
+}
+
+
+def get_free_participation_exceedance_data():
+    """Спортсмены с бесплатным участием более 3 раз (превышение). Данные для листа как на странице free-participation-analysis.
+    Возвращает: (summary_list, detail_list), где summary_list = [{'name', 'club', 'count'}],
+    detail_list = [{'name', 'club', 'count', 'event_name', 'event_date', 'rank'}, ...] по каждому участию."""
+    with app.app_context():
+        from models import Event
+        rows = db.session.query(
+            Athlete.id,
+            Athlete.first_name,
+            Athlete.last_name,
+            Athlete.full_name_xml,
+            Club.name.label('club_name'),
+            Event.name.label('event_name'),
+            Event.begin_date.label('event_date'),
+            Category.normalized_name.label('rank'),
+        ).select_from(Athlete).outerjoin(Club, Athlete.club_id == Club.id).join(
+            Participant, Athlete.id == Participant.athlete_id
+        ).join(Category, Participant.category_id == Category.id).join(
+            Event, Category.event_id == Event.id
+        ).filter(
+            Participant.pct_ppname == 'БЕСП',
+            db.or_(
+                Category.normalized_name.is_(None),
+                Category.normalized_name.notin_(FREE_PARTICIPATION_EXCLUDED_RANKS)
+            )
+        ).order_by(Event.begin_date.asc(), Athlete.last_name, Athlete.first_name).all()
+        
+        by_athlete = {}
+        for r in rows:
+            aid = r.id
+            name = (r.full_name_xml or f"{r.last_name or ''} {r.first_name or ''}").strip()
+            club = (r.club_name or 'Не указан').strip()
+            event_date = r.event_date.strftime('%d.%m.%Y') if r.event_date else '—'
+            rank = (r.rank or 'Без разряда').strip()
+            if aid not in by_athlete:
+                by_athlete[aid] = {'name': name, 'club': club, 'count': 0, 'participations': []}
+            by_athlete[aid]['count'] += 1
+            by_athlete[aid]['participations'].append({
+                'event_name': r.event_name or '—',
+                'event_date': event_date,
+                'rank': rank
+            })
+        
+        exceed = [(a, d) for a, d in by_athlete.items() if d['count'] > 3]
+        exceed.sort(key=lambda x: (-x[1]['count'], x[1]['name']))
+        summary_list = [{'name': d['name'], 'club': d['club'], 'count': d['count']} for _, d in exceed]
+        detail_list = []
+        for _, d in exceed:
+            for p in d['participations']:
+                detail_list.append({
+                    'name': d['name'],
+                    'club': d['club'],
+                    'count': d['count'],
+                    'event_name': p['event_name'],
+                    'event_date': p['event_date'],
+                    'rank': p['rank']
+                })
+        return summary_list, detail_list
+
+
 def export_to_google_sheets(spreadsheet_id=None):
     """
     Экспортирует данные в Google Sheets
@@ -3336,6 +3404,183 @@ def export_to_google_sheets(spreadsheet_id=None):
         worksheet7.freeze(rows=1)
         
         logger.info("[OK] Седьмой лист 'сводная статистика' создан!")
+        
+        # ========================================
+        # ВОСЬМОЙ ЛИСТ: 1 СП — ТОЛЬКО ТУРНИРЫ ГДЕ БЫЛ РАЗРЯД 1 СПОРТИВНЫЙ
+        # ========================================
+        
+        logger.info("Создание восьмого листа '1 сп: новички и повторяющиеся'...")
+        # Фильтруем данные только по разрядам "1 Спортивный" и только турниры, где этот разряд был
+        events_1sp = []
+        totals_1sp = {'total_children': 0, 'free_children': 0, 'first_timers': 0, 'repeaters': 0}
+        for event in first_timers_events:
+            rank_stats_1sp = [r for r in event.get('rank_stats', []) if (r.get('rank') or '').startswith('1 Спортивный')]
+            if not rank_stats_1sp:
+                continue
+            total_c = sum(r['total_children'] for r in rank_stats_1sp)
+            free_c = sum(r['free_children'] for r in rank_stats_1sp)
+            first_c = sum(r['first_timers'] for r in rank_stats_1sp)
+            rep_c = sum(r['repeaters'] for r in rank_stats_1sp)
+            events_1sp.append({
+                'event_date_display': event['event_date_display'],
+                'event_name': event['event_name'],
+                'total_children': total_c,
+                'free_children': free_c,
+                'first_timers': first_c,
+                'repeaters': rep_c,
+            })
+            totals_1sp['total_children'] += total_c
+            totals_1sp['free_children'] += free_c
+            totals_1sp['first_timers'] += first_c
+            totals_1sp['repeaters'] += rep_c
+        
+        try:
+            worksheet8 = spreadsheet.worksheet("1 сп: новички и повторяющиеся")
+            sheet_id8 = worksheet8.id
+            try:
+                clear_requests8 = [
+                    {'unmergeCells': {'range': {'sheetId': sheet_id8, 'startRowIndex': 0, 'endRowIndex': 500, 'startColumnIndex': 0, 'endColumnIndex': 7}}},
+                    {'updateCells': {'range': {'sheetId': sheet_id8, 'startRowIndex': 0, 'endRowIndex': 500, 'startColumnIndex': 0, 'endColumnIndex': 7}, 'fields': 'userEnteredFormat,userEnteredValue'}}
+                ]
+                spreadsheet.batch_update({'requests': clear_requests8})
+            except Exception as e:
+                logger.warning(f"Очистка восьмого листа: {e}")
+                worksheet8.clear()
+        except Exception:
+            worksheet8 = spreadsheet.add_worksheet(title="1 сп: новички и повторяющиеся", rows=500, cols=8)
+            sheet_id8 = worksheet8.id
+        
+        worksheet8.update_acell('A1', f'1 СПОРТИВНЫЙ — ТУРНИРЫ ГДЕ БЫЛ РАЗРЯД 1 СП (обновлено {datetime.now().strftime("%d.%m.%Y %H:%M")})')
+        worksheet8.format('A1:G1', {
+            'textFormat': {'bold': True, 'fontSize': 14},
+            'horizontalAlignment': 'CENTER',
+            'backgroundColor': {'red': 0.29, 'green': 0.53, 'blue': 0.91}
+        })
+        try:
+            spreadsheet.batch_update({'requests': [{'mergeCells': {'range': {'sheetId': sheet_id8, 'startRowIndex': 0, 'endRowIndex': 1, 'startColumnIndex': 0, 'endColumnIndex': 7}, 'mergeType': 'MERGE_ALL'}}]})
+        except Exception:
+            pass
+        
+        table_rows_8 = [['Дата', 'Турнир/Разряд', 'Всего', 'Бесплатно', 'Новички', 'Повторяющиеся', '% повтор.']]
+        for ev in events_1sp:
+            pct = round((ev['repeaters'] / ev['total_children'] * 100) if ev['total_children'] > 0 else 0, 1)
+            table_rows_8.append([
+                ev['event_date_display'],
+                ev['event_name'],
+                ev['total_children'],
+                ev['free_children'],
+                ev['first_timers'],
+                ev['repeaters'],
+                f'{pct}%'
+            ])
+        table_rows_8.append(['', '', '', '', '', '', ''])
+        totals_pct_8 = round((totals_1sp['repeaters'] / totals_1sp['total_children'] * 100) if totals_1sp['total_children'] > 0 else 0, 1)
+        table_rows_8.append([
+            '',
+            'ИТОГО (1 сп): выступивших / повторяющихся среди выступивших',
+            totals_1sp['total_children'],
+            totals_1sp['free_children'],
+            totals_1sp['first_timers'],
+            totals_1sp['repeaters'],
+            f'{totals_pct_8}%'
+        ])
+        
+        if table_rows_8:
+            end_row_8 = 1 + len(table_rows_8)
+            worksheet8.update(f'A2:G{end_row_8}', table_rows_8)
+        worksheet8.format('A2:G2', {
+            'textFormat': {'bold': True},
+            'horizontalAlignment': 'CENTER',
+            'backgroundColor': {'red': 0.8, 'green': 0.8, 'blue': 0.8}
+        })
+        if len(table_rows_8) > 2:
+            worksheet8.format(f'A{end_row_8}:G{end_row_8}', {
+                'textFormat': {'bold': True},
+                'backgroundColor': {'red': 0.85, 'green': 0.92, 'blue': 0.83}
+            })
+        try:
+            spreadsheet.batch_update({'requests': [
+                {'updateDimensionProperties': {'range': {'sheetId': sheet_id8, 'dimension': 'COLUMNS', 'startIndex': 0, 'endIndex': 1}, 'properties': {'pixelSize': 120}, 'fields': 'pixelSize'}},
+                {'updateDimensionProperties': {'range': {'sheetId': sheet_id8, 'dimension': 'COLUMNS', 'startIndex': 1, 'endIndex': 2}, 'properties': {'pixelSize': 320}, 'fields': 'pixelSize'}},
+                {'updateDimensionProperties': {'range': {'sheetId': sheet_id8, 'dimension': 'COLUMNS', 'startIndex': 2, 'endIndex': 7}, 'properties': {'pixelSize': 100}, 'fields': 'pixelSize'}}
+            ]})
+        except Exception:
+            pass
+        worksheet8.freeze(rows=2)
+        logger.info("[OK] Восьмой лист '1 сп: новички и повторяющиеся' создан!")
+        
+        # ========================================
+        # ДЕВЯТЫЙ ЛИСТ: ПРЕВЫШЕНИЕ БЕСПЛАТНЫХ УЧАСТИЙ (>3)
+        # ========================================
+        
+        logger.info("Создание девятого листа 'Превышение бесплатных (>3)'...")
+        free_exceed_summary, free_exceed_detail = get_free_participation_exceedance_data()
+        
+        try:
+            worksheet9 = spreadsheet.worksheet("Превышение бесплатных (>3)")
+            sheet_id9 = worksheet9.id
+            try:
+                clear_requests9 = [
+                    {'unmergeCells': {'range': {'sheetId': sheet_id9, 'startRowIndex': 0, 'endRowIndex': 2000, 'startColumnIndex': 0, 'endColumnIndex': 8}}},
+                    {'updateCells': {'range': {'sheetId': sheet_id9, 'startRowIndex': 0, 'endRowIndex': 2000, 'startColumnIndex': 0, 'endColumnIndex': 8}, 'fields': 'userEnteredFormat,userEnteredValue'}}
+                ]
+                spreadsheet.batch_update({'requests': clear_requests9})
+            except Exception as e:
+                logger.warning(f"Очистка девятого листа: {e}")
+                worksheet9.clear()
+        except Exception:
+            worksheet9 = spreadsheet.add_worksheet(title="Превышение бесплатных (>3)", rows=1500, cols=7)
+            sheet_id9 = worksheet9.id
+        
+        worksheet9.update_acell('A1', f'ПРЕВЫШЕНИЕ БЕСПЛАТНЫХ УЧАСТИЙ (более 3 раз) — как на странице «Анализ бесплатного участия» (обновлено {datetime.now().strftime("%d.%m.%Y %H:%M")})')
+        worksheet9.format('A1:F1', {
+            'textFormat': {'bold': True, 'fontSize': 12},
+            'horizontalAlignment': 'CENTER',
+            'backgroundColor': {'red': 0.29, 'green': 0.53, 'blue': 0.91}
+        })
+        try:
+            spreadsheet.batch_update({'requests': [{'mergeCells': {'range': {'sheetId': sheet_id9, 'startRowIndex': 0, 'endRowIndex': 1, 'startColumnIndex': 0, 'endColumnIndex': 6}, 'mergeType': 'MERGE_ALL'}}]})
+        except Exception:
+            pass
+        
+        rows_9 = []
+        # Сводка: кто превысил
+        rows_9.append(['Сводка: спортсмены с бесплатным участием более 3 раз', '', '', '', '', ''])
+        rows_9.append(['ФИО', 'Школа', 'Всего беспл. участий', '', '', ''])
+        for s in free_exceed_summary:
+            rows_9.append([s['name'], s['club'], s['count'], '', '', ''])
+        rows_9.append(['', '', '', '', '', ''])
+        # Детализация: каждое участие (где и по какому разряду)
+        rows_9.append(['Детализация: где и по какому разряду выступал каждый (превышение >3)', '', '', '', '', ''])
+        rows_9.append(['ФИО', 'Школа', 'Всего беспл.', 'Турнир', 'Дата', 'Разряд'])
+        for d in free_exceed_detail:
+            rows_9.append([d['name'], d['club'], d['count'], d['event_name'], d['event_date'], d['rank']])
+        
+        if rows_9:
+            end_row_9 = 1 + len(rows_9)
+            worksheet9.update(f'A2:F{end_row_9}', [r[:6] for r in rows_9])
+        # Форматирование: заголовки секций и шапки таблиц
+        worksheet9.format('A2:F2', {'textFormat': {'bold': True}, 'backgroundColor': {'red': 0.85, 'green': 0.92, 'blue': 0.83}})
+        row = 3
+        if free_exceed_summary:
+            worksheet9.format(f'A{row}:C{row}', {'textFormat': {'bold': True}, 'backgroundColor': {'red': 0.8, 'green': 0.8, 'blue': 0.8}})
+            row += len(free_exceed_summary) + 2  # после сводки и пустой строки
+        if free_exceed_detail:
+            worksheet9.format(f'A{row}:F{row}', {'textFormat': {'bold': True}, 'backgroundColor': {'red': 0.8, 'green': 0.8, 'blue': 0.8}})
+        try:
+            spreadsheet.batch_update({'requests': [
+                {'updateDimensionProperties': {'range': {'sheetId': sheet_id9, 'dimension': 'COLUMNS', 'startIndex': 0, 'endIndex': 1}, 'properties': {'pixelSize': 260}, 'fields': 'pixelSize'}},
+                {'updateDimensionProperties': {'range': {'sheetId': sheet_id9, 'dimension': 'COLUMNS', 'startIndex': 1, 'endIndex': 2}, 'properties': {'pixelSize': 220}, 'fields': 'pixelSize'}},
+                {'updateDimensionProperties': {'range': {'sheetId': sheet_id9, 'dimension': 'COLUMNS', 'startIndex': 2, 'endIndex': 3}, 'properties': {'pixelSize': 90}, 'fields': 'pixelSize'}},
+                {'updateDimensionProperties': {'range': {'sheetId': sheet_id9, 'dimension': 'COLUMNS', 'startIndex': 3, 'endIndex': 4}, 'properties': {'pixelSize': 280}, 'fields': 'pixelSize'}},
+                {'updateDimensionProperties': {'range': {'sheetId': sheet_id9, 'dimension': 'COLUMNS', 'startIndex': 4, 'endIndex': 5}, 'properties': {'pixelSize': 90}, 'fields': 'pixelSize'}},
+                {'updateDimensionProperties': {'range': {'sheetId': sheet_id9, 'dimension': 'COLUMNS', 'startIndex': 5, 'endIndex': 6}, 'properties': {'pixelSize': 180}, 'fields': 'pixelSize'}}
+            ]})
+        except Exception:
+            pass
+        worksheet9.freeze(rows=2)
+        logger.info("[OK] Девятый лист 'Превышение бесплатных (>3)' создан!")
+        
         logger.info(f"Экспорт завершен успешно! Всего выполнено {api_requests_count} API запросов.")
         
         total_athletes = sum(len(athletes) for athletes in athletes_by_rank_stats.values())
@@ -3347,16 +3592,16 @@ def export_to_google_sheets(spreadsheet_id=None):
             'url': spreadsheet.url,
             'spreadsheet_id': spreadsheet.id,
             'message': (
-                f'Экспорт завершен! Создано 7 листов: '
+                f'Экспорт завершен! Создано 9 листов: '
                 f'"Список спортсменов" ({total_athletes} спортсменов), '
                 f'"Анализ по школам" ({total_schools} школ), '
                 f'"Статистика" ({total_free} бесплатных участий), '
                 f'"Общая статистика" ({general_stats["total_events"]} турниров, {total_participants} участников), '
                 f'"Статистика участий" ({participations_stats["total_participations"]} участий), '
-                f'"Турниры: новички и повторяющиеся" ({len(first_timers_events)} турниров, '
-                f'{first_timers_totals["total_children"]} участий, '
-                f'{first_timers_totals["total_first_timers"]} новичков / {first_timers_totals["total_repeaters"]} повторяющихся) и '
-                f'"сводная статистика" (Общая сводка).'
+                f'"Турниры: новички и повторяющиеся" ({len(first_timers_events)} турниров), '
+                f'"сводная статистика", '
+                f'"1 сп: новички и повторяющиеся" ({len(events_1sp)} турниров), '
+                f'"Превышение бесплатных (>3)" ({len(free_exceed_summary)} спортсменов).'
             )
         }
         

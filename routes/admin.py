@@ -606,7 +606,7 @@ def admin_logout():
 @admin_required
 def admin_export_google_sheets():
     """Экспорт данных в Google Sheets и подготовка ссылок PDF по ключевым таблицам."""
-    from google_sheets_sync import export_to_google_sheets, DEFAULT_SPREADSHEET_ID, get_pdf_export_urls
+    from google_sheets_sync import export_to_google_sheets, DEFAULT_SPREADSHEET_ID
     
     # Проверяем наличие файла credentials (используем тот же способ, что и в google_sheets_sync.py)
     import os
@@ -622,14 +622,7 @@ def admin_export_google_sheets():
     credentials_exists = os.path.exists(credentials_path) and os.access(credentials_path, os.R_OK)
 
     pdf_urls = {}
-    if credentials_exists and request.method == 'GET':
-        # Пытаемся заранее подготовить ссылки экспорта в PDF для нужных таблиц
-        try:
-            pdf_urls = get_pdf_export_urls()
-        except Exception as e:
-            logger.error(f"Не удалось подготовить PDF ссылки для Google Sheets: {e}", exc_info=True)
-            pdf_urls = {}
-    
+
     if request.method == 'POST':
         # Проверяем, что запрос ожидает JSON (AJAX запрос)
         wants_json = request.headers.get('Content-Type') == 'application/json' or \
@@ -682,14 +675,7 @@ def admin_export_google_sheets():
             else:
                 flash(f'Ошибка экспорта: {str(e)}', 'error')
     
-    # GET-запрос: просто показываем страницу с текущим статусом и, если возможно, ссылками для PDF
-    if credentials_exists and not pdf_urls:
-        try:
-            pdf_urls = get_pdf_export_urls()
-        except Exception as e:
-            logger.error(f"Не удалось подготовить PDF ссылки для Google Sheets (GET): {e}", exc_info=True)
-            pdf_urls = {}
-
+    # GET-запрос: просто показываем страницу с текущим статусом
     return render_template(
         'admin_export_google_sheets.html',
         credentials_exists=credentials_exists,
