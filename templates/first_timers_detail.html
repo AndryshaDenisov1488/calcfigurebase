@@ -1,17 +1,20 @@
 {% extends "base.html" %}
 
-{% block title %}Новички и повторяющиеся — детальный отчёт{% endblock %}
+{% block title %}{{ page_title or 'Новички и повторяющиеся — детальный отчёт' }}{% endblock %}
 
 {% block content %}
 <div class="container mt-4">
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
-        <h2 class="mb-0">Новички и повторяющиеся — детальный отчёт</h2>
-        <a class="btn btn-outline-primary btn-sm" href="{{ url_for('analytics.first_timers_detail_pdf') }}">
+        <h2 class="mb-0">{{ page_title or 'Новички и повторяющиеся — детальный отчёт' }}</h2>
+        <a class="btn btn-outline-primary btn-sm" href="{{ pdf_url or url_for('analytics.first_timers_detail_pdf') }}">
             <i class="fas fa-file-pdf"></i> Скачать PDF
         </a>
     </div>
     <p class="text-muted">
         По каждому турниру и разряду: кто считается повторяющимся, <strong>какой это по счёту раз</strong> выступления в разряде и <strong>все предыдущие турниры</strong>, где уже выступал.
+        {% if is_free_only %}
+        <br><em>В отчёте учтены только участия с бесплатным стартом (БЕСП).</em>
+        {% endif %}
     </p>
 
     {% if report.events %}

@@ -755,11 +755,14 @@ def get_summary_statistics_data():
             'rank_paid_stats': rank_paid_stats
         }
 
-def get_events_first_timers_report_data():
+def get_events_first_timers_report_data(rank_contains: str | None = None, free_only: bool = False):
     """Формирует данные по турнирам с подсчетом новичков и повторяющихся по разрядам.
     Новичок = первое хронологическое выступление спортсмена в данном разряде (по дате турнира).
     Повторяющийся = спортсмен уже выступал в этом разряде на более раннем турнире.
-    Участия обрабатываются в порядке возрастания даты турнира."""
+    Участия обрабатываются в порядке возрастания даты турнира.
+    free_only: если True, учитываются только участия с бесплатным стартом (pct_ppname == 'БЕСП')."""
+
+    rank_contains_norm = (rank_contains or '').strip().lower()
     
     # Разряды, которые нужно исключить из отчета
     excluded_ranks = {
@@ -815,6 +818,9 @@ def get_events_first_timers_report_data():
         # Сначала обрабатываем запрос для подсчета уникальных спортсменов (идентично get_general_statistics_data)
         for row in participants_query:
             athlete_id = row.athlete_id
+            rank_name = (row.rank or 'Без разряда').strip()
+            if rank_contains_norm and rank_contains_norm not in rank_name.lower():
+                continue
             # Добавляем спортсмена в множество уникальных (для унификации с листом "Статистика")
             unique_athletes.add(athlete_id)
         
@@ -853,6 +859,11 @@ def get_events_first_timers_report_data():
             return (sort_date, r.event_id or 0, r.participant_id or 0)
         
         participants_sorted = sorted(participants_query_detailed, key=_participant_sort_key)
+
+        # Режим «только бесплатные»: оставляем только участия с БЕСП, итоги считаем по ним
+        if free_only:
+            participants_sorted = [r for r in participants_sorted if (getattr(r, 'pct_ppname', None) or '').strip().upper() == 'БЕСП']
+            unique_athletes = set(r.athlete_id for r in participants_sorted)
         
         # Все выступления по (athlete_id, rank): [(event_id, event_date), ...] в хронологическом порядке — для детализации «все предыдущие» и «очередной раз»
         appearances_by_athlete_rank = {}
@@ -868,6 +879,10 @@ def get_events_first_timers_report_data():
             rank_name = (row.rank or 'Без разряда').strip()
             athlete_id = row.athlete_id
             participant_id = row.participant_id
+
+            # Если запрошен фильтр по разряду — считаем только подходящие записи
+            if rank_contains_norm and rank_contains_norm not in rank_name.lower():
+                continue
             
             # Получаем данные о событии из словаря
             event = events_dict.get(event_id) if event_id else None

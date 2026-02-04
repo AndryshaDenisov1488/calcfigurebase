@@ -57,10 +57,12 @@ def _register_cyrillic_font():
     return "Helvetica"
 
 
-def generate_first_timers_detail_pdf_bytes(report):
+def generate_first_timers_detail_pdf_bytes(report, title: str | None = None):
     """Генерирует PDF (bytes) для отчёта «Новички и повторяющиеся — детальный»."""
     font_name = _register_cyrillic_font()
     styles = getSampleStyleSheet()
+
+    title_text = (title or "Новички и повторяющиеся — детальный отчёт").strip() or "Новички и повторяющиеся — детальный отчёт"
 
     # Подправляем базовые стили под компактный вид
     title_style = styles["Title"].clone("TitleCyr")
@@ -105,11 +107,11 @@ def generate_first_timers_detail_pdf_bytes(report):
         rightMargin=4 * mm,
         topMargin=4 * mm,
         bottomMargin=4 * mm,
-        title="Новички и повторяющиеся — детальный отчёт",
+        title=title_text,
     )
 
     story = []
-    story.append(Paragraph("Новички и повторяющиеся — детальный отчёт", title_style))
+    story.append(Paragraph(title_text, title_style))
     story.append(Paragraph(
         "По каждому турниру и разряду: повторяющиеся спортсмены, номер выступления в разряде и все предыдущие турниры.",
         normal_style
