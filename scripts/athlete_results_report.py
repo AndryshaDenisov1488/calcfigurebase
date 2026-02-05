@@ -10,6 +10,7 @@
   python scripts/athlete_results_report.py
   python scripts/athlete_results_report.py --file path/to/names.txt
   python scripts/athlete_results_report.py --csv -o report.csv
+  python scripts/athlete_results_report.py --excel -o report.xlsx
 
 Запуск из корня проекта.
 """
@@ -173,6 +174,63 @@ def format_points(participant):
     return "—"
 
 
+def build_excel(results):
+    """
+    Строит таблицу для Excel: строки — спортсмены (ФИО), столбцы — турниры,
+    в ячейках — баллы (если несколько участий в одном турнире — через запятую).
+    Возвращает (headers, rows).
+    """
+    from datetime import date
+    # Собираем все турниры: (event_id, event_name, begin_date), сортируем по дате
+    events_seen = {}
+    for r in results:
+        for event, category, participant in r['participations']:
+            if event.id not in events_seen:
+                events_seen[event.id] = (event.name or f'Турнир {event.id}', event.begin_date)
+    events_sorted = sorted(
+        events_seen.items(),
+        key=lambda x: (x[1][1] or date(1900, 1, 1), x[0])
+    )
+    event_columns = [(eid, ename) for eid, (ename, _) in events_sorted]
+
+    headers = ['ФИО'] + [ename for _, ename in event_columns]
+    event_ids = [eid for eid, _ in event_columns]
+    rows = []
+    for r in results:
+        points_by_event = {}
+        for event, category, participant in r['participations']:
+            eid = event.id
+            pts = f"{participant.total_points:.2f}" if participant.total_points is not None else "—"
+            points_by_event.setdefault(eid, []).append(pts)
+        row = [r['full_name']]
+        for eid in event_ids:
+            vals = points_by_event.get(eid, [])
+            row.append(", ".join(vals) if vals else "")
+        rows.append(row)
+    return headers, rows
+
+
+def write_excel_file(path, headers, rows):
+    """Пишет в .xlsx: первая строка — заголовки (ФИО, названия турниров), далее — данные."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment
+    from openpyxl.utils import get_column_letter
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Результаты"
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal='center', wrap_text=True)
+    for row_idx, row in enumerate(rows, 2):
+        for col_idx, value in enumerate(row, 1):
+            ws.cell(row=row_idx, column=col_idx, value=value)
+    ws.column_dimensions['A'].width = 35
+    for c in range(2, len(headers) + 1):
+        ws.column_dimensions[get_column_letter(c)].width = 20
+    wb.save(path)
+
+
 def load_names_from_file(path):
     """Читает ФИО из файла: по одному на строку, пустые и заголовок 'ФИО' пропускаются."""
     with open(path, 'r', encoding='utf-8') as f:
@@ -188,7 +246,8 @@ def main():
     parser = argparse.ArgumentParser(description='Отчёт по результатам спортсменов за все турниры')
     parser.add_argument('--file', '-f', help='Файл со списком ФИО (по одному на строку)')
     parser.add_argument('--csv', action='store_true', help='Вывести CSV в stdout или в файл -o')
-    parser.add_argument('-o', '--output', help='Файл для вывода (при --csv)')
+    parser.add_argument('--excel', '-x', action='store_true', help='Выгрузить в Excel (.xlsx); файл задаётся через -o')
+    parser.add_argument('-o', '--output', help='Файл для вывода (при --csv или --excel)')
     args = parser.parse_args()
 
     if args.file:
@@ -233,6 +292,15 @@ def main():
             })
 
     # Вывод
+    if args.excel:
+        out_path = args.output or 'athlete_results.xlsx'
+        headers, rows = build_excel(results)
+        write_excel_file(out_path, headers, rows)
+        print(f"Excel записан: {out_path}", file=sys.stderr)
+        if not_found:
+            print(f"Не найдены в БД ({len(not_found)}): {', '.join(not_found)}", file=sys.stderr)
+        return
+
     if args.csv:
         out = open(args.output, 'w', newline='', encoding='utf-8') if args.output else sys.stdout
         writer = csv.writer(out, delimiter=';')
