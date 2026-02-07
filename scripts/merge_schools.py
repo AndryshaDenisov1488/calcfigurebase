@@ -15,6 +15,7 @@
   python scripts/merge_schools.py merge 1 7 --no-delete    # не удалять пустую школу 7 после переноса
   python scripts/merge_schools.py merge 27 10 78 100 75 68  # все перечисленные школы → в 27
   python scripts/merge_schools.py delete 86                 # удалить пустую школу (0 спортсменов)
+  python scripts/merge_schools.py show 86                   # проверить школу по БД (ID или --search)
 """
 
 import os
@@ -73,6 +74,47 @@ def cmd_list(app, search=None, limit=50):
         print("-" * 80)
         for club_id, name, cnt in rows:
             print(f"{club_id:4d} | {cnt:11d} | {name or '(без названия)'}")
+        return 0
+
+
+def cmd_show(app, club_id=None, search=None):
+    """Проверить школу по БД: данные клуба и список спортсменов с club_id = этот клуб."""
+    with app.app_context():
+        if club_id is not None:
+            clubs = [db.session.get(Club, club_id)]
+            if not clubs[0]:
+                print(f"Клуб с ID {club_id} не найден.", file=sys.stderr)
+                return 1
+        elif search:
+            pattern = f'%{search}%'
+            clubs = Club.query.filter(db.func.lower(Club.name).like(db.func.lower(pattern))).order_by(Club.id).all()
+            if not clubs:
+                print(f"Клубы по запросу «{search}» не найдены.", file=sys.stderr)
+                return 1
+        else:
+            print("Укажите ID школы или --search \"название\"", file=sys.stderr)
+            return 1
+
+        for club in clubs:
+            athletes = Athlete.query.filter_by(club_id=club.id).order_by(Athlete.last_name, Athlete.first_name).all()
+            print("=" * 70)
+            print("КЛУБ В БД")
+            print("=" * 70)
+            print(f"  id:          {club.id}")
+            print(f"  name:        {club.name!r}")
+            print(f"  short_name:  {club.short_name!r}")
+            print(f"  external_id: {club.external_id!r}")
+            print(f"  country:     {club.country!r}")
+            print(f"  city:        {club.city!r}")
+            print(f"  спортсменов: {len(athletes)}")
+            print()
+            if athletes:
+                print("  Спортсмены (athlete_id, full_name):")
+                for a in athletes:
+                    print(f"    {a.id:5d}  {a.full_name}")
+            else:
+                print("  Спортсмены: нет записей в athlete с club_id =", club.id)
+            print("=" * 70)
         return 0
 
 
@@ -258,7 +300,7 @@ def main():
     parser = argparse.ArgumentParser(
         description='Объединение школ (клубов): перенос спортсменов из одной школы в другую.'
     )
-    sub = parser.add_subparsers(dest='command', help='list | merge | delete')
+    sub = parser.add_subparsers(dest='command', help='list | show | merge | delete')
 
     # list
     plist = sub.add_parser('list', help='Список клубов с числом спортсменов')
@@ -273,6 +315,11 @@ def main():
     pmerge.add_argument('--from', dest='from_id', type=int, metavar='ID', help='ID школы, из которой переносим (вместо списка)')
     pmerge.add_argument('--yes', '-y', action='store_true', help='Не спрашивать подтверждение')
     pmerge.add_argument('--no-delete', action='store_true', help='Не удалять пустые школы после переноса')
+
+    # show (проверка по БД)
+    pshow = sub.add_parser('show', help='Проверить школу по БД: данные клуба и спортсмены')
+    pshow.add_argument('club_id', nargs='?', type=int, help='ID школы')
+    pshow.add_argument('--search', '-s', help='Поиск по названию (показать все совпадения)')
 
     # delete
     pdelete = sub.add_parser('delete', help='Удалить пустую школу (0 спортсменов)')
@@ -289,6 +336,14 @@ def main():
 
     if args.command == 'list':
         return cmd_list(app, search=getattr(args, 'search', None), limit=args.limit)
+
+    if args.command == 'show':
+        club_id = getattr(args, 'club_id', None)
+        search = getattr(args, 'search', None)
+        if club_id is None and not search:
+            print("Укажите ID школы или --search \"название\"", file=sys.stderr)
+            return 1
+        return cmd_show(app, club_id=club_id, search=search)
 
     if args.command == 'merge':
         keep_id = args.into if getattr(args, 'into', None) is not None else args.keep_id
