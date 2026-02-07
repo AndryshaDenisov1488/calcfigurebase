@@ -14,6 +14,7 @@
   python scripts/merge_schools.py merge 1 7 --yes        # без подтверждения
   python scripts/merge_schools.py merge 1 7 --no-delete    # не удалять пустую школу 7 после переноса
   python scripts/merge_schools.py merge 27 10 78 100 75 68  # все перечисленные школы → в 27
+  python scripts/merge_schools.py delete 86                 # удалить пустую школу (0 спортсменов)
 """
 
 import os
@@ -223,12 +224,41 @@ def cmd_merge_many(app, keep_id, remove_ids, yes=False, no_delete=False):
         return 0
 
 
+def cmd_delete(app, club_id, yes=False):
+    """Удалить школу из базы. Разрешено только если в ней 0 спортсменов."""
+    with app.app_context():
+        club = db.session.get(Club, club_id)
+        if not club:
+            print(f"Клуб с ID {club_id} не найден.", file=sys.stderr)
+            return 1
+        cnt = Athlete.query.filter_by(club_id=club_id).count()
+        if cnt > 0:
+            print(f"Удалить нельзя: в школе «{club.name}» (ID {club_id}) {cnt} спортсменов.", file=sys.stderr)
+            print("Сначала объедините её с другой: merge <ID_оставляем>", club_id, file=sys.stderr)
+            return 1
+        print(f"Школа: ID {club_id} — «{club.name}» (спортсменов: 0)")
+        if not yes:
+            answer = input("Удалить? (yes/NO): ").strip().lower()
+            if answer != 'yes':
+                print("Отменено.")
+                return 0
+        try:
+            db.session.delete(club)
+            db.session.commit()
+            print(f"Школа ID {club_id} удалена.")
+            return 0
+        except Exception as e:
+            db.session.rollback()
+            print(f"Ошибка: {e}", file=sys.stderr)
+            return 1
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(
         description='Объединение школ (клубов): перенос спортсменов из одной школы в другую.'
     )
-    sub = parser.add_subparsers(dest='command', help='list | merge')
+    sub = parser.add_subparsers(dest='command', help='list | merge | delete')
 
     # list
     plist = sub.add_parser('list', help='Список клубов с числом спортсменов')
@@ -243,6 +273,11 @@ def main():
     pmerge.add_argument('--from', dest='from_id', type=int, metavar='ID', help='ID школы, из которой переносим (вместо списка)')
     pmerge.add_argument('--yes', '-y', action='store_true', help='Не спрашивать подтверждение')
     pmerge.add_argument('--no-delete', action='store_true', help='Не удалять пустые школы после переноса')
+
+    # delete
+    pdelete = sub.add_parser('delete', help='Удалить пустую школу (0 спортсменов)')
+    pdelete.add_argument('club_id', type=int, help='ID школы для удаления')
+    pdelete.add_argument('--yes', '-y', action='store_true', help='Не спрашивать подтверждение')
 
     args = parser.parse_args()
 
@@ -271,6 +306,9 @@ def main():
         if len(remove_ids) == 1:
             return cmd_merge(app, keep_id, remove_ids[0], yes=args.yes, no_delete=args.no_delete)
         return cmd_merge_many(app, keep_id, remove_ids, yes=args.yes, no_delete=args.no_delete)
+
+    if args.command == 'delete':
+        return cmd_delete(app, args.club_id, yes=args.yes)
 
     return 0
 
