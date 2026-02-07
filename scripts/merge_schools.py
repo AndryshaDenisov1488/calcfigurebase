@@ -1,0 +1,182 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Объединение школ (клубов): перенос всех спортсменов из одной школы в другую.
+
+Используйте, когда в базе одна и та же школа записана под разными названиями
+(например «ЦСКА» и «ФАУ МО РФ ЦСКА») — объединяете в одну запись.
+
+Запуск из корня проекта:
+  python scripts/merge_schools.py list                    # список клубов с числом спортсменов
+  python scripts/merge_schools.py list --search "ЦСКА"    # поиск по названию
+  python scripts/merge_schools.py merge 1 7               # школа 7 → в школу 1 (оставляем 1)
+  python scripts/merge_schools.py merge --into 1 --from 7 # то же
+  python scripts/merge_schools.py merge 1 7 --yes        # без подтверждения
+  python scripts/merge_schools.py merge 1 7 --no-delete    # не удалять пустую школу 7 после переноса
+"""
+
+import os
+import re
+import shutil
+import sys
+from datetime import datetime
+
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from app_factory import create_app
+from extensions import db
+from models import Club, Athlete
+
+
+def get_db_path(app):
+    """Путь к файлу SQLite из конфига приложения."""
+    uri = app.config.get('SQLALCHEMY_DATABASE_URI', '') or ''
+    if uri.startswith('sqlite:///'):
+        path = uri.replace('sqlite:///', '', 1)
+        if not os.path.isabs(path):
+            path = os.path.join(project_root, path)
+        return path
+    return None
+
+
+def create_backup(app):
+    """Создаёт бэкап базы в каталоге backups/ в корне проекта."""
+    db_path = get_db_path(app)
+    if not db_path or not os.path.exists(db_path):
+        return None
+    backup_dir = os.path.join(project_root, 'backups')
+    os.makedirs(backup_dir, exist_ok=True)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    name = f'before_merge_schools_{timestamp}.db'
+    backup_path = os.path.join(backup_dir, name)
+    try:
+        shutil.copy2(db_path, backup_path)
+        return name
+    except Exception:
+        return None
+
+
+def cmd_list(app, search=None, limit=50):
+    """Вывести список клубов с количеством спортсменов."""
+    with app.app_context():
+        q = db.session.query(Club.id, Club.name, db.func.count(Athlete.id).label('cnt')).outerjoin(
+            Athlete, Club.id == Athlete.club_id
+        ).group_by(Club.id, Club.name).order_by(db.text('cnt DESC'))
+        if search:
+            pattern = f'%{search}%'
+            q = q.filter(Club.name.ilike(pattern))
+        rows = q.limit(limit).all()
+        print("ID   | Спортсменов | Название")
+        print("-" * 80)
+        for club_id, name, cnt in rows:
+            print(f"{club_id:4d} | {cnt:11d} | {name or '(без названия)'}")
+        return 0
+
+
+def cmd_merge(app, keep_id, remove_id, yes=False, no_delete=False):
+    """Объединить клуб remove_id в keep_id: все спортсмены из remove_id получают club_id = keep_id."""
+    with app.app_context():
+        keep = Club.query.get(keep_id)
+        remove = Club.query.get(remove_id)
+        if not keep:
+            print(f"Клуб с ID {keep_id} не найден.", file=sys.stderr)
+            return 1
+        if not remove:
+            print(f"Клуб с ID {remove_id} не найден.", file=sys.stderr)
+            return 1
+        if keep_id == remove_id:
+            print("Нельзя объединить клуб сам с собой.", file=sys.stderr)
+            return 1
+
+        keep_count = Athlete.query.filter_by(club_id=keep_id).count()
+        remove_count = Athlete.query.filter_by(club_id=remove_id).count()
+
+        print("=" * 70)
+        print("ОБЪЕДИНЕНИЕ ШКОЛ")
+        print("=" * 70)
+        print(f"  ОСТАВЛЯЕМ (все переходят сюда): ID {keep_id} — «{keep.name}»")
+        print(f"    Спортсменов: {keep_count}")
+        print(f"  ПЕРЕНОСИМ ИЗ (будет пустая, можно удалить): ID {remove_id} — «{remove.name}»")
+        print(f"    Спортсменов: {remove_count}")
+        print(f"  ИТОГО в «{keep.name}» после объединения: {keep_count + remove_count}")
+        print("=" * 70)
+
+        if not yes:
+            answer = input("Выполнить? (yes/NO): ").strip().lower()
+            if answer != 'yes':
+                print("Отменено.")
+                return 0
+
+        backup_name = create_backup(app)
+        if not backup_name:
+            print("Не удалось создать бэкап. Отменено.", file=sys.stderr)
+            return 1
+
+        try:
+            if remove_count > 0:
+                Athlete.query.filter_by(club_id=remove_id).update({'club_id': keep_id})
+            if not no_delete:
+                db.session.delete(remove)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            print(f"Ошибка: {e}", file=sys.stderr)
+            return 1
+
+        final = Athlete.query.filter_by(club_id=keep_id).count()
+        print("Готово.")
+        print(f"  Перенесено спортсменов: {remove_count}")
+        print(f"  В «{keep.name}» теперь: {final}")
+        if not no_delete:
+            print(f"  Клуб «{remove.name}» (ID {remove_id}) удалён.")
+        print(f"  Бэкап: backups/{backup_name}")
+        return 0
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(
+        description='Объединение школ (клубов): перенос спортсменов из одной школы в другую.'
+    )
+    sub = parser.add_subparsers(dest='command', help='list | merge')
+
+    # list
+    plist = sub.add_parser('list', help='Список клубов с числом спортсменов')
+    plist.add_argument('--search', '-s', help='Поиск по названию (подстрока)')
+    plist.add_argument('--limit', '-n', type=int, default=80, help='Максимум строк (по умолчанию 80)')
+
+    # merge
+    pmerge = sub.add_parser('merge', help='Объединить школу FROM в школу INTO')
+    pmerge.add_argument('keep_id', nargs='?', type=int, help='ID школы, которую оставляем (в неё переносим)')
+    pmerge.add_argument('remove_id', nargs='?', type=int, help='ID школы, из которой переносим спортсменов')
+    pmerge.add_argument('--into', type=int, metavar='ID', help='ID школы, которую оставляем (альтернатива первому аргументу)')
+    pmerge.add_argument('--from', dest='from_id', type=int, metavar='ID', help='ID школы, из которой переносим (альтернатива второму аргументу)')
+    pmerge.add_argument('--yes', '-y', action='store_true', help='Не спрашивать подтверждение')
+    pmerge.add_argument('--no-delete', action='store_true', help='Не удалять пустую школу после переноса')
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        return 0
+
+    app = create_app()
+
+    if args.command == 'list':
+        return cmd_list(app, search=getattr(args, 'search', None), limit=args.limit)
+
+    if args.command == 'merge':
+        keep_id = args.into if getattr(args, 'into', None) is not None else args.keep_id
+        remove_id = getattr(args, 'from_id', None) if getattr(args, 'from_id', None) is not None else args.remove_id
+        if keep_id is None or remove_id is None:
+            print("Укажите обе школы: merge <ID_оставляем> <ID_переносим> или --into ID --from ID", file=sys.stderr)
+            return 1
+        return cmd_merge(app, keep_id, remove_id, yes=args.yes, no_delete=args.no_delete)
+
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main() or 0)
