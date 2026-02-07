@@ -78,8 +78,8 @@ def cmd_list(app, search=None, limit=50):
 def cmd_merge(app, keep_id, remove_id, yes=False, no_delete=False):
     """Объединить клуб remove_id в keep_id: все спортсмены из remove_id получают club_id = keep_id."""
     with app.app_context():
-        keep = Club.query.get(keep_id)
-        remove = Club.query.get(remove_id)
+        keep = db.session.get(Club, keep_id)
+        remove = db.session.get(Club, remove_id)
         if not keep:
             print(f"Клуб с ID {keep_id} не найден.", file=sys.stderr)
             return 1
@@ -111,8 +111,13 @@ def cmd_merge(app, keep_id, remove_id, yes=False, no_delete=False):
 
         backup_name = create_backup(app)
         if not backup_name:
-            print("Не удалось создать бэкап. Отменено.", file=sys.stderr)
-            return 1
+            print("Внимание: бэкап недоступен (не SQLite или нет прав на запись).", file=sys.stderr)
+            if not yes:
+                answer = input("Продолжить без бэкапа? (yes/NO): ").strip().lower()
+                if answer != 'yes':
+                    print("Отменено.")
+                    return 1
+            backup_name = "(не создан)"
 
         try:
             if remove_count > 0:
@@ -131,14 +136,15 @@ def cmd_merge(app, keep_id, remove_id, yes=False, no_delete=False):
         print(f"  В «{keep.name}» теперь: {final}")
         if not no_delete:
             print(f"  Клуб «{remove.name}» (ID {remove_id}) удалён.")
-        print(f"  Бэкап: backups/{backup_name}")
+        if backup_name and backup_name != "(не создан)":
+            print(f"  Бэкап: backups/{backup_name}")
         return 0
 
 
 def cmd_merge_many(app, keep_id, remove_ids, yes=False, no_delete=False):
     """Объединить несколько клубов remove_ids в один keep_id за один запуск."""
     with app.app_context():
-        keep = Club.query.get(keep_id)
+        keep = db.session.get(Club, keep_id)
         if not keep:
             print(f"Клуб с ID {keep_id} не найден.", file=sys.stderr)
             return 1
@@ -151,7 +157,7 @@ def cmd_merge_many(app, keep_id, remove_ids, yes=False, no_delete=False):
         clubs = []
         total_remove = 0
         for rid in remove_ids:
-            c = Club.query.get(rid)
+            c = db.session.get(Club, rid)
             if not c:
                 print(f"Клуб с ID {rid} не найден — пропуск.", file=sys.stderr)
                 continue
@@ -186,8 +192,13 @@ def cmd_merge_many(app, keep_id, remove_ids, yes=False, no_delete=False):
 
         backup_name = create_backup(app)
         if not backup_name:
-            print("Не удалось создать бэкап. Отменено.", file=sys.stderr)
-            return 1
+            print("Внимание: бэкап недоступен (не SQLite или нет прав на запись).", file=sys.stderr)
+            if not yes:
+                answer = input("Продолжить без бэкапа? (yes/NO): ").strip().lower()
+                if answer != 'yes':
+                    print("Отменено.")
+                    return 1
+            backup_name = "(не создан)"
 
         try:
             for rid, c, cnt in clubs:
@@ -207,7 +218,8 @@ def cmd_merge_many(app, keep_id, remove_ids, yes=False, no_delete=False):
         print(f"  В «{keep.name}» теперь: {final}")
         if not no_delete:
             print(f"  Удалено клубов: {len(clubs)}")
-        print(f"  Бэкап: backups/{backup_name}")
+        if backup_name and backup_name != "(не создан)":
+            print(f"  Бэкап: backups/{backup_name}")
         return 0
 
 
