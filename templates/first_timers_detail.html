@@ -17,6 +17,17 @@
         {% endif %}
     </p>
 
+    {% if report.totals %}
+        {% set tot = report.totals %}
+        {% set total_pct_novices = (tot.total_first_timers / tot.total_repeaters * 100) | round(1) if tot.total_repeaters and tot.total_repeaters > 0 else none %}
+        <p class="mb-2">
+            <span class="badge rounded-pill bg-secondary">Всего участий: {{ tot.total_children }}</span>
+            <span class="badge rounded-pill bg-success">Новички: {{ tot.total_first_timers }}</span>
+            <span class="badge rounded-pill bg-warning text-dark">Повторяющиеся: {{ tot.total_repeaters }}</span>
+            <span class="badge rounded-pill bg-primary">Новички от повтор.: {{ total_pct_novices ~ '%' if total_pct_novices is not none else '—' }}</span>
+        </p>
+    {% endif %}
+
     {% if report.events %}
         <div class="accordion mt-3" id="eventsAccordion">
             {% for event in report.events %}
@@ -36,6 +47,8 @@
                                 <span class="badge rounded-pill bg-info text-dark">Бесплатно: {{ event.free_children }}</span>
                                 <span class="badge rounded-pill bg-success">Новички: {{ event.first_timers }}</span>
                                 <span class="badge rounded-pill bg-warning text-dark">Повторяющиеся: {{ event.repeaters }}</span>
+                                {% set pct_novices_of_repeaters = (event.first_timers / event.repeaters * 100) | round(1) if event.repeaters and event.repeaters > 0 else none %}
+                                <span class="badge rounded-pill bg-primary">Новички от повтор.: {{ pct_novices_of_repeaters ~ '%' if pct_novices_of_repeaters is not none else '—' }}</span>
                             </span>
                         </button>
                     </h2>
