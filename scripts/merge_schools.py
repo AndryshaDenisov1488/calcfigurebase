@@ -66,7 +66,7 @@ def cmd_list(app, search=None, limit=50):
         ).group_by(Club.id, Club.name).order_by(db.text('cnt DESC'))
         if search:
             pattern = f'%{search}%'
-            q = q.filter(Club.name.ilike(pattern))
+            q = q.filter(db.func.lower(Club.name).like(db.func.lower(pattern)))
         rows = q.limit(limit).all()
         print("ID   | Спортсменов | Название")
         print("-" * 80)
