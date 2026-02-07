@@ -17,6 +17,7 @@
   python scripts/merge_schools.py delete 86                 # удалить пустую школу (0 спортсменов)
   python scripts/merge_schools.py show 86                   # проверить школу по БД (ID или --search)
   python scripts/merge_schools.py unassign 1595 --yes       # снять спортсмена с клуба (чтобы удалить пустую школу)
+  python scripts/merge_schools.py delete-athlete 1595 --yes # удалить спортсмена из БД полностью
 """
 
 import os
@@ -30,7 +31,7 @@ if project_root not in sys.path:
 
 from app_factory import create_app
 from extensions import db
-from models import Club, Athlete
+from models import Club, Athlete, CoachAssignment
 
 
 def get_db_path(app):
@@ -299,6 +300,39 @@ def cmd_unassign(app, athlete_id, yes=False):
             return 1
 
 
+def cmd_delete_athlete(app, athlete_id, yes=False):
+    """Удалить спортсмена из базы (и все его участия, назначения тренеров и т.д.)."""
+    with app.app_context():
+        athlete = db.session.get(Athlete, athlete_id)
+        if not athlete:
+            print(f"Спортсмен с ID {athlete_id} не найден.", file=sys.stderr)
+            return 1
+        from models import Participant
+        participations = Participant.query.filter_by(athlete_id=athlete_id).count()
+        club = db.session.get(Club, athlete.club_id) if athlete.club_id else None
+        print(f"Спортсмен: ID {athlete_id} — {athlete.full_name}")
+        print(f"  Клуб: {club.name if club else '(нет)'} (ID {athlete.club_id})")
+        print(f"  Участий в турнирах: {participations}")
+        if not yes:
+            answer = input("Удалить спортсмена из БД полностью? (yes/NO): ").strip().lower()
+            if answer != 'yes':
+                print("Отменено.")
+                return 0
+        try:
+            CoachAssignment.query.filter_by(athlete_id=athlete_id).delete()
+            db.session.delete(athlete)
+            db.session.commit()
+            print(f"Спортсмен ID {athlete_id} удалён из базы.")
+            if club:
+                left = Athlete.query.filter_by(club_id=club.id).count()
+                print(f"В клубе «{club.name}» (ID {club.id}) осталось спортсменов: {left}")
+            return 0
+        except Exception as e:
+            db.session.rollback()
+            print(f"Ошибка: {e}", file=sys.stderr)
+            return 1
+
+
 def cmd_delete(app, club_id, yes=False):
     """Удалить школу из базы. Разрешено только если в ней 0 спортсменов."""
     with app.app_context():
@@ -333,7 +367,7 @@ def main():
     parser = argparse.ArgumentParser(
         description='Объединение школ (клубов): перенос спортсменов из одной школы в другую.'
     )
-    sub = parser.add_subparsers(dest='command', help='list | show | merge | unassign | delete')
+    sub = parser.add_subparsers(dest='command', help='list | show | merge | unassign | delete | delete-athlete')
 
     # list
     plist = sub.add_parser('list', help='Список клубов с числом спортсменов')
@@ -359,10 +393,15 @@ def main():
     punassign.add_argument('athlete_id', type=int, help='ID спортсмена')
     punassign.add_argument('--yes', '-y', action='store_true', help='Не спрашивать подтверждение')
 
-    # delete
+    # delete (школу)
     pdelete = sub.add_parser('delete', help='Удалить пустую школу (0 спортсменов)')
     pdelete.add_argument('club_id', type=int, help='ID школы для удаления')
     pdelete.add_argument('--yes', '-y', action='store_true', help='Не спрашивать подтверждение')
+
+    # delete-athlete (спортсмена)
+    pdelath = sub.add_parser('delete-athlete', help='Удалить спортсмена из БД полностью')
+    pdelath.add_argument('athlete_id', type=int, help='ID спортсмена')
+    pdelath.add_argument('--yes', '-y', action='store_true', help='Не спрашивать подтверждение')
 
     args = parser.parse_args()
 
@@ -405,6 +444,9 @@ def main():
 
     if args.command == 'delete':
         return cmd_delete(app, args.club_id, yes=args.yes)
+
+    if args.command == 'delete-athlete':
+        return cmd_delete_athlete(app, args.athlete_id, yes=args.yes)
 
     return 0
 
