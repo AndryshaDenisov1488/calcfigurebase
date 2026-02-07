@@ -16,6 +16,7 @@
   python scripts/merge_schools.py merge 27 10 78 100 75 68  # все перечисленные школы → в 27
   python scripts/merge_schools.py delete 86                 # удалить пустую школу (0 спортсменов)
   python scripts/merge_schools.py show 86                   # проверить школу по БД (ID или --search)
+  python scripts/merge_schools.py unassign 1595 --yes       # снять спортсмена с клуба (чтобы удалить пустую школу)
 """
 
 import os
@@ -266,6 +267,38 @@ def cmd_merge_many(app, keep_id, remove_ids, yes=False, no_delete=False):
         return 0
 
 
+def cmd_unassign(app, athlete_id, yes=False):
+    """Снять спортсмена с клуба (club_id = NULL). Удобно, если у спортсмена нет выступлений и клуб нужно удалить."""
+    with app.app_context():
+        athlete = db.session.get(Athlete, athlete_id)
+        if not athlete:
+            print(f"Спортсмен с ID {athlete_id} не найден.", file=sys.stderr)
+            return 1
+        club = db.session.get(Club, athlete.club_id) if athlete.club_id else None
+        print(f"Спортсмен: ID {athlete_id} — {athlete.full_name}")
+        print(f"  Сейчас в клубе: {club.name if club else '(нет)'} (ID {athlete.club_id})")
+        if not athlete.club_id:
+            print("Уже без клуба. Ничего менять не нужно.")
+            return 0
+        if not yes:
+            answer = input("Снять с клуба (club_id = NULL)? (yes/NO): ").strip().lower()
+            if answer != 'yes':
+                print("Отменено.")
+                return 0
+        try:
+            athlete.club_id = None
+            db.session.commit()
+            print(f"Готово. У спортсмена {athlete_id} теперь club_id = NULL.")
+            if club:
+                left = Athlete.query.filter_by(club_id=club.id).count()
+                print(f"В клубе «{club.name}» (ID {club.id}) осталось спортсменов: {left}")
+            return 0
+        except Exception as e:
+            db.session.rollback()
+            print(f"Ошибка: {e}", file=sys.stderr)
+            return 1
+
+
 def cmd_delete(app, club_id, yes=False):
     """Удалить школу из базы. Разрешено только если в ней 0 спортсменов."""
     with app.app_context():
@@ -300,7 +333,7 @@ def main():
     parser = argparse.ArgumentParser(
         description='Объединение школ (клубов): перенос спортсменов из одной школы в другую.'
     )
-    sub = parser.add_subparsers(dest='command', help='list | show | merge | delete')
+    sub = parser.add_subparsers(dest='command', help='list | show | merge | unassign | delete')
 
     # list
     plist = sub.add_parser('list', help='Список клубов с числом спортсменов')
@@ -320,6 +353,11 @@ def main():
     pshow = sub.add_parser('show', help='Проверить школу по БД: данные клуба и спортсмены')
     pshow.add_argument('club_id', nargs='?', type=int, help='ID школы')
     pshow.add_argument('--search', '-s', help='Поиск по названию (показать все совпадения)')
+
+    # unassign (снять спортсмена с клуба)
+    punassign = sub.add_parser('unassign', help='Снять спортсмена с клуба (club_id = NULL)')
+    punassign.add_argument('athlete_id', type=int, help='ID спортсмена')
+    punassign.add_argument('--yes', '-y', action='store_true', help='Не спрашивать подтверждение')
 
     # delete
     pdelete = sub.add_parser('delete', help='Удалить пустую школу (0 спортсменов)')
@@ -361,6 +399,9 @@ def main():
         if len(remove_ids) == 1:
             return cmd_merge(app, keep_id, remove_ids[0], yes=args.yes, no_delete=args.no_delete)
         return cmd_merge_many(app, keep_id, remove_ids, yes=args.yes, no_delete=args.no_delete)
+
+    if args.command == 'unassign':
+        return cmd_unassign(app, args.athlete_id, yes=args.yes)
 
     if args.command == 'delete':
         return cmd_delete(app, args.club_id, yes=args.yes)
