@@ -47,8 +47,8 @@
             display: none;
         }
         
-        .table th:nth-child(4),
-        .table td:nth-child(4) {
+        .table th:nth-child(5),
+        .table td:nth-child(5) {
             display: none;
         }
         
@@ -95,6 +95,7 @@
                             <thead>
                                 <tr>
                                     <th>№</th>
+                                    <th>ID</th>
                                     <th class="sortable" data-sort="name">
                                         Название школы/клуба <i class="fas fa-sort"></i>
                                     </th>
@@ -242,6 +243,7 @@ function displayClubs() {
         html += `
             <tr>
                 <td>${index + 1}</td>
+                <td><span class="text-muted">${club.id}</span></td>
                 <td>
                     <strong>${club.name}</strong>
                 </td>
