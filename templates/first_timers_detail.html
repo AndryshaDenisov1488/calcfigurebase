@@ -26,6 +26,12 @@
             <span class="badge rounded-pill bg-warning text-dark">Повторяющиеся: {{ tot.total_repeaters }}</span>
             <span class="badge rounded-pill bg-primary">Новички от общего: {{ total_pct_novices ~ '%' if total_pct_novices is not none else '—' }}</span>
         </p>
+        {% if is_free_only and (tot.repeaters_4plus_athletes or 0) > 0 %}
+        <div class="alert alert-danger mb-3" role="alert">
+            <strong><i class="fas fa-exclamation-triangle"></i> Внимание:</strong>
+            <strong>{{ tot.repeaters_4plus_athletes }}</strong> спортсменов в этом отчёте выступили уже в <strong>4-й раз и чаще</strong> (бесплатный старт).
+        </div>
+        {% endif %}
     {% endif %}
 
     {% if report.events %}

@@ -1038,6 +1038,14 @@ def get_events_first_timers_report_data(rank_contains: str | None = None, free_o
         # Сортируем турниры по дате (новые сверху)
         events_data.sort(key=lambda x: (x['event_date'] is None, x['event_date']), reverse=True)
         
+        # Спортсмены, выступившие уже в 4-й раз и чаще (по отчёту)
+        athletes_4plus = set()
+        for _event_id, event_info in events_map.items():
+            for _rank_name, rank_stats in event_info.get('rank_stats', {}).items():
+                for rec in rank_stats.get('repeaters_detail', []):
+                    if (rec.get('appearance_number') or 0) >= 4:
+                        athletes_4plus.add(rec['athlete_id'])
+        
         # Подсчитываем итоги
         totals = {
             'total_children': sum(event['total_children'] for event in events_data),  # Количество участий (для столбца "Всего")
@@ -1051,7 +1059,8 @@ def get_events_first_timers_report_data(rank_contains: str | None = None, free_o
             'total_repeaters': sum(
                 sum(rank['repeaters'] for rank in event['rank_stats'])
                 for event in events_data
-            )
+            ),
+            'repeaters_4plus_athletes': len(athletes_4plus),  # Уникальных спортсменов, выступивших в 4-й раз и чаще (для страницы first-timers-detail-free)
         }
         
         return {
