@@ -6,8 +6,9 @@ import io
 import re
 
 from flask import Blueprint, render_template, request, send_file, url_for
+from sqlalchemy import func
 from extensions import db
-from models import Athlete
+from models import Athlete, Participant
 
 analytics_bp = Blueprint('analytics', __name__)
 
@@ -116,6 +117,43 @@ def _check_names_against_db(names):
             not_found.append(fio)
     return found, not_found
 
+
+def _check_names_against_db_free(names):
+    """Проверка списка ФИО по БД с учётом бесплатных участий (БЕСП).
+    Возвращает (has_free, no_free, not_found):
+    - has_free: [(display_fio, db_name, total_participations, free_count), ...]
+    - no_free: [(display_fio, db_name, total_participations, 0), ...]
+    - not_found: [display_fio, ...]
+    """
+    if not names:
+        return [], [], []
+    found, not_found = _check_names_against_db(names)
+    # По каждому найденному спортсмену считаем участия и бесплатные (БЕСП)
+    free_counts = (
+        db.session.query(Participant.athlete_id, func.count(Participant.id).label('cnt'))
+        .filter(Participant.pct_ppname == 'БЕСП')
+        .group_by(Participant.athlete_id)
+    )
+    free_by_athlete = {row.athlete_id: row.cnt for row in free_counts}
+    total_counts = (
+        db.session.query(Participant.athlete_id, func.count(Participant.id).label('cnt'))
+        .group_by(Participant.athlete_id)
+    )
+    total_by_athlete = {row.athlete_id: row.cnt for row in total_counts}
+    has_free = []
+    no_free = []
+    for fio, matches in found:
+        aid = matches[0][0]
+        db_name = matches[0][1]
+        total = total_by_athlete.get(aid, 0)
+        free = free_by_athlete.get(aid, 0)
+        if free > 0:
+            has_free.append((fio, db_name, total, free))
+        else:
+            no_free.append((fio, db_name, total, 0))
+    return has_free, no_free, not_found
+
+
 @analytics_bp.route('/analytics')
 def analytics():
     """Страница аналитики"""
@@ -139,7 +177,7 @@ def free_participation_analysis():
 
 @analytics_bp.route('/judge-helper', methods=['GET', 'POST'])
 def judge_helper():
-    """Помощник главным судьям: вставка списка ФИО (по 4 строки на человека) и проверка, кого нет в БД."""
+    """Помощник главным судьям: вставка списка ФИО и проверка, кого нет в БД."""
     found = []
     not_found = []
     pasted = ''
@@ -149,6 +187,27 @@ def judge_helper():
         if names:
             found, not_found = _check_names_against_db(names)
     return render_template('judge_helper.html', found=found, not_found=not_found, pasted=pasted)
+
+
+@analytics_bp.route('/judge-helper-free', methods=['GET', 'POST'])
+def judge_helper_free():
+    """Помощник главным судьям — только для бесплатных участий: кто уже выступал с БЕСП, кто только платно, кого нет в базе."""
+    has_free = []
+    no_free = []
+    not_found = []
+    pasted = ''
+    if request.method == 'POST':
+        pasted = (request.form.get('names_text') or '').strip()
+        names = _parse_pasted_list(pasted)
+        if names:
+            has_free, no_free, not_found = _check_names_against_db_free(names)
+    return render_template(
+        'judge_helper_free.html',
+        has_free=has_free,
+        no_free=no_free,
+        not_found=not_found,
+        pasted=pasted,
+    )
 
 
 @analytics_bp.route('/first-timers-detail')

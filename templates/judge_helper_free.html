@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}Помощник главным судьям — только бесплатные участия - Система управления турнирами{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-gift"></i> Помощник главным судьям — только для бесплатных участий</h2>
+</div>
+
+<p class="text-muted mb-4">
+    Вставьте список ФИО спортсменов. Сервис покажет: <strong>у кого уже было участие с БЕСП</strong>, 
+    <strong>кто выступал только платно</strong> (ни разу бесплатно) и <strong>кого нет в базе</strong>. 
+    Для тех, кто в базе, отображается количество выступлений и сколько из них бесплатных.
+</p>
+
+<form method="post" action="{{ url_for('analytics.judge_helper_free') }}">
+    <div class="mb-3">
+        <label for="names_text" class="form-label">Список ФИО (можно блоки «ФИО, год, разряд, город» или только ФИО)</label>
+        <textarea class="form-control font-monospace" id="names_text" name="names_text" rows="16" 
+                  placeholder="Иванова Мария Ивановна&#10;Петров Иван Петрович">{{ pasted }}</textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">
+        <i class="fas fa-search"></i> Проверить по базе и БЕСП
+    </button>
+</form>
+
+{% if has_free is defined and (has_free or no_free or not_found) %}
+<hr class="my-4">
+<div class="row">
+    <div class="col-md-4">
+        <div class="card border-success h-100">
+            <div class="card-header bg-success text-white">
+                <i class="fas fa-check-circle"></i> Есть бесплатные участия (БЕСП) <span class="badge bg-light text-dark">{{ has_free|length }}</span>
+            </div>
+            <div class="card-body">
+                {% if has_free %}
+                <ul class="list-unstyled mb-0">
+                    {% for fio, db_name, total, free in has_free %}
+                    <li class="mb-2">
+                        <strong>{{ fio }}</strong>
+                        <br><small class="text-muted">→ {{ db_name }}</small>
+                        <br><span class="badge bg-secondary">всего выступлений: {{ total }}</span>
+                        <span class="badge bg-success">бесплатно (БЕСП): {{ free }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted mb-0">Нет таких в списке.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-warning h-100">
+            <div class="card-header bg-warning text-dark">
+                <i class="fas fa-ticket-alt"></i> Нет бесплатных (все платно) <span class="badge bg-dark">{{ no_free|length }}</span>
+            </div>
+            <div class="card-body">
+                {% if no_free %}
+                <ul class="list-unstyled mb-0">
+                    {% for fio, db_name, total, free in no_free %}
+                    <li class="mb-2">
+                        <strong>{{ fio }}</strong>
+                        <br><small class="text-muted">→ {{ db_name }}</small>
+                        <br><span class="badge bg-secondary">всего выступлений: {{ total }}</span>
+                        <span class="badge bg-danger">бесплатно (БЕСП): 0</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted mb-0">Нет таких в списке.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-danger h-100">
+            <div class="card-header bg-danger text-white">
+                <i class="fas fa-user-times"></i> Нет в базе <span class="badge bg-light text-dark">{{ not_found|length }}</span>
+            </div>
+            <div class="card-body">
+                {% if not_found %}
+                <ul class="list-unstyled mb-0">
+                    {% for name in not_found %}
+                    <li class="mb-1"><strong>{{ name }}</strong></li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-success mb-0">Все из списка найдены в базе.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+<p class="mt-3 text-muted small">
+    Совпадение по фамилии и имени с базой. БЕСП — участие с отметкой бесплатного старта в системе.
+</p>
+{% endif %}
+
+{% endblock %}
