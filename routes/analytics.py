@@ -62,7 +62,8 @@ def _looks_like_fio(s):
 
 
 def _parse_pasted_list(text):
-    """Умный разбор: из вставленного текста извлечь все строки, похожие на ФИО (игнорируя год, разряд, город/школу)."""
+    """Умный разбор: из вставленного текста извлечь все строки, похожие на ФИО (игнорируя год, разряд, город/школу).
+    Сохраняем полное ФИО как вставил судья (для отображения); поиск по БД — по фамилии и имени (2 слова)."""
     lines = [ln.strip() for ln in (text or '').splitlines() if ln.strip()]
     result = []
     seen = set()
@@ -78,7 +79,7 @@ def _parse_pasted_list(text):
         if fio_key in seen:
             continue
         seen.add(fio_key)
-        result.append(' '.join(words[:2]))
+        result.append(ln)
     return result
 
 
