@@ -9,7 +9,8 @@
 
 <p class="text-muted mb-4">
     Вставьте сюда список спортсменов в любом виде: по 4 строки на человека (ФИО, год, разряд, город) или просто перечень ФИО. 
-    Сервис сам найдёт строки с фамилией и именем, проигнорирует годы, разряды и названия школ.
+    Сервис проверит, <strong>кого нет в базе (кто ещё не выступал ни разу)</strong> — таких нужно будет добавить перед турниром.
+    Строки с ФИО определяются автоматически, годы, разряды и названия школ игнорируются.
 </p>
 
 <form method="post" action="{{ url_for('analytics.judge_helper') }}">
@@ -19,7 +20,7 @@
                   placeholder="Иванова Мария&#10;2012&#10;1С&#10;Москва (СШОР ...)&#10;&#10;Петров Иван Петрович&#10;или просто список ФИО">{{ pasted }}</textarea>
     </div>
     <button type="submit" class="btn btn-primary">
-        <i class="fas fa-search"></i> Проверить, кого нет в БД
+        <i class="fas fa-search"></i> Проверить, кого нет в БД (кто ещё не выступал ни разу)
     </button>
 </form>
 
@@ -29,7 +30,7 @@
     <div class="col-md-6">
         <div class="card border-success">
             <div class="card-header bg-success text-white">
-                <i class="fas fa-check-circle"></i> В базе есть <span class="badge bg-light text-dark">{{ found|length }}</span>
+                <i class="fas fa-check-circle"></i> В базе есть (уже выступали) <span class="badge bg-light text-dark">{{ found|length }}</span>
             </div>
             <div class="card-body">
                 {% if found %}
@@ -52,7 +53,7 @@
     <div class="col-md-6">
         <div class="card border-danger">
             <div class="card-header bg-danger text-white">
-                <i class="fas fa-exclamation-triangle"></i> Нет в базе <span class="badge bg-light text-dark">{{ not_found|length }}</span>
+                <i class="fas fa-exclamation-triangle"></i> Нет в базе (ещё не выступали ни разу) <span class="badge bg-light text-dark">{{ not_found|length }}</span>
             </div>
             <div class="card-body">
                 {% if not_found %}
