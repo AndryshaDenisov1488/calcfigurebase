@@ -19,10 +19,67 @@ def _normalize_words(s):
     return s.split() if s else []
 
 
+def _is_year(s):
+    """Строка — год (4 цифры)."""
+    s = (s or '').strip()
+    return len(s) == 4 and s.isdigit()
+
+
+def _is_rank(s):
+    """Строка похожа на разряд: 1С, 2Ю, 3 П и т.п."""
+    s = (s or '').strip()
+    return bool(re.match(r'^\d\s*[А-Яа-яЁё]\s*$', s)) or s.upper() in ('1С', '2С', '3С', '1Ю', '2Ю', '3Ю', '1П', '2П', '3П', 'МС', 'КМС')
+
+
+def _is_city_or_school(s):
+    """Строка похожа на город или школу (адрес, организация)."""
+    s = (s or '').strip()
+    if not s:
+        return True
+    s_lower = s.lower()
+    if s_lower.startswith('москва') or s_lower.startswith('санкт-') or s_lower.startswith('спб'):
+        return True
+    if any(x in s for x in ('ГБУ', 'СШОР', 'ООО', 'ИП ', 'АНО', 'МОО', '(', 'школа', 'отд.', 'отд ', 'фигурного катания')):
+        return True
+    return False
+
+
+def _looks_like_fio(s):
+    """Строка похожа на ФИО: 2–3 слова, в основном кириллица."""
+    s = (s or '').strip()
+    if not s or len(s) < 3:
+        return False
+    words = re.split(r'\s+', s)
+    if len(words) < 2 or len(words) > 4:
+        return False
+    for w in words:
+        if not w:
+            return False
+        cyr = sum(1 for c in w if 'а' <= c.lower() <= 'я' or c in 'ёЁ')
+        if cyr < len(w) * 0.6 and not re.match(r'^[А-Яа-яЁё\-]+$', w):
+            return False
+    return True
+
+
 def _parse_pasted_list(text):
-    """Из вставленного текста (ФИО, год, разряд, город — по 4 строки на спортсмена) извлечь список «Фамилия Имя»."""
+    """Умный разбор: из вставленного текста извлечь все строки, похожие на ФИО (игнорируя год, разряд, город/школу)."""
     lines = [ln.strip() for ln in (text or '').splitlines() if ln.strip()]
-    return list(dict.fromkeys(lines[0::4]))  # каждые 4-я строка — ФИО, без дублей с сохранением порядка
+    result = []
+    seen = set()
+    for ln in lines:
+        if _is_year(ln) or _is_rank(ln) or _is_city_or_school(ln):
+            continue
+        if not _looks_like_fio(ln):
+            continue
+        words = _normalize_words(ln)
+        if len(words) < 2:
+            continue
+        fio_key = (words[0], words[1])
+        if fio_key in seen:
+            continue
+        seen.add(fio_key)
+        result.append(' '.join(words[:2]))
+    return result
 
 
 def _check_names_against_db(names):
