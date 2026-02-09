@@ -3,10 +3,60 @@
 """Analytics HTML routes."""
 from datetime import date
 import io
+import re
 
 from flask import Blueprint, render_template, request, send_file, url_for
+from extensions import db
+from models import Athlete
 
 analytics_bp = Blueprint('analytics', __name__)
+
+
+def _normalize_words(s):
+    if not s or not isinstance(s, str):
+        return []
+    s = re.sub(r'\s+', ' ', (s or '').strip()).lower()
+    return s.split() if s else []
+
+
+def _parse_pasted_list(text):
+    """Из вставленного текста (ФИО, год, разряд, город — по 4 строки на спортсмена) извлечь список «Фамилия Имя»."""
+    lines = [ln.strip() for ln in (text or '').splitlines() if ln.strip()]
+    return list(dict.fromkeys(lines[0::4]))  # каждые 4-я строка — ФИО, без дублей с сохранением порядка
+
+
+def _check_names_against_db(names):
+    """По списку «Фамилия Имя» вернуть (found, not_found). found = [(name, [(id, full_name), ...]), ...]."""
+    if not names:
+        return [], []
+    # Собираем по два слова из каждой записи
+    name_keys = []
+    for fio in names:
+        words = _normalize_words(fio)
+        if len(words) >= 2:
+            name_keys.append((fio, frozenset(words[:2])))
+    if not name_keys:
+        return [], list(names)
+    # Все спортсмены из БД: (id, full_name, set слов)
+    athletes_data = []
+    for a in Athlete.query.all():
+        name = a.full_name
+        words = set(_normalize_words(name))
+        if words:
+            athletes_data.append((a.id, name, words))
+    found = []
+    not_found = []
+    seen_key = set()
+    for fio, key in name_keys:
+        if key in seen_key:
+            continue
+        seen_key.add(key)
+        matches = [(aid, db_name) for aid, db_name, name_words in athletes_data if key <= name_words]
+        if matches:
+            found.append((fio, matches))
+        else:
+            not_found.append(fio)
+    return found, not_found
 
 @analytics_bp.route('/analytics')
 def analytics():
@@ -27,6 +77,20 @@ def club_free_analysis():
 def free_participation_analysis():
     """Страница анализа бесплатного участия с фильтрацией"""
     return render_template('free_participation_analysis.html')
+
+
+@analytics_bp.route('/judge-helper', methods=['GET', 'POST'])
+def judge_helper():
+    """Помощник главным судьям: вставка списка ФИО (по 4 строки на человека) и проверка, кого нет в БД."""
+    found = []
+    not_found = []
+    pasted = ''
+    if request.method == 'POST':
+        pasted = (request.form.get('names_text') or '').strip()
+        names = _parse_pasted_list(pasted)
+        if names:
+            found, not_found = _check_names_against_db(names)
+    return render_template('judge_helper.html', found=found, not_found=not_found, pasted=pasted)
 
 
 @analytics_bp.route('/first-timers-detail')

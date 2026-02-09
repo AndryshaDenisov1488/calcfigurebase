@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Помощник главным судьям - Система управления турнирами{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-user-check"></i> Помощник главным судьям</h2>
+</div>
+
+<p class="text-muted mb-4">
+    Вставьте сюда список спортсменов в формате: <strong>Фамилия Имя</strong>, год, разряд, город (школа) — по 4 строки на человека. 
+    Сервис проверит, кто из списка уже есть в базе, а кого нет.
+</p>
+
+<form method="post" action="{{ url_for('analytics.judge_helper') }}">
+    <div class="mb-3">
+        <label for="names_text" class="form-label">Список (ФИО, год, разряд, город — по 4 строки на спортсмена)</label>
+        <textarea class="form-control font-monospace" id="names_text" name="names_text" rows="16" 
+                  placeholder="Иванова Мария&#10;2012&#10;1С&#10;Москва (СШОР им. С.А. Жука)&#10;&#10;Петров Иван&#10;2011&#10;2С&#10;Москва (ГБУ ДО ...)">{{ pasted }}</textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">
+        <i class="fas fa-search"></i> Проверить, кого нет в БД
+    </button>
+</form>
+
+{% if found is defined and (found or not_found) %}
+<hr class="my-4">
+<div class="row">
+    <div class="col-md-6">
+        <div class="card border-success">
+            <div class="card-header bg-success text-white">
+                <i class="fas fa-check-circle"></i> В базе есть <span class="badge bg-light text-dark">{{ found|length }}</span>
+            </div>
+            <div class="card-body">
+                {% if found %}
+                <ul class="list-unstyled mb-0">
+                    {% for name, matches in found %}
+                    <li class="mb-2">
+                        <strong>{{ name }}</strong>
+                        {% for aid, db_name in matches %}
+                        <br><small class="text-muted">→ id={{ aid }}: {{ db_name }}</small>
+                        {% endfor %}
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted mb-0">Нет совпадений.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-danger">
+            <div class="card-header bg-danger text-white">
+                <i class="fas fa-exclamation-triangle"></i> Нет в базе <span class="badge bg-light text-dark">{{ not_found|length }}</span>
+            </div>
+            <div class="card-body">
+                {% if not_found %}
+                <ul class="list-unstyled mb-0">
+                    {% for name in not_found %}
+                    <li class="mb-1"><strong>{{ name }}</strong></li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-success mb-0">Все из списка найдены в базе.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+<p class="mt-3 text-muted small">
+    Совпадение считается по двум словам (фамилия + имя) с полным ФИО в базе. Если у спортсмена в списке только фамилия и имя — проверка корректна.
+</p>
+{% endif %}
+
+{% endblock %}

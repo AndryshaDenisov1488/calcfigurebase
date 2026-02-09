@@ -91,6 +91,8 @@
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="{{ url_for('analytics.first_timers_detail') }}"><i class="fas fa-user-friends"></i> Новички и повторяющиеся</a></li>
                             <li><a class="dropdown-item" href="{{ url_for('analytics.first_timers_detail_free') }}"><i class="fas fa-gift"></i> Новички и повторяющиеся (только бесплатные)</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('analytics.judge_helper') }}"><i class="fas fa-user-check"></i> Помощник главным судьям</a></li>
                         </ul>
                     </li>
                     {% if session.admin_logged_in %}
