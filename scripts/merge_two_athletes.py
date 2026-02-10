@@ -10,8 +10,8 @@ import sys
 import shutil
 from datetime import datetime
 
-# Добавляем текущую директорию в путь
-project_root = os.path.dirname(os.path.abspath(__file__))
+# Корень проекта (родитель папки scripts)
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -64,8 +64,8 @@ def find_athlete_by_name(name_part):
         return athletes
 
 
-def merge_two_athletes(keep_athlete_id, remove_athlete_id, use_full_name=None):
-    """Объединяет двух спортсменов"""
+def merge_two_athletes(keep_athlete_id, remove_athlete_id, use_full_name=None, skip_confirm=False):
+    """Объединяет двух спортсменов. keep = кого оставляем, remove = кого переносим и удаляем."""
     
     with app.app_context():
         print("=" * 80)
@@ -129,11 +129,13 @@ def merge_two_athletes(keep_athlete_id, remove_athlete_id, use_full_name=None):
         
         # Подтверждение
         print("=" * 80)
-        confirm = input("Объединить этих спортсменов? (yes/NO): ").strip().lower()
-        
-        if confirm != 'yes':
-            print("❌ Объединение отменено")
-            return 0
+        if not skip_confirm:
+            confirm = input("Объединить этих спортсменов? (yes/NO): ").strip().lower()
+            if confirm != 'yes':
+                print("❌ Объединение отменено")
+                return 0
+        else:
+            print("Объединение по аргументам командной строки (без запроса подтверждения).")
         
         # Создаем бэкап
         print("\nСоздание бэкапа...")
@@ -190,12 +192,28 @@ def merge_two_athletes(keep_athlete_id, remove_athlete_id, use_full_name=None):
 
 
 def main():
-    """Основная функция"""
+    """Основная функция. Можно вызвать: python merge_two_athletes.py KEEP_ID REMOVE_ID"""
+    # Вызов с двумя ID: оставить KEEP_ID, перенести и удалить REMOVE_ID
+    if len(sys.argv) >= 3:
+        try:
+            keep_id = int(sys.argv[1])
+            remove_id = int(sys.argv[2])
+            print("=" * 80)
+            print("ПРИНУДИТЕЛЬНОЕ ОБЪЕДИНЕНИЕ ДВУХ СПОРТСМЕНОВ (по ID)")
+            print("=" * 80)
+            print(f"  Оставить: ID {keep_id}")
+            print(f"  Удалить (перенести участия): ID {remove_id}")
+            print()
+            return merge_two_athletes(keep_id, remove_id, skip_confirm=True)
+        except ValueError:
+            print("Ошибка: оба аргумента должны быть числовыми ID.", file=sys.stderr)
+            return 1
+
     print("=" * 80)
     print("ПРИНУДИТЕЛЬНОЕ ОБЪЕДИНЕНИЕ ДВУХ СПОРТСМЕНОВ")
     print("=" * 80)
     print()
-    print("Можно искать по имени или указать ID напрямую")
+    print("Можно искать по имени или указать ID напрямую. Либо: python merge_two_athletes.py ОСТАВИТЬ_ID УДАЛИТЬ_ID")
     print()
     
     # Ищем первого спортсмена
