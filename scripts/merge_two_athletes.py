@@ -16,7 +16,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from app import app, db
-from models import Club, Athlete, Participant
+from models import Club, Athlete, Participant, CoachAssignment
 
 
 def create_backup():
@@ -114,6 +114,27 @@ def merge_two_athletes(keep_athlete_id, remove_athlete_id, use_full_name=None, s
         print(f"  ИТОГО: {keep_participations + remove_participations} участий")
         print()
         
+        # Проверка на конфликт UniqueConstraint (event_id, category_id, athlete_id)
+        # Один спортсмен может быть только раз в одной категории одного соревнования
+        if remove_participations > 0:
+            remove_parts = Participant.query.filter_by(athlete_id=remove_athlete_id).all()
+            conflicts = []
+            for p in remove_parts:
+                exists = Participant.query.filter_by(
+                    athlete_id=keep_athlete_id,
+                    event_id=p.event_id,
+                    category_id=p.category_id
+                ).first()
+                if exists:
+                    conflicts.append((p.event_id, p.category_id, p.id))
+            if conflicts:
+                print("❌ КОНФЛИКТ: оба спортсмена участвовали в одних и тех же (соревнование, категория)!")
+                print("   Объединение приведёт к нарушению уникальности. Конфликты:")
+                for ev, cat, pid in conflicts:
+                    print(f"   — event_id={ev}, category_id={cat} (participant_id={pid})")
+                print("\n   Решение: нужно вручную удалить или переназначить одно из участий.")
+                return 1
+        
         # Определяем полное имя для оставшегося спортсмена
         if use_full_name:
             final_full_name = use_full_name
@@ -159,6 +180,14 @@ def merge_two_athletes(keep_athlete_id, remove_athlete_id, use_full_name=None, s
                 Participant.query.filter_by(athlete_id=remove_athlete_id).update({
                     'athlete_id': keep_athlete_id
                 })
+            
+            # Переносим привязки тренеров (coach_assignment)
+            ca_count = CoachAssignment.query.filter_by(athlete_id=remove_athlete_id).count()
+            if ca_count > 0:
+                CoachAssignment.query.filter_by(athlete_id=remove_athlete_id).update({
+                    'athlete_id': keep_athlete_id
+                })
+                print(f"Перенос {ca_count} записей coach_assignment...")
             
             # Удаляем дубликат
             db.session.delete(remove_athlete)
