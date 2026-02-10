@@ -118,17 +118,8 @@ def _check_names_against_db(names):
     return found, not_found
 
 
-def _check_names_against_db_free(names):
-    """Проверка списка ФИО по БД с учётом бесплатных участий (БЕСП).
-    Возвращает (has_free, no_free, not_found):
-    - has_free: [(display_fio, db_name, total_participations, free_count), ...]
-    - no_free: [(display_fio, db_name, total_participations, 0), ...]
-    - not_found: [display_fio, ...]
-    """
-    if not names:
-        return [], [], []
-    found, not_found = _check_names_against_db(names)
-    # По каждому найденному спортсмену считаем участия и бесплатные (БЕСП)
+def _get_participation_counts():
+    """Возвращает (total_by_athlete, free_by_athlete) — словари athlete_id -> count."""
     free_counts = (
         db.session.query(Participant.athlete_id, func.count(Participant.id).label('cnt'))
         .filter(Participant.pct_ppname == 'БЕСП')
@@ -140,17 +131,34 @@ def _check_names_against_db_free(names):
         .group_by(Participant.athlete_id)
     )
     total_by_athlete = {row.athlete_id: row.cnt for row in total_counts}
+    return total_by_athlete, free_by_athlete
+
+
+def _check_names_against_db_free(names):
+    """Проверка списка ФИО по БД с учётом бесплатных участий (БЕСП).
+    Возвращает (has_free, no_free, not_found):
+    - has_free: [(display_fio, db_info, total_participations, free_count), ...]
+    - no_free: [(display_fio, db_info, total_participations, 0), ...]
+    - not_found: [display_fio, ...]
+    db_info — строка для отображения (id и имя; при дубликатах — все id).
+    """
+    if not names:
+        return [], [], []
+    found, not_found = _check_names_against_db(names)
+    total_by_athlete, free_by_athlete = _get_participation_counts()
     has_free = []
     no_free = []
     for fio, matches in found:
-        aid = matches[0][0]
+        # Суммируем по всем совпадениям (дубликаты в БД)
+        total = sum(total_by_athlete.get(aid, 0) for aid, _ in matches)
+        free = sum(free_by_athlete.get(aid, 0) for aid, _ in matches)
+        ids_str = ', '.join(str(aid) for aid, _ in matches)
         db_name = matches[0][1]
-        total = total_by_athlete.get(aid, 0)
-        free = free_by_athlete.get(aid, 0)
+        db_info = f'id={ids_str}: {db_name}'
         if free > 0:
-            has_free.append((fio, db_name, total, free))
+            has_free.append((fio, db_info, total, free))
         else:
-            no_free.append((fio, db_name, total, 0))
+            no_free.append((fio, db_info, total, 0))
     return has_free, no_free, not_found
 
 
@@ -185,7 +193,13 @@ def judge_helper():
         pasted = (request.form.get('names_text') or '').strip()
         names = _parse_pasted_list(pasted)
         if names:
-            found, not_found = _check_names_against_db(names)
+            found_raw, not_found = _check_names_against_db(names)
+            total_by_athlete, free_by_athlete = _get_participation_counts()
+            # Обогащаем found: (fio, matches, total, free)
+            for fio, matches in found_raw:
+                total = sum(total_by_athlete.get(aid, 0) for aid, _ in matches)
+                free = sum(free_by_athlete.get(aid, 0) for aid, _ in matches)
+                found.append((fio, matches, total, free))
     return render_template('judge_helper.html', found=found, not_found=not_found, pasted=pasted)
 
 

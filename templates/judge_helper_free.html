@@ -35,12 +35,12 @@
             <div class="card-body">
                 {% if has_free %}
                 <ul class="list-unstyled mb-0">
-                    {% for fio, db_name, total, free in has_free %}
+                    {% for fio, db_info, total, free in has_free %}
                     <li class="mb-2">
                         <strong>{{ fio }}</strong>
-                        <br><small class="text-muted">→ {{ db_name }}</small>
-                        <br><span class="badge bg-secondary">всего выступлений: {{ total }}</span>
-                        <span class="badge bg-success">бесплатно (БЕСП): {{ free }}</span>
+                        <span class="badge bg-success ms-1" title="бесплатных участий (БЕСП)">{{ free }} беспл.</span>
+                        <span class="text-muted small">· всего {{ total }}</span>
+                        <br><small class="text-muted">→ {{ db_info }}</small>
                     </li>
                     {% endfor %}
                 </ul>
@@ -58,12 +58,12 @@
             <div class="card-body">
                 {% if no_free %}
                 <ul class="list-unstyled mb-0">
-                    {% for fio, db_name, total, free in no_free %}
+                    {% for fio, db_info, total, free in no_free %}
                     <li class="mb-2">
                         <strong>{{ fio }}</strong>
-                        <br><small class="text-muted">→ {{ db_name }}</small>
-                        <br><span class="badge bg-secondary">всего выступлений: {{ total }}</span>
-                        <span class="badge bg-danger">бесплатно (БЕСП): 0</span>
+                        <span class="badge bg-secondary ms-1" title="всего выступлений">{{ total }} выст.</span>
+                        <span class="badge bg-danger ms-1">0 беспл.</span>
+                        <br><small class="text-muted">→ {{ db_info }}</small>
                     </li>
                     {% endfor %}
                 </ul>

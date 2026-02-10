@@ -35,9 +35,11 @@
             <div class="card-body">
                 {% if found %}
                 <ul class="list-unstyled mb-0">
-                    {% for name, matches in found %}
+                    {% for name, matches, total, free in found %}
                     <li class="mb-2">
                         <strong>{{ name }}</strong>
+                        <span class="badge bg-primary ms-1" title="всего выступлений">всего {{ total }}</span>
+                        <span class="badge bg-success ms-1" title="бесплатных (БЕСП)">БЕСП {{ free }}</span>
                         {% for aid, db_name in matches %}
                         <br><small class="text-muted">→ id={{ aid }}: {{ db_name }}</small>
                         {% endfor %}
