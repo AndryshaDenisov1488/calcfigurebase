@@ -35,12 +35,12 @@
             <div class="card-body">
                 {% if has_free %}
                 <ul class="list-unstyled mb-0">
-                    {% for fio, db_info, total, free in has_free %}
+                    {% for fio, matches, total, free, first_aid in has_free %}
                     <li class="mb-2">
-                        <strong>{{ fio }}</strong>
+                        <strong><a href="{{ url_for('public.athlete_detail', athlete_id=first_aid) }}" class="text-decoration-none link-dark">{{ fio }}</a></strong>
                         <span class="badge bg-success ms-1" title="бесплатных участий (БЕСП)">{{ free }} беспл.</span>
                         <span class="text-muted small">· всего {{ total }}</span>
-                        <br><small class="text-muted">→ {{ db_info }}</small>
+                        <br><small class="text-muted">→ {% for aid, db_name in matches %}<a href="{{ url_for('public.athlete_detail', athlete_id=aid) }}" class="text-muted text-decoration-none">id={{ aid }}</a>{% if not loop.last %}, {% endif %}{% endfor %}: {{ matches[0][1] }}</small>
                     </li>
                     {% endfor %}
                 </ul>
@@ -58,12 +58,12 @@
             <div class="card-body">
                 {% if no_free %}
                 <ul class="list-unstyled mb-0">
-                    {% for fio, db_info, total, free in no_free %}
+                    {% for fio, matches, total, free, first_aid in no_free %}
                     <li class="mb-2">
-                        <strong>{{ fio }}</strong>
+                        <strong><a href="{{ url_for('public.athlete_detail', athlete_id=first_aid) }}" class="text-decoration-none link-dark">{{ fio }}</a></strong>
                         <span class="badge bg-secondary ms-1" title="всего выступлений">{{ total }} выст.</span>
                         <span class="badge bg-danger ms-1">0 беспл.</span>
-                        <br><small class="text-muted">→ {{ db_info }}</small>
+                        <br><small class="text-muted">→ {% for aid, db_name in matches %}<a href="{{ url_for('public.athlete_detail', athlete_id=aid) }}" class="text-muted text-decoration-none">id={{ aid }}</a>{% if not loop.last %}, {% endif %}{% endfor %}: {{ matches[0][1] }}</small>
                     </li>
                     {% endfor %}
                 </ul>

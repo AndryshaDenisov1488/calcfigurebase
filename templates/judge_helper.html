@@ -37,11 +37,11 @@
                 <ul class="list-unstyled mb-0">
                     {% for name, matches, total, free in found %}
                     <li class="mb-2">
-                        <strong>{{ name }}</strong>
+                        <strong><a href="{{ url_for('public.athlete_detail', athlete_id=matches[0][0]) }}" class="text-decoration-none link-dark">{{ name }}</a></strong>
                         <span class="badge bg-primary ms-1" title="всего выступлений">всего {{ total }}</span>
                         <span class="badge bg-success ms-1" title="бесплатных (БЕСП)">БЕСП {{ free }}</span>
                         {% for aid, db_name in matches %}
-                        <br><small class="text-muted">→ id={{ aid }}: {{ db_name }}</small>
+                        <br><small class="text-muted">→ <a href="{{ url_for('public.athlete_detail', athlete_id=aid) }}" class="text-muted text-decoration-none">id={{ aid }}: {{ db_name }}</a></small>
                         {% endfor %}
                     </li>
                     {% endfor %}

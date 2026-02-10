@@ -152,13 +152,12 @@ def _check_names_against_db_free(names):
         # Суммируем по всем совпадениям (дубликаты в БД)
         total = sum(total_by_athlete.get(aid, 0) for aid, _ in matches)
         free = sum(free_by_athlete.get(aid, 0) for aid, _ in matches)
-        ids_str = ', '.join(str(aid) for aid, _ in matches)
         db_name = matches[0][1]
-        db_info = f'id={ids_str}: {db_name}'
+        first_aid = matches[0][0]
         if free > 0:
-            has_free.append((fio, db_info, total, free))
+            has_free.append((fio, matches, total, free, first_aid))
         else:
-            no_free.append((fio, db_info, total, 0))
+            no_free.append((fio, matches, total, 0, first_aid))
     return has_free, no_free, not_found
 
 
