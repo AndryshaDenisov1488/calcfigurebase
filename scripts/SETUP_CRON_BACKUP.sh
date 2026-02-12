@@ -32,7 +32,7 @@ echo "✅ Папка создана"
 echo ""
 echo "4️⃣  Тестовый запуск..."
 cd "$PROJECT_PATH"
-./venv/bin/python backup_database.py --auto
+./.venv/bin/python backup_database.py --auto
 
 if [ $? -eq 0 ]; then
     echo "✅ Тестовый бэкап успешно создан!"
@@ -44,7 +44,7 @@ fi
 
 echo ""
 echo "5️⃣  Проверка текущего crontab..."
-CRON_LINE="0 1 * * * cd $PROJECT_PATH && $PROJECT_PATH/venv/bin/python backup_database.py --auto >> $PROJECT_PATH/backups/backup.log 2>&1"
+CRON_LINE="0 1 * * * cd $PROJECT_PATH && $PROJECT_PATH/.venv/bin/python backup_database.py --auto >> $PROJECT_PATH/backups/backup.log 2>&1"
 
 if crontab -l 2>/dev/null | grep -q "calc.figurebase.ru.*backup_database.py"; then
     echo "⚠️  Задача уже существует в crontab!"

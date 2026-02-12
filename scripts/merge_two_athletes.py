@@ -64,8 +64,8 @@ def find_athlete_by_name(name_part):
         return athletes
 
 
-def merge_two_athletes(keep_athlete_id, remove_athlete_id, use_full_name=None, skip_confirm=False):
-    """Объединяет двух спортсменов. keep = кого оставляем, remove = кого переносим и удаляем."""
+def merge_two_athletes(keep_athlete_id, remove_athlete_id, use_full_name=None, skip_confirm=False, skip_backup=False):
+    """Объединяет двух спортсменов. keep = кого оставляем, remove = кого переносим и удаляем. skip_backup=True — не создавать бэкап (для пакетного запуска)."""
     
     with app.app_context():
         print("=" * 80)
@@ -158,13 +158,15 @@ def merge_two_athletes(keep_athlete_id, remove_athlete_id, use_full_name=None, s
         else:
             print("Объединение по аргументам командной строки (без запроса подтверждения).")
         
-        # Создаем бэкап
-        print("\nСоздание бэкапа...")
-        backup_file = create_backup()
-        
-        if not backup_file:
-            print("❌ Не удалось создать бэкап. Объединение отменено.")
-            return 1
+        backup_file = None
+        if not skip_backup:
+            print("\nСоздание бэкапа...")
+            backup_file = create_backup()
+            if not backup_file:
+                print("❌ Не удалось создать бэкап. Объединение отменено.")
+                return 1
+        else:
+            print("\n(бэкап пропущен — пакетный режим)")
         
         # Объединяем
         print(f"\nПеренос {remove_participations} участий...")
@@ -206,7 +208,8 @@ def merge_two_athletes(keep_athlete_id, remove_athlete_id, use_full_name=None, s
             print(f"Удален спортсмен: ID {remove_athlete_id}")
             print(f"Перенесено участий: {remove_participations}")
             print(f"\n✅ Итоговое количество участий: {final_count}")
-            print(f"\n📦 Бэкап: backups/{backup_file}")
+            if backup_file:
+                print(f"\n📦 Бэкап: backups/{backup_file}")
             print("=" * 80)
             
             return 0
