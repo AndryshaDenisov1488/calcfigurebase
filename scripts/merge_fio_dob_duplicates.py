@@ -42,8 +42,15 @@ def create_backup():
     if not os.path.isabs(db_path):
         db_path = os.path.join(project_root, db_path)
     if not os.path.exists(db_path):
-        print(f"❌ База не найдена: {db_path}")
-        return None
+        # На сервере база часто лежит в instance/ (без .db в имени или с ним)
+        for fallback in ("instance/figure_skating.db", "instance/figure_skating"):
+            p = os.path.join(project_root, fallback)
+            if os.path.exists(p):
+                db_path = p
+                break
+        else:
+            print(f"❌ База не найдена: {db_path}")
+            return None
     backup_dir = os.path.join(project_root, "backups")
     os.makedirs(backup_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
