@@ -48,11 +48,14 @@ def main():
 
         # Только группы, где больше одного человека
         duplicates = {k: v for k, v in by_normalized.items() if len(v) > 1}
+        num_groups = len(duplicates)
+        num_duplicate_records = sum(len(v) for v in duplicates.values())
         lines = []
         lines.append("=" * 80)
         lines.append("Дубликаты ФИО (Е и Ё считаются одной буквой)")
         lines.append(f"Дата запуска: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        lines.append(f"Найдено групп с дубликатами: {len(duplicates)}")
+        lines.append(f"Групп с дубликатами: {num_groups}")
+        lines.append(f"Всего записей-дубликатов: {num_duplicate_records}")
         lines.append("=" * 80)
 
         for norm_fio in sorted(duplicates.keys()):
