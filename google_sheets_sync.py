@@ -755,6 +755,105 @@ def get_summary_statistics_data():
             'rank_paid_stats': rank_paid_stats
         }
 
+
+def get_weekly_unique_athletes_growth():
+    """Возвращает список по неделям: рост уникальных спортсменов и недельную статистику (без МС/КМС).
+
+    Формат элементов списка:
+        {
+            'year': iso_year,
+            'week': iso_week,
+            'monday': date,
+            'total_unique': int,          # накопительно к концу недели
+            'weekly_growth': int,         # прирост к прошлой неделе (накопительно)
+            'events_in_week': int,        # сколько турниров началось на этой неделе
+            'week_unique_total': int,     # уникальных спортсменов за эту неделю
+            'week_unique_free': int,      # из них хотя бы одно участие БЕСП за эту неделю
+        }
+    """
+    # Разряды, которые нужно исключить из отчёта (МС и КМС)
+    excluded_ranks = {
+        'МС, Женщины',
+        'МС, Мужчины',
+        'МС, Пары',
+        'МС, Танцы',
+        'КМС, Девушки',
+        'КМС, Юноши',
+        'КМС, Пары',
+        'КМС, Танцы',
+    }
+
+    from collections import defaultdict as _dd
+
+    # (year, week) -> множества по неделе
+    week_to_all_athletes = _dd(set)   # все уникальные спортсмены за неделю
+    week_to_free_athletes = _dd(set)  # кто имел хотя бы одно БЕСП за неделю
+    week_to_events = _dd(set)         # id турниров с begin_date на этой неделе
+
+    with app.app_context():
+        from models import Event, Category  # локальный импорт, как в других функциях
+
+        rows = (
+            db.session.query(
+                Participant.athlete_id,
+                Participant.pct_ppname,
+                Event.id.label('event_id'),
+                Event.begin_date.label('event_date'),
+                Category.normalized_name.label('rank'),
+            )
+            .join(Category, Participant.category_id == Category.id)
+            .join(Event, Participant.event_id == Event.id)
+            .filter(
+                Event.begin_date.isnot(None),
+                db.or_(
+                    Category.normalized_name.is_(None),
+                    Category.normalized_name.notin_(excluded_ranks),
+                ),
+            )
+            .all()
+        )
+
+    # Группируем по неделям
+    for row in rows:
+        d = row.event_date
+        if not d:
+            continue
+        iso_year, iso_week, _ = d.isocalendar()
+        key = (iso_year, iso_week)
+        week_to_all_athletes[key].add(row.athlete_id)
+        if row.pct_ppname == 'БЕСП':
+            week_to_free_athletes[key].add(row.athlete_id)
+        week_to_events[key].add(row.event_id)
+
+    # Строим накопительную статистику
+    all_weeks = sorted(week_to_all_athletes.keys())
+    seen_athletes = set()
+    result = []
+    prev_total = 0
+
+    for iso_year, iso_week in all_weeks:
+        key = (iso_year, iso_week)
+        current_set = week_to_all_athletes[key]
+        seen_athletes |= current_set
+        total_unique = len(seen_athletes)
+        weekly_growth = total_unique - prev_total
+        prev_total = total_unique
+        monday = date.fromisocalendar(iso_year, iso_week, 1)
+        result.append(
+            {
+                'year': iso_year,
+                'week': iso_week,
+                'monday': monday,
+                'total_unique': total_unique,
+                'weekly_growth': weekly_growth,
+                'events_in_week': len(week_to_events.get(key, set())),
+                'week_unique_total': len(week_to_all_athletes.get(key, set())),
+                'week_unique_free': len(week_to_free_athletes.get(key, set())),
+            }
+        )
+
+    return result
+
 def get_events_first_timers_report_data(rank_contains: str | None = None, free_only: bool = False):
     """Формирует данные по турнирам с подсчетом новичков и повторяющихся по разрядам.
     Новичок = первое хронологическое выступление спортсмена в данном разряде (по дате турнира).
@@ -3375,6 +3474,32 @@ def export_to_google_sheets(spreadsheet_id=None):
                     f'{percent}%',
                     '',
                     ''
+                ])
+        
+        summary_data.append(['', '', '', '', '', ''])
+        
+        # 6. Прирост уникальных спортсменов по неделям (накопительно с начала базы/сезона)
+        weekly_growth = get_weekly_unique_athletes_growth()
+        if weekly_growth:
+            summary_data.append(['ПРИРОСТ УНИКАЛЬНЫХ СПОРТСМЕНОВ ПО НЕДЕЛЯМ', '', '', '', '', ''])
+            summary_data.append([
+                'Год-Неделя',
+                'Понедельник недели',
+                'Турниров за неделю',
+                'Спортсменов за неделю (уник.)',
+                'Бесплатных за неделю (уник.)',
+                'Прирост к прошлой неделе (накоп.)',
+            ])
+            for row in weekly_growth:
+                week_label = f\"{row['year']}-W{row['week']:02d}\"
+                monday_str = row['monday'].strftime('%d.%m.%Y')
+                summary_data.append([
+                    week_label,
+                    monday_str,
+                    row['events_in_week'],
+                    row['week_unique_total'],
+                    row['week_unique_free'],
+                    row['weekly_growth'],
                 ])
         
         # Записываем данные
