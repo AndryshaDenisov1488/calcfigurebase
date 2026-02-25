@@ -40,19 +40,10 @@ def get_week_key(d: date):
 
 
 def get_monday_of_week(iso_year: int, iso_week: int) -> date:
-    """Грубое вычисление понедельника ISO-недели (для отображения).
-
-    Не претендует на идеальную точность для граничных случаев годов,
-    но для отчёта достаточно.
-    """
-    # Берём 4 января как «опорную» (по ISO это всегда неделя 1)
-    d = date(iso_year, 1, 4)
-    # Смещаем к понедельнику этой недели
-    d = d.replace()  # просто чтобы явно использовать copy
-    while d.weekday() != 0:
-        d = d.replace(day=d.day - 1)
-    # Добавляем (week-1) недель
-    return d.fromordinal(d.toordinal() + (iso_week - 1) * 7)
+    """Возвращает понедельник ISO-недели (надёжно, через fromisocalendar)."""
+    # Python 3.8+: date.fromisocalendar(year, week, weekday)
+    # weekday=1 -> понедельник
+    return date.fromisocalendar(iso_year, iso_week, 1)
 
 
 def collect_weekly_unique_athletes():
