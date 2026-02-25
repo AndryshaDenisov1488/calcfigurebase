@@ -3491,7 +3491,7 @@ def export_to_google_sheets(spreadsheet_id=None):
                 'Прирост к прошлой неделе (накоп.)',
             ])
             for row in weekly_growth:
-                week_label = f\"{row['year']}-W{row['week']:02d}\"
+                week_label = f"{row['year']}-W{row['week']:02d}"
                 monday_str = row['monday'].strftime('%d.%m.%Y')
                 summary_data.append([
                     week_label,
