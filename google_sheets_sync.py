@@ -828,16 +828,28 @@ def get_weekly_unique_athletes_growth():
     # Строим накопительную статистику
     all_weeks = sorted(week_to_all_athletes.keys())
     seen_athletes = set()
+    seen_free_athletes = set()
     result = []
     prev_total = 0
+    prev_free_total = 0
 
     for iso_year, iso_week in all_weeks:
         key = (iso_year, iso_week)
         current_set = week_to_all_athletes[key]
+        current_free_set = week_to_free_athletes.get(key, set())
+
         seen_athletes |= current_set
+        seen_free_athletes |= current_free_set
+
         total_unique = len(seen_athletes)
-        weekly_growth = total_unique - prev_total
+        total_free = len(seen_free_athletes)
+
+        weekly_growth_total = total_unique - prev_total
+        weekly_growth_free = total_free - prev_free_total
+
         prev_total = total_unique
+        prev_free_total = total_free
+
         monday = date.fromisocalendar(iso_year, iso_week, 1)
         result.append(
             {
@@ -845,7 +857,9 @@ def get_weekly_unique_athletes_growth():
                 'week': iso_week,
                 'monday': monday,
                 'total_unique': total_unique,
-                'weekly_growth': weekly_growth,
+                'total_free': total_free,
+                'weekly_growth_total': weekly_growth_total,
+                'weekly_growth_free': weekly_growth_free,
                 'events_in_week': len(week_to_events.get(key, set())),
                 'week_unique_total': len(week_to_all_athletes.get(key, set())),
                 'week_unique_free': len(week_to_free_athletes.get(key, set())),
@@ -2523,11 +2537,36 @@ def export_to_google_sheets(spreadsheet_id=None):
         total_free = general_stats['total_unique_free']
         stats_data5.append(['ИТОГО (без МС/КМС)', total_participants, total_free])
         
-        # Записываем данные
+        # Записываем основную таблицу
         end_row = current_row + len(stats_data5) - 1
         worksheet4.update(f'A{current_row}:C{end_row}', stats_data5)
         
-        # Форматирование пятого листа
+        # Недельная динамика: уникальные и бесплатные (накопительно и прирост)
+        weekly_growth_stats = get_weekly_unique_athletes_growth()
+        if weekly_growth_stats:
+            weekly_start_row = end_row + 2
+            weekly_rows = []
+            weekly_rows.append(['Недельная динамика (без МС/КМС)', '', '', '', ''])
+            weekly_rows.append([
+                'Год-Неделя',
+                'Уникальных всего (накоп.)',
+                'Бесплатных всего (накоп.)',
+                'Прирост уникальных за неделю',
+                'Прирост бесплатных за неделю',
+            ])
+            for row in weekly_growth_stats:
+                week_label = f"{row['year']}-W{row['week']:02d}"
+                weekly_rows.append([
+                    week_label,
+                    row['total_unique'],
+                    row['total_free'],
+                    row['weekly_growth_total'],
+                    row['weekly_growth_free'],
+                ])
+            weekly_end_row = weekly_start_row + len(weekly_rows) - 1
+            worksheet4.update(f'A{weekly_start_row}:E{weekly_end_row}', weekly_rows)
+        
+        # Форматирование пятого листа (основная таблица)
         format_requests5 = []
         
         # Заголовок таблицы
@@ -3488,7 +3527,7 @@ def export_to_google_sheets(spreadsheet_id=None):
                 'Турниров за неделю',
                 'Спортсменов за неделю (уник.)',
                 'Бесплатных за неделю (уник.)',
-                'Прирост к прошлой неделе (накоп.)',
+                'Прирост уникальных к прошлой неделе (накоп.)',
             ])
             for row in weekly_growth:
                 week_label = f"{row['year']}-W{row['week']:02d}"
@@ -3499,7 +3538,7 @@ def export_to_google_sheets(spreadsheet_id=None):
                     row['events_in_week'],
                     row['week_unique_total'],
                     row['week_unique_free'],
-                    row['weekly_growth'],
+                    row['weekly_growth_total'],
                 ])
         
         # Записываем данные
