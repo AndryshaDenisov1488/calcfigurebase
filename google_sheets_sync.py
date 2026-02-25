@@ -2636,7 +2636,7 @@ def export_to_google_sheets(spreadsheet_id=None):
         try:
             worksheet4.format('A:Z', {'wrapStrategy': 'WRAP'})
         except Exception as e:
-            logger.debug(f\"Не удалось применить wrapStrategy на листе 'Общая статистика': {e}\")
+            logger.debug(f"Не удалось применить wrapStrategy на листе 'Общая статистика': {e}")
         
         # Ширина колонок пятого листа
         width_batch_requests5 = [
@@ -3621,7 +3621,7 @@ def export_to_google_sheets(spreadsheet_id=None):
         try:
             worksheet7.format('A:Z', {'wrapStrategy': 'WRAP'})
         except Exception as e:
-            logger.debug(f\"Не удалось применить wrapStrategy на листе 'сводная статистика': {e}\")
+            logger.debug(f"Не удалось применить wrapStrategy на листе 'сводная статистика': {e}")
         
         # Ширина колонок седьмого листа
         width_batch_requests7 = [
