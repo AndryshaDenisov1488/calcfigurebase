@@ -2546,25 +2546,39 @@ def export_to_google_sheets(spreadsheet_id=None):
         if weekly_growth_stats:
             weekly_start_row = end_row + 2
             weekly_rows = []
-            weekly_rows.append(['Недельная динамика (без МС/КМС)', '', '', '', ''])
+            weekly_rows.append(['Недельная динамика (без МС/КМС)', '', '', '', '', ''])
             weekly_rows.append([
                 'Год-Неделя',
                 'Уникальных всего (накоп.)',
                 'Бесплатных всего (накоп.)',
                 'Прирост уникальных за неделю',
                 'Прирост бесплатных за неделю',
+                'Доля бесплатных (накоп., %)',
+            ])
+            # Пояснение по приросту бесплатных: учитываются и новые спортсмены, и те,
+            # кто раньше выступал только платно, но впервые получил бесплатное участие.
+            weekly_rows.append([
+                'Примечание: прирост бесплатных = новые бесплатные + те, кто раньше был только платным,'
+                ' но в эту неделю впервые выступил бесплатно',
+                '',
+                '',
+                '',
+                '',
+                '',
             ])
             for row in weekly_growth_stats:
                 week_label = f"{row['year']}-W{row['week']:02d}"
+                share_free = round((row['total_free'] / row['total_unique'] * 100) if row['total_unique'] > 0 else 0, 1)
                 weekly_rows.append([
                     week_label,
                     row['total_unique'],
                     row['total_free'],
                     row['weekly_growth_total'],
                     row['weekly_growth_free'],
+                    f'{share_free}%',
                 ])
             weekly_end_row = weekly_start_row + len(weekly_rows) - 1
-            worksheet4.update(f'A{weekly_start_row}:E{weekly_end_row}', weekly_rows)
+            worksheet4.update(f'A{weekly_start_row}:F{weekly_end_row}', weekly_rows)
         
         # Форматирование пятого листа (основная таблица)
         format_requests5 = []
@@ -2617,6 +2631,12 @@ def export_to_google_sheets(spreadsheet_id=None):
         
         if format_requests5:
             worksheet4.batch_format(format_requests5)
+        
+        # Включаем перенос по словам на всём листе, чтобы длинные заголовки не обрезались
+        try:
+            worksheet4.format('A:Z', {'wrapStrategy': 'WRAP'})
+        except Exception as e:
+            logger.debug(f\"Не удалось применить wrapStrategy на листе 'Общая статистика': {e}\")
         
         # Ширина колонок пятого листа
         width_batch_requests5 = [
@@ -3596,6 +3616,12 @@ def export_to_google_sheets(spreadsheet_id=None):
         
         if format_requests7:
             worksheet7.batch_format(format_requests7)
+        
+        # Перенос по словам на всём листе «сводная статистика»
+        try:
+            worksheet7.format('A:Z', {'wrapStrategy': 'WRAP'})
+        except Exception as e:
+            logger.debug(f\"Не удалось применить wrapStrategy на листе 'сводная статистика': {e}\")
         
         # Ширина колонок седьмого листа
         width_batch_requests7 = [
