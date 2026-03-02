@@ -218,7 +218,7 @@
                     </thead>
                     <tbody>
                         {% for event in events %}
-                        <tr class="clickable-row" onclick="goToEvent({{ event.id }})" style="cursor: pointer;">
+                        <tr class="clickable-row" onclick="goToEvent('{{ event.id }}')" style="cursor: pointer;">
                             <td>
                                 <strong>{{ event.name }}</strong>
                                 {% if event.long_name and event.long_name != event.name %}
