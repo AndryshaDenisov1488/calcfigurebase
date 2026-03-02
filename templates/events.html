@@ -255,10 +255,17 @@
                             </td>
                             <td>
                                 {% set participants_count = event.participants|length %}
+                                {% set free_count = event.participants
+                                    |selectattr('pct_ppname', 'equalto', 'БЕСП')
+                                    |list
+                                    |length %}
                                 {% if participants_count > 0 %}
-                                    <span class="badge bg-success">{{ participants_count }}</span>
+                                    <span class="badge bg-success me-1">{{ participants_count }}</span>
                                 {% else %}
-                                    <span class="badge bg-secondary">0</span>
+                                    <span class="badge bg-secondary me-1">0</span>
+                                {% endif %}
+                                {% if free_count > 0 %}
+                                    <span class="badge bg-danger">{{ free_count }}</span>
                                 {% endif %}
                             </td>
                             <td onclick="event.stopPropagation()">
