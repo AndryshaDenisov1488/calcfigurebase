@@ -212,7 +212,7 @@
                             <th>Место проведения</th>
                             <th>Дата проведения</th>
                             <th>Категории</th>
-                            <th>Статус</th>
+                            <th>Количество выступивших детей</th>
                             <th>Действия</th>
                         </tr>
                     </thead>
@@ -254,10 +254,11 @@
                                 {% endif %}
                             </td>
                             <td>
-                                {% if event.status == 'A' %}
-                                    <span class="badge bg-success">Активный</span>
+                                {% set participants_count = event.participants|length %}
+                                {% if participants_count > 0 %}
+                                    <span class="badge bg-success">{{ participants_count }}</span>
                                 {% else %}
-                                    <span class="badge bg-secondary">Завершен</span>
+                                    <span class="badge bg-secondary">0</span>
                                 {% endif %}
                             </td>
                             <td onclick="event.stopPropagation()">
