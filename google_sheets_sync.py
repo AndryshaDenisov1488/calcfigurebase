@@ -3494,6 +3494,27 @@ def export_to_google_sheets(spreadsheet_id=None):
                 ])
         
         summary_data.append(['', '', '', '', '', ''])
+
+        # 3.1 Уникальные бесплатные участия по разрядам (проценты от уникальных выступивших)
+        summary_data.append(['УНИКАЛЬНЫЕ БЕСПЛАТНЫЕ УЧАСТИЯ ПО РАЗРЯДАМ', '', '', '', '', ''])
+        summary_data.append(['Разряд', 'Уникальных выступивших', 'Уникальных бесплатных', '% бесплатных (уник.)', '', ''])
+
+        for rank in rank_order:
+            if rank in summary_stats['rank_unique_counts'] and rank not in excluded_ms_kms:
+                counts = summary_stats['rank_unique_counts'][rank]
+                total_unique = counts.get('total', 0) or 0
+                free_unique = counts.get('free', 0) or 0
+                percent = round((free_unique / total_unique * 100) if total_unique > 0 else 0, 1)
+                summary_data.append([
+                    rank,
+                    total_unique,
+                    free_unique,
+                    f'{percent}%',
+                    '',
+                    ''
+                ])
+
+        summary_data.append(['', '', '', '', '', ''])
         
         # 4. Количество бесплатных участий по каждому разряду с процентами тех, кто выступал >1 раза
         summary_data.append(['БЕСПЛАТНЫЕ УЧАСТИЯ ПО РАЗРЯДАМ', '', '', '', '', ''])
