@@ -350,7 +350,7 @@ FREE_PARTICIPATION_EXCLUDED_RANKS = {
 def api_free_participation():
     """API для получения спортсменов с бесплатным участием (без МС и КМС, только 3 юн–1 сп)."""
     try:
-        from services.rank_service import build_rank_groups
+        from services.rank_service import build_rank_groups, get_rank_weight
 
         # Получаем данные о бесплатных участиях только по разрядам без МС/КМС
         free_participants = db.session.query(
@@ -485,6 +485,53 @@ def api_free_participation():
             'total_athletes': len(unique_athlete_ids),
             'total_free_participations': sum(g.get('total_free_participations', 0) for g in ranks_with_data)
         }
+
+        # Сводная статистика по разрядам:
+        # - уникальные участники по разряду (distinct athlete_id)
+        # - уникальные участники с БЕСП по разряду (distinct athlete_id where pct_ppname == 'БЕСП')
+        # - % уникальных бесплатных из уникальных всего
+        rank_sets = {}
+        rows = db.session.query(
+            Category.normalized_name,
+            Category.name,
+            Category.gender,
+            Participant.athlete_id,
+            Participant.pct_ppname
+        ).select_from(Participant).join(
+            Category, Participant.category_id == Category.id
+        ).filter(
+            db.or_(
+                Category.normalized_name.is_(None),
+                Category.normalized_name.notin_(FREE_PARTICIPATION_EXCLUDED_RANKS)
+            )
+        ).all()
+
+        for normalized_name, category_name, category_gender, athlete_id, pct_ppname in rows:
+            if not athlete_id:
+                continue
+            rank = normalized_name or normalize_category_name(category_name, category_gender)
+            if rank in FREE_PARTICIPATION_EXCLUDED_RANKS:
+                continue
+            if rank not in rank_sets:
+                rank_sets[rank] = {'all': set(), 'free': set()}
+            rank_sets[rank]['all'].add(athlete_id)
+            if pct_ppname == 'БЕСП':
+                rank_sets[rank]['free'].add(athlete_id)
+
+        rank_unique_stats = []
+        for rank, sets in rank_sets.items():
+            total_unique = len(sets['all'])
+            free_unique = len(sets['free'])
+            pct = round((free_unique / total_unique) * 100, 1) if total_unique else 0.0
+            rank_unique_stats.append({
+                'rank': rank,
+                'weight': get_rank_weight(rank),
+                'unique_participations': total_unique,
+                'unique_free_participations': free_unique,
+                'unique_free_percent': pct,
+            })
+
+        rank_unique_stats.sort(key=lambda x: (x.get('weight', 0), x.get('rank', '')))
         
         total_athletes = len(athletes_list)
         total_free_participations = sum(a['free_participations'] for a in athletes_list)
@@ -494,7 +541,8 @@ def api_free_participation():
             'total_athletes': total_athletes,
             'total_free_participations': total_free_participations,
             'rank_groups': filtered_rank_groups,
-            'rank_summary': rank_summary
+            'rank_summary': rank_summary,
+            'rank_unique_stats': rank_unique_stats
         })
     except Exception as e:
         logger.error(f"Ошибка в api_free_participation: {e}", exc_info=True)

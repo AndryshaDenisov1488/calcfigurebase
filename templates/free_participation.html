@@ -303,6 +303,19 @@
                         </div>
                     </div>
                     <p id="rankSummaryText" class="text-muted small mb-3"></p>
+                    <div id="rankUniqueStatsContainer" class="table-responsive mb-3 d-none">
+                        <table class="table table-sm table-hover align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Разряд</th>
+                                    <th class="text-end">Уникальных выступивших</th>
+                                    <th class="text-end">Уникальных бесплатных</th>
+                                    <th class="text-end">% бесплатных</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rankUniqueStatsBody"></tbody>
+                        </table>
+                    </div>
                     <div id="rankAccordion" class="accordion"></div>
                 </div>
             </div>
@@ -330,6 +343,7 @@
 const rankExpandedSet = new Set();
 let rankGroupsData = [];
 let rankSummaryData = {};
+let rankUniqueStatsData = [];
 let rankFilters = {};
 let rankFiltersInitialized = false;
 
@@ -469,6 +483,38 @@ function updateRankOverview() {
     const summary = rankSummaryData || {};
     overviewEl.textContent = `Всего разрядов: ${summary.total_ranks ?? 0} · С данными: ${summary.ranks_with_data ?? 0} · ` +
         `Спортсменов: ${summary.total_athletes ?? 0} · Бесплатных стартов: ${summary.total_free_participations ?? 0}`;
+}
+
+function renderRankUniqueStats() {
+    const container = document.getElementById('rankUniqueStatsContainer');
+    const body = document.getElementById('rankUniqueStatsBody');
+    if (!container || !body) {
+        return;
+    }
+
+    const rows = Array.isArray(rankUniqueStatsData) ? rankUniqueStatsData : [];
+    if (!rows.length) {
+        container.classList.add('d-none');
+        body.innerHTML = '';
+        return;
+    }
+
+    container.classList.remove('d-none');
+    body.innerHTML = rows.map(row => {
+        const total = row.unique_participations ?? 0;
+        const free = row.unique_free_participations ?? 0;
+        const pct = row.unique_free_percent ?? 0;
+        return `
+            <tr>
+                <td>${row.rank || ''}</td>
+                <td class="text-end">${total}</td>
+                <td class="text-end">
+                    <span class="badge bg-danger">${free}</span>
+                </td>
+                <td class="text-end">${pct}%</td>
+            </tr>
+        `;
+    }).join('');
 }
 
 function sortRankAthletes(athletes, sortKey) {
@@ -722,7 +768,7 @@ function renderRankAccordion() {
     });
 }
 
-function initRankSection(groups, summary) {
+function initRankSection(groups, summary, uniqueStats) {
     const section = document.getElementById('rankSection');
     if (!section) {
         return;
@@ -730,7 +776,9 @@ function initRankSection(groups, summary) {
 
     rankGroupsData = Array.isArray(groups) ? groups : [];
     rankSummaryData = summary || {};
+    rankUniqueStatsData = Array.isArray(uniqueStats) ? uniqueStats : [];
     updateRankOverview();
+    renderRankUniqueStats();
 
     if (!rankGroupsData.length) {
         section.classList.add('d-none');
@@ -765,7 +813,7 @@ function loadFreeParticipationData() {
         .then(data => {
             updateTopStats(data);
             renderAthletesList(data);
-            initRankSection(data.rank_groups || [], data.rank_summary || {});
+            initRankSection(data.rank_groups || [], data.rank_summary || {}, data.rank_unique_stats || []);
         })
         .catch(error => {
             console.error('Ошибка загрузки данных:', error);
