@@ -373,7 +373,8 @@ def api_free_participation():
         ).join(
             Event, Category.event_id == Event.id
         ).filter(
-            Participant.pct_ppname == 'БЕСП'
+            Participant.pct_ppname == 'БЕСП',
+            db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
         ).filter(
             db.or_(
                 Category.normalized_name.is_(None),
@@ -496,9 +497,12 @@ def api_free_participation():
             Category.name,
             Category.gender,
             Participant.athlete_id,
-            Participant.pct_ppname
+            Participant.pct_ppname,
+            Event.exclude_free_from_reports
         ).select_from(Participant).join(
             Category, Participant.category_id == Category.id
+        ).join(
+            Event, Participant.event_id == Event.id
         ).filter(
             db.or_(
                 Category.normalized_name.is_(None),
@@ -506,7 +510,7 @@ def api_free_participation():
             )
         ).all()
 
-        for normalized_name, category_name, category_gender, athlete_id, pct_ppname in rows:
+        for normalized_name, category_name, category_gender, athlete_id, pct_ppname, exclude_from_reports in rows:
             if not athlete_id:
                 continue
             rank = normalized_name or normalize_category_name(category_name, category_gender)
@@ -515,7 +519,7 @@ def api_free_participation():
             if rank not in rank_sets:
                 rank_sets[rank] = {'all': set(), 'free': set()}
             rank_sets[rank]['all'].add(athlete_id)
-            if pct_ppname == 'БЕСП':
+            if pct_ppname == 'БЕСП' and not bool(exclude_from_reports):
                 rank_sets[rank]['free'].add(athlete_id)
 
         rank_unique_stats = []
@@ -562,13 +566,27 @@ def api_club_free_participation():
             Club.country,
             Club.city,
             db.func.count(db.distinct(Athlete.id)).label('total_athletes'),
-            db.func.count(db.distinct(case((Participant.pct_ppname == 'БЕСП', Athlete.id), else_=None))).label('athletes_with_free_participation'),
+            db.func.count(db.distinct(case((
+                db.and_(
+                    Participant.pct_ppname == 'БЕСП',
+                    db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
+                ),
+                Athlete.id
+            ), else_=None))).label('athletes_with_free_participation'),
             db.func.count(Participant.id).label('total_participations'),
-            db.func.count(case((Participant.pct_ppname == 'БЕСП', 1), else_=None)).label('free_participations')
+            db.func.count(case((
+                db.and_(
+                    Participant.pct_ppname == 'БЕСП',
+                    db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
+                ),
+                1
+            ), else_=None)).label('free_participations')
         ).select_from(Club).outerjoin(
             Athlete, Club.id == Athlete.club_id
         ).outerjoin(
             Participant, Athlete.id == Participant.athlete_id
+        ).outerjoin(
+            Event, Participant.event_id == Event.id
         ).group_by(
             Club.id, Club.name, Club.short_name, Club.country, Club.city
         ).having(
@@ -847,7 +865,8 @@ def api_athletes():
         Participant.status,
         Category.normalized_name,
         Event.begin_date,
-        Event.end_date
+        Event.end_date,
+        Event.exclude_free_from_reports
     ).outerjoin(Category, Participant.category_id == Category.id).outerjoin(
         Event, Category.event_id == Event.id
     ).filter(Participant.athlete_id.in_(athlete_ids)).all()
@@ -875,7 +894,7 @@ def api_athletes():
             athletes_stats[athlete_id]['best_points'] = row.total_points
         
         # Проверяем бесплатное участие
-        if row.pct_ppname == 'БЕСП':
+        if row.pct_ppname == 'БЕСП' and not bool(row.exclude_free_from_reports):
             athletes_stats[athlete_id]['has_free_participation'] = True
         
         # Проверяем статус снятия
@@ -1045,7 +1064,8 @@ def api_free_participation_analysis():
         ).join(
             Event, Category.event_id == Event.id
         ).filter(
-            Participant.pct_ppname == 'БЕСП'
+            Participant.pct_ppname == 'БЕСП',
+            db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
         )
         if season_filter:
             if season_filter == 'current':

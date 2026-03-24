@@ -8,7 +8,7 @@ import re
 from flask import Blueprint, render_template, request, send_file, url_for
 from sqlalchemy import func
 from extensions import db
-from models import Athlete, Participant
+from models import Athlete, Participant, Event
 
 analytics_bp = Blueprint('analytics', __name__)
 
@@ -122,7 +122,11 @@ def _get_participation_counts():
     """Возвращает (total_by_athlete, free_by_athlete) — словари athlete_id -> count."""
     free_counts = (
         db.session.query(Participant.athlete_id, func.count(Participant.id).label('cnt'))
-        .filter(Participant.pct_ppname == 'БЕСП')
+        .join(Event, Participant.event_id == Event.id)
+        .filter(
+            Participant.pct_ppname == 'БЕСП',
+            db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
+        )
         .group_by(Participant.athlete_id)
     )
     free_by_athlete = {row.athlete_id: row.cnt for row in free_counts}

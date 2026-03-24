@@ -166,6 +166,18 @@
                                         </small>
                                     </div>
 
+                                    <div class="mb-3">
+                                        {% if event_data.event.exclude_free_from_reports %}
+                                            <span class="badge bg-danger">
+                                                <i class="fas fa-eye-slash"></i> БЕСП исключен из отчетов
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-success">
+                                                <i class="fas fa-chart-line"></i> БЕСП учитывается в отчетах
+                                            </span>
+                                        {% endif %}
+                                    </div>
+
                                     <div class="row text-center mb-3">
                                         <div class="col-4">
                                             <div class="border rounded p-2">
@@ -176,13 +188,13 @@
                                         <div class="col-4">
                                             <div class="border rounded p-2">
                                                 <div class="fw-bold text-success">{{ event_data.free_participants }}</div>
-                                                <small class="text-muted">Бесплатно</small>
+                                                <small class="text-muted">БЕСП (сырое)</small>
                                             </div>
                                         </div>
                                         <div class="col-4">
                                             <div class="border rounded p-2">
-                                                <div class="fw-bold text-warning">{{ event_data.paid_participants }}</div>
-                                                <small class="text-muted">Платно</small>
+                                                <div class="fw-bold text-info">{{ event_data.effective_free_participants }}</div>
+                                                <small class="text-muted">БЕСП (в отчетах)</small>
                                             </div>
                                         </div>
                                     </div>
@@ -210,6 +222,21 @@
                                                     </button>
                                                 </form>
                                             {% endif %}
+
+                                            <form method="POST" class="d-inline">
+                                                <input type="hidden" name="action" value="toggle_report_exclusion">
+                                                <input type="hidden" name="event_id" value="{{ event_data.event.id }}">
+                                                <input type="hidden" name="exclude_from_reports" value="{{ '0' if event_data.event.exclude_free_from_reports else '1' }}">
+                                                {% if event_data.event.exclude_free_from_reports %}
+                                                    <button type="submit" class="btn btn-outline-success btn-sm w-100">
+                                                        <i class="fas fa-check-circle"></i> Включить БЕСП в отчеты
+                                                    </button>
+                                                {% else %}
+                                                    <button type="submit" class="btn btn-outline-danger btn-sm w-100">
+                                                        <i class="fas fa-eye-slash"></i> Исключить БЕСП из отчетов
+                                                    </button>
+                                                {% endif %}
+                                            </form>
                                         </div>
                                     {% else %}
                                         <div class="text-center text-muted">

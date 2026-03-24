@@ -729,6 +729,35 @@ def admin_free_participation():
                 db.session.rollback()
                 flash(f'Ошибка при обновлении данных: {str(e)}', 'error')
                 logger.error(f'Error removing free participation: {str(e)}')
+
+        elif action == 'toggle_report_exclusion':
+            # Переключаем флаг исключения бесплатных участий из отчётов для турнира
+            event = Event.query.get(event_id)
+            if not event:
+                flash('Турнир не найден', 'error')
+                return redirect(url_for('admin.admin_free_participation'))
+
+            requested_value = (request.form.get('exclude_from_reports') or '').strip().lower()
+            new_value = requested_value in ('1', 'true', 'yes', 'on')
+            event.exclude_free_from_reports = new_value
+
+            try:
+                db.session.commit()
+                if new_value:
+                    flash(
+                        f'Турнир "{event.name}" исключен из БЕСП-отчетов. '
+                        f'Исходные метки БЕСП сохранены в базе.',
+                        'warning'
+                    )
+                else:
+                    flash(
+                        f'Турнир "{event.name}" снова учитывается в БЕСП-отчетах.',
+                        'success'
+                    )
+            except Exception as e:
+                db.session.rollback()
+                flash(f'Ошибка при обновлении флага отчета: {str(e)}', 'error')
+                logger.error(f'Error toggling report exclusion for event {event_id}: {str(e)}')
         
         return redirect(url_for('admin.admin_free_participation'))
     
@@ -740,11 +769,13 @@ def admin_free_participation():
     for event in events:
         total_participants = Participant.query.filter_by(event_id=event.id).count()
         free_participants = Participant.query.filter_by(event_id=event.id, pct_ppname='БЕСП').count()
+        effective_free_participants = 0 if event.exclude_free_from_reports else free_participants
         
         events_data.append({
             'event': event,
             'total_participants': total_participants,
             'free_participants': free_participants,
+            'effective_free_participants': effective_free_participants,
             'paid_participants': total_participants - free_participants
         })
     

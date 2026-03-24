@@ -22,6 +22,7 @@ class Event(db.Model):
     event_type = db.Column(db.String(50), index=True)
     competition_type = db.Column(db.String(50))
     status = db.Column(db.String(20), index=True)
+    exclude_free_from_reports = db.Column(db.Boolean, default=False, nullable=False, index=True)
     calculation_time = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     

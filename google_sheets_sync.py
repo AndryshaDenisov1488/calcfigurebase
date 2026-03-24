@@ -10,9 +10,14 @@ from datetime import datetime, date
 import logging
 import time
 from app import app, db
-from models import Athlete, Club, Category, Participant
+from models import Athlete, Club, Category, Participant, Event
 
 logger = logging.getLogger(__name__)
+
+
+def _is_free_for_reports(pct_ppname, exclude_free_from_reports=False):
+    """Эффективная бесплатность для отчетов: БЕСП и турнир не исключен."""
+    return (pct_ppname == 'БЕСП') and (not bool(exclude_free_from_reports))
 
 # Настройки Google Sheets API
 SCOPES = [
@@ -122,7 +127,8 @@ def get_athletes_data():
             Category.normalized_name.label('rank'),
             Event.name.label('event_name'),
             Event.begin_date.label('event_date'),
-            Participant.pct_ppname.label('is_free')  # Отслеживаем бесплатные
+            Participant.pct_ppname.label('is_free'),
+            Event.exclude_free_from_reports.label('exclude_free_from_reports')
         ).outerjoin(
             Club, Athlete.club_id == Club.id
         ).outerjoin(
@@ -172,7 +178,7 @@ def get_athletes_data():
                     event_str += f" ({row.event_date.strftime('%d.%m.%Y')})"
                 
                 # Помечаем бесплатные турниры текстом [БЕСПЛАТНО] вместо эмодзи
-                is_free = row.is_free == 'БЕСП'
+                is_free = _is_free_for_reports(row.is_free, row.exclude_free_from_reports)
                 if is_free:
                     event_str = f"[БЕСПЛАТНО] {event_str}"
                     athletes_dict[athlete_id]['free_events'].add(row.event_name)
@@ -198,9 +204,12 @@ def get_athletes_data():
             # Бесплатных участий (без МС и КМС)
             free_participations = db.session.query(Participant).join(
                 Category, Participant.category_id == Category.id
+            ).join(
+                Event, Participant.event_id == Event.id
             ).filter(
                 Participant.athlete_id == athlete_id,
                 Participant.pct_ppname == 'БЕСП',
+                db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
                 db.or_(
                     Category.normalized_name.is_(None),
                     Category.normalized_name.notin_(excluded_ranks)
@@ -271,7 +280,8 @@ def get_schools_analysis_data():
             Category.normalized_name.label('rank'),
             Event.name.label('event_name'),
             Event.begin_date.label('event_date'),
-            Participant.pct_ppname.label('is_free')  # Отслеживаем бесплатные
+            Participant.pct_ppname.label('is_free'),
+            Event.exclude_free_from_reports.label('exclude_free_from_reports')
         ).outerjoin(
             Athlete, Club.id == Athlete.club_id
         ).outerjoin(
@@ -322,7 +332,7 @@ def get_schools_analysis_data():
                     event_str += f" ({row.event_date.strftime('%d.%m.%Y')})"
                 
                 # Помечаем бесплатные турниры текстом [БЕСПЛАТНО] вместо эмодзи
-                is_free = row.is_free == 'БЕСП'
+                is_free = _is_free_for_reports(row.is_free, row.exclude_free_from_reports)
                 if is_free:
                     event_str = f"[БЕСПЛАТНО] {event_str}"
                     schools_dict[club_id]['athletes'][athlete_id]['free_events'].add(row.event_name)
@@ -353,6 +363,10 @@ def get_schools_analysis_data():
                 free_participations = Participant.query.filter(
                     Participant.athlete_id.in_(athlete_ids),
                     Participant.pct_ppname == 'БЕСП'
+                ).join(
+                    Event, Participant.event_id == Event.id
+                ).filter(
+                    db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
                 ).count()
                 schools_dict[club_id]['free_participations'] = free_participations
                 
@@ -367,8 +381,12 @@ def get_schools_analysis_data():
                     
                     # Бесплатных участий спортсмена
                     athlete_free = Participant.query.filter_by(
-                        athlete_id=athlete_id,
-                        pct_ppname='БЕСП'
+                        athlete_id=athlete_id
+                    ).join(
+                        Event, Participant.event_id == Event.id
+                    ).filter(
+                        Participant.pct_ppname == 'БЕСП',
+                        db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
                     ).count()
                     schools_dict[club_id]['athletes'][athlete_id]['free_participations'] = athlete_free
                     
@@ -415,9 +433,12 @@ def get_general_statistics_data():
         participants_query = db.session.query(
             Participant.athlete_id,
             Participant.pct_ppname,
+            Event.exclude_free_from_reports,
             Category.normalized_name.label('rank')
         ).join(
             Category, Participant.category_id == Category.id
+        ).join(
+            Event, Participant.event_id == Event.id
         ).filter(
             db.or_(
                 Category.normalized_name.is_(None),
@@ -444,7 +465,7 @@ def get_general_statistics_data():
         for row in participants_query:
             athlete_id = row.athlete_id
             rank_name = (row.rank or 'Без разряда').strip()
-            is_free = row.pct_ppname == 'БЕСП'
+            is_free = _is_free_for_reports(row.pct_ppname, row.exclude_free_from_reports)
             
             # Добавляем в общее множество уникальных спортсменов
             all_unique_athletes.add(athlete_id)
@@ -516,9 +537,12 @@ def get_participations_statistics_data():
         participants_query = db.session.query(
             Participant.id,
             Participant.pct_ppname,
+            Event.exclude_free_from_reports,
             Category.normalized_name.label('rank')
         ).join(
             Category, Participant.category_id == Category.id
+        ).join(
+            Event, Participant.event_id == Event.id
         ).filter(
             db.or_(
                 Category.normalized_name.is_(None),
@@ -540,7 +564,7 @@ def get_participations_statistics_data():
         
         for row in participants_query:
             rank_name = (row.rank or 'Без разряда').strip()
-            is_free = row.pct_ppname == 'БЕСП'
+            is_free = _is_free_for_reports(row.pct_ppname, row.exclude_free_from_reports)
             
             # Определяем тип участия по названию разряда (как в листах 4/7)
             rank_lower = rank_name.lower()
@@ -616,9 +640,12 @@ def get_summary_statistics_data():
             Participant.id,
             Participant.athlete_id,
             Participant.pct_ppname,
+            Event.exclude_free_from_reports,
             Category.normalized_name.label('rank')
         ).join(
             Category, Participant.category_id == Category.id
+        ).join(
+            Event, Participant.event_id == Event.id
         ).filter(
             db.or_(
                 Category.normalized_name.is_(None),
@@ -628,7 +655,9 @@ def get_summary_statistics_data():
         
         # 1. Общее количество участий (не уникальных) - как лист 5
         total_participations = len(participants_query)
-        total_free_participations = sum(1 for row in participants_query if row.pct_ppname == 'БЕСП')
+        total_free_participations = sum(
+            1 for row in participants_query if _is_free_for_reports(row.pct_ppname, row.exclude_free_from_reports)
+        )
         total_paid_participations = total_participations - total_free_participations
         
         # 2. Общее количество уникальных участий - как лист 4
@@ -638,7 +667,7 @@ def get_summary_statistics_data():
         
         for row in participants_query:
             athlete_id = row.athlete_id
-            is_free = row.pct_ppname == 'БЕСП'
+            is_free = _is_free_for_reports(row.pct_ppname, row.exclude_free_from_reports)
             unique_athletes.add(athlete_id)
             if is_free:
                 unique_free_athletes.add(athlete_id)
@@ -657,7 +686,7 @@ def get_summary_statistics_data():
         for row in participants_query:
             rank_name = (row.rank or 'Без разряда').strip()
             athlete_id = row.athlete_id
-            is_free = row.pct_ppname == 'БЕСП'
+            is_free = _is_free_for_reports(row.pct_ppname, row.exclude_free_from_reports)
             
             if rank_name not in rank_athlete_participations:
                 rank_athlete_participations[rank_name] = {}
@@ -715,7 +744,7 @@ def get_summary_statistics_data():
         for row in participants_query:
             rank_name = (row.rank or 'Без разряда').strip()
             athlete_id = row.athlete_id
-            is_free = row.pct_ppname == 'БЕСП'
+            is_free = _is_free_for_reports(row.pct_ppname, row.exclude_free_from_reports)
             
             key = (athlete_id, rank_name)
             
@@ -797,6 +826,7 @@ def get_weekly_unique_athletes_growth():
             db.session.query(
                 Participant.athlete_id,
                 Participant.pct_ppname,
+                Event.exclude_free_from_reports,
                 Event.id.label('event_id'),
                 Event.begin_date.label('event_date'),
                 Category.normalized_name.label('rank'),
@@ -821,7 +851,7 @@ def get_weekly_unique_athletes_growth():
         iso_year, iso_week, _ = d.isocalendar()
         key = (iso_year, iso_week)
         week_to_all_athletes[key].add(row.athlete_id)
-        if row.pct_ppname == 'БЕСП':
+        if _is_free_for_reports(row.pct_ppname, row.exclude_free_from_reports):
             week_to_free_athletes[key].add(row.athlete_id)
         week_to_events[key].add(row.event_id)
 
@@ -915,9 +945,12 @@ def get_events_first_timers_report_data(rank_contains: str | None = None, free_o
         participants_query = db.session.query(
             Participant.athlete_id,
             Participant.pct_ppname,
+            Event.exclude_free_from_reports,
             Category.normalized_name.label('rank')
         ).join(
             Category, Participant.category_id == Category.id
+        ).join(
+            Event, Participant.event_id == Event.id
         ).filter(
             db.or_(
                 Category.normalized_name.is_(None),
@@ -942,11 +975,14 @@ def get_events_first_timers_report_data(rank_contains: str | None = None, free_o
         participants_query_detailed = db.session.query(
             Participant.athlete_id,
             Participant.pct_ppname,
+            Event.exclude_free_from_reports,
             Category.normalized_name.label('rank'),
             Participant.id.label('participant_id'),
             Participant.event_id
         ).join(
             Category, Participant.category_id == Category.id
+        ).join(
+            Event, Participant.event_id == Event.id
         ).filter(
             db.or_(
                 Category.normalized_name.is_(None),
@@ -975,7 +1011,10 @@ def get_events_first_timers_report_data(rank_contains: str | None = None, free_o
 
         # Режим «только бесплатные»: оставляем только участия с БЕСП, итоги считаем по ним
         if free_only:
-            participants_sorted = [r for r in participants_sorted if (getattr(r, 'pct_ppname', None) or '').strip().upper() == 'БЕСП']
+            participants_sorted = [
+                r for r in participants_sorted
+                if _is_free_for_reports(getattr(r, 'pct_ppname', None), getattr(r, 'exclude_free_from_reports', False))
+            ]
             unique_athletes = set(r.athlete_id for r in participants_sorted)
         
         # Все выступления по (athlete_id, rank): [(event_id, event_date), ...] в хронологическом порядке — для детализации «все предыдущие» и «очередной раз»
@@ -1047,7 +1086,7 @@ def get_events_first_timers_report_data(rank_contains: str | None = None, free_o
                 })
                 appearances_by_athlete_rank[key] = previous_list + [(event_id, event_date)]
             
-            if row.pct_ppname == 'БЕСП':
+            if _is_free_for_reports(row.pct_ppname, row.exclude_free_from_reports):
                 event_entry['free_participations_count'] += 1
                 rank_entry['free_participations_count'] += 1
         
@@ -1211,6 +1250,7 @@ def get_free_participation_exceedance_data():
             Event, Category.event_id == Event.id
         ).filter(
             Participant.pct_ppname == 'БЕСП',
+            db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
             db.or_(
                 Category.normalized_name.is_(None),
                 Category.normalized_name.notin_(FREE_PARTICIPATION_EXCLUDED_RANKS)
