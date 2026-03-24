@@ -786,7 +786,7 @@ def get_summary_statistics_data():
 
 
 def get_weekly_unique_athletes_growth():
-    """Возвращает список по неделям: рост уникальных спортсменов и недельную статистику (без МС/КМС).
+    """Возвращает список по неделям: рост уникальных спортсменов и недельную статистику (по всей БД).
 
     Формат элементов списка:
         {
@@ -800,18 +800,6 @@ def get_weekly_unique_athletes_growth():
             'week_unique_free': int,      # из них хотя бы одно участие БЕСП за эту неделю
         }
     """
-    # Разряды, которые нужно исключить из отчёта (МС и КМС)
-    excluded_ranks = {
-        'МС, Женщины',
-        'МС, Мужчины',
-        'МС, Пары',
-        'МС, Танцы',
-        'КМС, Девушки',
-        'КМС, Юноши',
-        'КМС, Пары',
-        'КМС, Танцы',
-    }
-
     from collections import defaultdict as _dd
 
     # (year, week) -> множества по неделе
@@ -829,16 +817,10 @@ def get_weekly_unique_athletes_growth():
                 Event.exclude_free_from_reports,
                 Event.id.label('event_id'),
                 Event.begin_date.label('event_date'),
-                Category.normalized_name.label('rank'),
             )
-            .join(Category, Participant.category_id == Category.id)
             .join(Event, Participant.event_id == Event.id)
             .filter(
                 Event.begin_date.isnot(None),
-                db.or_(
-                    Category.normalized_name.is_(None),
-                    Category.normalized_name.notin_(excluded_ranks),
-                ),
             )
             .all()
         )
@@ -3608,7 +3590,7 @@ def export_to_google_sheets(spreadsheet_id=None):
                 'Турниров за неделю',
                 'Спортсменов за неделю (уник.)',
                 'Бесплатных за неделю (уник.)',
-                'Прирост уникальных к прошлой неделе (накоп.)',
+                'Новых уникальных в БД за неделю',
             ])
             for row in weekly_growth:
                 week_label = f"{row['year']}-W{row['week']:02d}"
