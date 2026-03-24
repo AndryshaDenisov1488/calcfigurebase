@@ -344,13 +344,14 @@ def event_detail(event_id):
         
         for p, a, c in participants:
             total_participants += 1
-            if p.pct_ppname == 'БЕСП':
+            is_effective_free = (p.pct_ppname == 'БЕСП') and (not bool(getattr(event, 'exclude_free_from_reports', False)))
+            if is_effective_free:
                 free_participations += 1
             
             participants_data.append({
                 'place': p.total_place,
                 'points': p.total_points,
-                'free': p.pct_ppname == 'БЕСП',
+                'free': is_effective_free,
                 'status': p.status or None,
                 'athlete': {
                     'id': a.id,

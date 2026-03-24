@@ -56,7 +56,13 @@
                                     {% set athletes_with_free = [] %}
                                     {% for athlete_data in athletes_data %}
                                         {% set participations = athlete_data.participations %}
-                                        {% if participations|selectattr('participant.pct_ppname', 'equalto', 'БЕСП')|list|length > 0 %}
+                                        {% set ns = namespace(has_free=false) %}
+                                        {% for p in participations %}
+                                            {% if p.participant.pct_ppname == 'БЕСП' and not p.event.exclude_free_from_reports %}
+                                                {% set ns.has_free = true %}
+                                            {% endif %}
+                                        {% endfor %}
+                                        {% if ns.has_free %}
                                             {% set _ = athletes_with_free.append(1) %}
                                         {% endif %}
                                     {% endfor %}
@@ -106,7 +112,13 @@
                                 {% set participations = athlete_data.participations %}
                                 {% set best_place = participations|selectattr('participant.total_place')|map(attribute='participant.total_place')|min %}
                                 {% set best_score = participations|selectattr('participant.total_points')|map(attribute='participant.total_points')|max %}
-                                {% set has_free_participation = participations|selectattr('participant.pct_ppname', 'equalto', 'БЕСП')|list|length > 0 %}
+                                {% set ns = namespace(has_free_participation=false) %}
+                                {% for p in participations %}
+                                    {% if p.participant.pct_ppname == 'БЕСП' and not p.event.exclude_free_from_reports %}
+                                        {% set ns.has_free_participation = true %}
+                                    {% endif %}
+                                {% endfor %}
+                                {% set has_free_participation = ns.has_free_participation %}
                                 {% set has_withdrawn = participations|selectattr('participant.status', 'equalto', 'R')|list|length > 0 %}
                                 {% set has_withdrawn_w = participations|selectattr('participant.status', 'equalto', 'W')|list|length > 0 %}
                                 <tr class="{{ 'table-success' if has_free_participation else '' }}">
@@ -193,7 +205,7 @@
                             {% for athlete_data in athletes_data %}
                             {% set athlete = athlete_data.athlete %}
                             {% for participation in athlete_data.participations %}
-                            {% set is_free_participation = participation.participant.pct_ppname == 'БЕСП' %}
+                            {% set is_free_participation = participation.participant.pct_ppname == 'БЕСП' and not participation.event.exclude_free_from_reports %}
                             <tr class="{{ 'table-success' if is_free_participation else '' }}">
                                 <td>
                                     <a href="{{ url_for('public.athlete_detail', athlete_id=athlete.id) }}" class="text-decoration-none">

@@ -255,10 +255,14 @@
                             </td>
                             <td>
                                 {% set participants_count = event.participants|length %}
-                                {% set free_count = event.participants
-                                    |selectattr('pct_ppname', 'equalto', 'БЕСП')
-                                    |list
-                                    |length %}
+                                {% if event.exclude_free_from_reports %}
+                                    {% set free_count = 0 %}
+                                {% else %}
+                                    {% set free_count = event.participants
+                                        |selectattr('pct_ppname', 'equalto', 'БЕСП')
+                                        |list
+                                        |length %}
+                                {% endif %}
                                 {% if participants_count > 0 %}
                                     <span class="badge bg-success me-1">{{ participants_count }}</span>
                                 {% else %}

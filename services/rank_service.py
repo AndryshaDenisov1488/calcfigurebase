@@ -221,8 +221,22 @@ def build_rank_groups(event_id=None):
         db.func.min(Participant.total_place).label('best_place'),
         db.func.max(Participant.total_points).label('best_points'),
         db.func.max(Event.begin_date).label('last_event_date'),
-        db.func.sum(db.case((Participant.pct_ppname == 'БЕСП', 1), else_=0)).label('free_participations'),
-        db.func.max(db.case((Participant.pct_ppname == 'БЕСП', 1), else_=0)).label('has_free_participation')
+        db.func.sum(
+            db.case((
+                db.and_(
+                    Participant.pct_ppname == 'БЕСП',
+                    db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
+                ), 1
+            ), else_=0)
+        ).label('free_participations'),
+        db.func.max(
+            db.case((
+                db.and_(
+                    Participant.pct_ppname == 'БЕСП',
+                    db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
+                ), 1
+            ), else_=0)
+        ).label('has_free_participation')
     ).join(Participant, Athlete.id == Participant.athlete_id).join(
         Category, Participant.category_id == Category.id
     ).join(Event, Category.event_id == Event.id)

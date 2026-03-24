@@ -895,7 +895,7 @@
                             </thead>
                             <tbody>
                                 {% for event, category, participant in participations %}
-                                <tr data-participant-id="{{ participant.id }}" {% if participant.pct_ppname == 'БЕСП' %}class="table-success"{% elif participant.status == 'R' or participant.status == 'W' %}class="table-warning"{% endif %}>
+                                <tr data-participant-id="{{ participant.id }}" {% if participant.pct_ppname == 'БЕСП' and not event.exclude_free_from_reports %}class="table-success"{% elif participant.status == 'R' or participant.status == 'W' %}class="table-warning"{% endif %}>
                                     <td>
                                         <button class="btn btn-sm btn-outline-primary show-printout-modal" 
                                                 data-participant-id="{{ participant.id }}"
@@ -908,7 +908,7 @@
                                         {% if event.place %}
                                             <br><small class="text-muted">{{ event.place }}</small>
                                         {% endif %}
-                                        {% if participant.pct_ppname == 'БЕСП' %}
+                                        {% if participant.pct_ppname == 'БЕСП' and not event.exclude_free_from_reports %}
                                             <br><small class="badge bg-success"><i class="fas fa-gift"></i> Бесплатное участие</small>
                                         {% endif %}
                                         {% if participant.status == 'R' or participant.status == 'W' %}
