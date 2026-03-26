@@ -176,6 +176,7 @@ def _get_participation_counts():
         .join(Event, Participant.event_id == Event.id)
         .filter(
             Participant.pct_ppname == 'БЕСП',
+            db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
             db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
         )
         .group_by(Participant.athlete_id)

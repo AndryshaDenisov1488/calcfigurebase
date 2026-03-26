@@ -260,6 +260,7 @@
                                 {% else %}
                                     {% set free_count = event.participants
                                         |selectattr('pct_ppname', 'equalto', 'БЕСП')
+                    |rejectattr('exclude_free_from_reports')
                                         |list
                                         |length %}
                                 {% endif %}

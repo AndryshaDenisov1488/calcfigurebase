@@ -15,9 +15,13 @@ from models import Athlete, Club, Category, Participant, Event
 logger = logging.getLogger(__name__)
 
 
-def _is_free_for_reports(pct_ppname, exclude_free_from_reports=False):
+def _is_free_for_reports(pct_ppname, exclude_free_from_reports=False, participant_exclude_free_from_reports=False):
     """Эффективная бесплатность для отчетов: БЕСП и турнир не исключен."""
-    return (pct_ppname == 'БЕСП') and (not bool(exclude_free_from_reports))
+    return (
+        (pct_ppname == 'БЕСП')
+        and (not bool(exclude_free_from_reports))
+        and (not bool(participant_exclude_free_from_reports))
+    )
 
 # Настройки Google Sheets API
 SCOPES = [
@@ -209,6 +213,7 @@ def get_athletes_data():
             ).filter(
                 Participant.athlete_id == athlete_id,
                 Participant.pct_ppname == 'БЕСП',
+                db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
                 db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
                 db.or_(
                     Category.normalized_name.is_(None),
@@ -281,7 +286,8 @@ def get_schools_analysis_data():
             Event.name.label('event_name'),
             Event.begin_date.label('event_date'),
             Participant.pct_ppname.label('is_free'),
-            Event.exclude_free_from_reports.label('exclude_free_from_reports')
+            Event.exclude_free_from_reports.label('exclude_free_from_reports'),
+            Participant.exclude_free_from_reports.label('participant_exclude_free_from_reports')
         ).outerjoin(
             Athlete, Club.id == Athlete.club_id
         ).outerjoin(
@@ -332,7 +338,11 @@ def get_schools_analysis_data():
                     event_str += f" ({row.event_date.strftime('%d.%m.%Y')})"
                 
                 # Помечаем бесплатные турниры текстом [БЕСПЛАТНО] вместо эмодзи
-                is_free = _is_free_for_reports(row.is_free, row.exclude_free_from_reports)
+                is_free = _is_free_for_reports(
+                    row.is_free,
+                    row.exclude_free_from_reports,
+                    getattr(row, 'participant_exclude_free_from_reports', False)
+                )
                 if is_free:
                     event_str = f"[БЕСПЛАТНО] {event_str}"
                     schools_dict[club_id]['athletes'][athlete_id]['free_events'].add(row.event_name)
@@ -362,7 +372,8 @@ def get_schools_analysis_data():
                 # Бесплатных участий
                 free_participations = Participant.query.filter(
                     Participant.athlete_id.in_(athlete_ids),
-                    Participant.pct_ppname == 'БЕСП'
+                    Participant.pct_ppname == 'БЕСП',
+                    db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None))
                 ).join(
                     Event, Participant.event_id == Event.id
                 ).filter(
@@ -386,6 +397,7 @@ def get_schools_analysis_data():
                         Event, Participant.event_id == Event.id
                     ).filter(
                         Participant.pct_ppname == 'БЕСП',
+                        db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
                         db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
                     ).count()
                     schools_dict[club_id]['athletes'][athlete_id]['free_participations'] = athlete_free
@@ -1232,6 +1244,7 @@ def get_free_participation_exceedance_data():
             Event, Category.event_id == Event.id
         ).filter(
             Participant.pct_ppname == 'БЕСП',
+            db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
             db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
             db.or_(
                 Category.normalized_name.is_(None),

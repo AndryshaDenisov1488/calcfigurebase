@@ -374,6 +374,7 @@ def api_free_participation():
             Event, Category.event_id == Event.id
         ).filter(
             Participant.pct_ppname == 'БЕСП',
+            db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
             db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
         ).filter(
             db.or_(
@@ -498,7 +499,8 @@ def api_free_participation():
             Category.gender,
             Participant.athlete_id,
             Participant.pct_ppname,
-            Event.exclude_free_from_reports
+            Event.exclude_free_from_reports,
+            Participant.exclude_free_from_reports
         ).select_from(Participant).join(
             Category, Participant.category_id == Category.id
         ).join(
@@ -510,7 +512,7 @@ def api_free_participation():
             )
         ).all()
 
-        for normalized_name, category_name, category_gender, athlete_id, pct_ppname, exclude_from_reports in rows:
+        for normalized_name, category_name, category_gender, athlete_id, pct_ppname, exclude_from_reports, participant_exclude_from_reports in rows:
             if not athlete_id:
                 continue
             rank = normalized_name or normalize_category_name(category_name, category_gender)
@@ -519,7 +521,7 @@ def api_free_participation():
             if rank not in rank_sets:
                 rank_sets[rank] = {'all': set(), 'free': set()}
             rank_sets[rank]['all'].add(athlete_id)
-            if pct_ppname == 'БЕСП' and not bool(exclude_from_reports):
+            if pct_ppname == 'БЕСП' and not bool(exclude_from_reports) and not bool(participant_exclude_from_reports):
                 rank_sets[rank]['free'].add(athlete_id)
 
         rank_unique_stats = []
@@ -569,6 +571,7 @@ def api_club_free_participation():
             db.func.count(db.distinct(case((
                 db.and_(
                     Participant.pct_ppname == 'БЕСП',
+                    db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
                     db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
                 ),
                 Athlete.id
@@ -577,6 +580,7 @@ def api_club_free_participation():
             db.func.count(case((
                 db.and_(
                     Participant.pct_ppname == 'БЕСП',
+                    db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
                     db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
                 ),
                 1
@@ -863,10 +867,11 @@ def api_athletes():
         Participant.total_points,
         Participant.pct_ppname,
         Participant.status,
+        Participant.exclude_free_from_reports.label('participant_exclude_free_from_reports'),
         Category.normalized_name,
         Event.begin_date,
         Event.end_date,
-        Event.exclude_free_from_reports
+        Event.exclude_free_from_reports.label('event_exclude_free_from_reports')
     ).outerjoin(Category, Participant.category_id == Category.id).outerjoin(
         Event, Category.event_id == Event.id
     ).filter(Participant.athlete_id.in_(athlete_ids)).all()
@@ -894,7 +899,11 @@ def api_athletes():
             athletes_stats[athlete_id]['best_points'] = row.total_points
         
         # Проверяем бесплатное участие
-        if row.pct_ppname == 'БЕСП' and not bool(row.exclude_free_from_reports):
+        if (
+            row.pct_ppname == 'БЕСП'
+            and not bool(row.event_exclude_free_from_reports)
+            and not bool(row.participant_exclude_free_from_reports)
+        ):
             athletes_stats[athlete_id]['has_free_participation'] = True
         
         # Проверяем статус снятия
@@ -1065,6 +1074,7 @@ def api_free_participation_analysis():
             Event, Category.event_id == Event.id
         ).filter(
             Participant.pct_ppname == 'БЕСП',
+            db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
             db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
         )
         if season_filter:

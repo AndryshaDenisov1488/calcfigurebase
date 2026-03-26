@@ -344,7 +344,11 @@ def event_detail(event_id):
         
         for p, a, c in participants:
             total_participants += 1
-            is_effective_free = (p.pct_ppname == 'БЕСП') and (not bool(getattr(event, 'exclude_free_from_reports', False)))
+            is_effective_free = (
+                (p.pct_ppname == 'БЕСП')
+                and (not bool(getattr(event, 'exclude_free_from_reports', False)))
+                and (not bool(getattr(p, 'exclude_free_from_reports', False)))
+            )
             if is_effective_free:
                 free_participations += 1
             

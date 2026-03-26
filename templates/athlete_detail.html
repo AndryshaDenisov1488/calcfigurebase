@@ -895,7 +895,7 @@
                             </thead>
                             <tbody>
                                 {% for event, category, participant in participations %}
-                                <tr data-participant-id="{{ participant.id }}" {% if participant.pct_ppname == 'БЕСП' and not event.exclude_free_from_reports %}class="table-success"{% elif participant.status == 'R' or participant.status == 'W' %}class="table-warning"{% endif %}>
+                                <tr data-participant-id="{{ participant.id }}" {% if participant.pct_ppname == 'БЕСП' and not event.exclude_free_from_reports and not participant.exclude_free_from_reports %}class="table-success"{% elif participant.status == 'R' or participant.status == 'W' %}class="table-warning"{% endif %}>
                                     <td>
                                         <button class="btn btn-sm btn-outline-primary show-printout-modal" 
                                                 data-participant-id="{{ participant.id }}"
@@ -908,8 +908,24 @@
                                         {% if event.place %}
                                             <br><small class="text-muted">{{ event.place }}</small>
                                         {% endif %}
-                                        {% if participant.pct_ppname == 'БЕСП' and not event.exclude_free_from_reports %}
+                                        {% if participant.pct_ppname == 'БЕСП' and not event.exclude_free_from_reports and not participant.exclude_free_from_reports %}
                                             <br><small class="badge bg-success"><i class="fas fa-gift"></i> Бесплатное участие</small>
+                                        {% elif participant.pct_ppname == 'БЕСП' and participant.exclude_free_from_reports %}
+                                            <br><small class="badge bg-secondary"><i class="fas fa-eye-slash"></i> БЕСП исключен из отчетов</small>
+                                        {% endif %}
+                                        {% if session.admin_logged_in and participant.pct_ppname == 'БЕСП' %}
+                                            <form method="POST" action="{{ url_for('admin.participant_free_report_toggle') }}" class="mt-1">
+                                                <input type="hidden" name="participant_id" value="{{ participant.id }}">
+                                                <input type="hidden" name="include_in_reports" value="{{ '1' if participant.exclude_free_from_reports else '0' }}">
+                                                <input type="hidden" name="redirect_to" value="{{ request.full_path if request.query_string else request.path }}">
+                                                <button type="submit" class="btn btn-outline-secondary btn-sm py-0 px-1">
+                                                    {% if participant.exclude_free_from_reports %}
+                                                        Учитывать БЕСП в отчетах
+                                                    {% else %}
+                                                        Исключить БЕСП из отчетов
+                                                    {% endif %}
+                                                </button>
+                                            </form>
                                         {% endif %}
                                         {% if participant.status == 'R' or participant.status == 'W' %}
                                             <br><small class="badge bg-warning text-dark"><i class="fas fa-ban"></i> Снята с соревнований</small>

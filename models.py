@@ -160,6 +160,7 @@ class Participant(db.Model):
     status_segment5 = db.Column(db.String(10))
     status_segment6 = db.Column(db.String(10))
     pct_ppname = db.Column(db.String(50), index=True)
+    exclude_free_from_reports = db.Column(db.Boolean, default=False, nullable=False, index=True)
     coach = db.Column(db.String(200))  # Имя тренера (PCT_COANAM из XML)
     
     performances = db.relationship('Performance', backref='participant', lazy=True, cascade='all, delete-orphan')

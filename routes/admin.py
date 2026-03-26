@@ -769,7 +769,11 @@ def admin_free_participation():
     for event in events:
         total_participants = Participant.query.filter_by(event_id=event.id).count()
         free_participants = Participant.query.filter_by(event_id=event.id, pct_ppname='БЕСП').count()
-        effective_free_participants = 0 if event.exclude_free_from_reports else free_participants
+        effective_free_participants = 0 if event.exclude_free_from_reports else Participant.query.filter(
+            Participant.event_id == event.id,
+            Participant.pct_ppname == 'БЕСП',
+            db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None))
+        ).count()
         
         events_data.append({
             'event': event,
@@ -780,4 +784,32 @@ def admin_free_participation():
         })
     
     return render_template('admin_free_participation.html', events_data=events_data)
+
+
+@admin_bp.route('/admin/participant-free-report-toggle', methods=['POST'])
+@admin_required
+def participant_free_report_toggle():
+    """Включает/исключает конкретное БЕСП-участие из отчетов."""
+    participant_id = request.form.get('participant_id', type=int)
+    include_in_reports = (request.form.get('include_in_reports') or '').strip().lower() in ('1', 'true', 'yes', 'on')
+    redirect_to = request.form.get('redirect_to') or url_for('admin.admin_free_participation')
+
+    participant = Participant.query.get(participant_id) if participant_id else None
+    if not participant:
+        flash('Участие не найдено', 'error')
+        return redirect(redirect_to)
+
+    participant.exclude_free_from_reports = not include_in_reports
+    try:
+        db.session.commit()
+        if include_in_reports:
+            flash('Участие снова учитывается как БЕСП в отчетах', 'success')
+        else:
+            flash('Участие исключено из БЕСП-отчетов', 'warning')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Ошибка при обновлении участия: {str(e)}', 'error')
+        logger.error(f'Error toggling participant free report flag: {str(e)}')
+
+    return redirect(redirect_to)
 
