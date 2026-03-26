@@ -8,7 +8,7 @@ import re
 from flask import Blueprint, render_template, request, send_file, url_for
 from sqlalchemy import func
 from extensions import db
-from models import Athlete, Participant, Event
+from models import Athlete, Participant, Event, Category
 
 analytics_bp = Blueprint('analytics', __name__)
 
@@ -85,7 +85,10 @@ def _parse_pasted_list(text):
 
 
 def _check_names_against_db(names):
-    """По списку «Фамилия Имя» вернуть (found, not_found). found = [(name, [(id, full_name), ...]), ...]."""
+    """По списку «Фамилия Имя» вернуть (found, not_found).
+    found = [(name, [match_info, ...]), ...], где match_info содержит:
+      id, full_name, birth_date, patronymic, rank
+    """
     if not names:
         return [], []
     # Собираем по два слова из каждой записи
@@ -110,12 +113,60 @@ def _check_names_against_db(names):
         if key in seen_key:
             continue
         seen_key.add(key)
-        matches = [(aid, db_name) for aid, db_name, name_words in athletes_data if key <= name_words]
+        raw_matches = [(aid, db_name) for aid, db_name, name_words in athletes_data if key <= name_words]
+        matches = _enrich_matches(raw_matches)
         if matches:
             found.append((fio, matches))
         else:
             not_found.append(fio)
     return found, not_found
+
+
+def _enrich_matches(raw_matches):
+    """Добавляет метаданные к совпадениям: дата рождения, отчество, текущий/последний разряд."""
+    if not raw_matches:
+        return []
+
+    athlete_ids = [aid for aid, _ in raw_matches]
+
+    athletes = Athlete.query.filter(Athlete.id.in_(athlete_ids)).all()
+    athlete_map = {a.id: a for a in athletes}
+
+    # Последний разряд по дате турнира (при равенстве дат — по более новой записи Participant.id)
+    latest_rank_map = {}
+    participations = (
+        db.session.query(
+            Participant.athlete_id,
+            Participant.id.label('participant_id'),
+            Event.begin_date.label('event_date'),
+            Category.normalized_name,
+            Category.name.label('category_name'),
+        )
+        .join(Category, Participant.category_id == Category.id)
+        .join(Event, Participant.event_id == Event.id)
+        .filter(Participant.athlete_id.in_(athlete_ids))
+        .order_by(Participant.athlete_id, Event.begin_date.desc(), Participant.id.desc())
+        .all()
+    )
+
+    for row in participations:
+        if row.athlete_id not in latest_rank_map:
+            latest_rank_map[row.athlete_id] = row.normalized_name or row.category_name or 'Не указан'
+
+    enriched = []
+    for aid, db_name in raw_matches:
+        athlete = athlete_map.get(aid)
+        birth_date = athlete.birth_date.strftime('%d.%m.%Y') if athlete and athlete.birth_date else '—'
+        patronymic = (athlete.patronymic or '—') if athlete else '—'
+        rank = latest_rank_map.get(aid, 'Не указан')
+        enriched.append({
+            'id': aid,
+            'full_name': db_name,
+            'birth_date': birth_date,
+            'patronymic': patronymic,
+            'rank': rank,
+        })
+    return enriched
 
 
 def _get_participation_counts():
@@ -154,10 +205,9 @@ def _check_names_against_db_free(names):
     no_free = []
     for fio, matches in found:
         # Суммируем по всем совпадениям (дубликаты в БД)
-        total = sum(total_by_athlete.get(aid, 0) for aid, _ in matches)
-        free = sum(free_by_athlete.get(aid, 0) for aid, _ in matches)
-        db_name = matches[0][1]
-        first_aid = matches[0][0]
+        total = sum(total_by_athlete.get(m['id'], 0) for m in matches)
+        free = sum(free_by_athlete.get(m['id'], 0) for m in matches)
+        first_aid = matches[0]['id']
         if free > 0:
             has_free.append((fio, matches, total, free, first_aid))
         else:
@@ -200,8 +250,8 @@ def judge_helper():
             total_by_athlete, free_by_athlete = _get_participation_counts()
             # Обогащаем found: (fio, matches, total, free)
             for fio, matches in found_raw:
-                total = sum(total_by_athlete.get(aid, 0) for aid, _ in matches)
-                free = sum(free_by_athlete.get(aid, 0) for aid, _ in matches)
+                total = sum(total_by_athlete.get(m['id'], 0) for m in matches)
+                free = sum(free_by_athlete.get(m['id'], 0) for m in matches)
                 found.append((fio, matches, total, free))
     return render_template('judge_helper.html', found=found, not_found=not_found, pasted=pasted)
 
