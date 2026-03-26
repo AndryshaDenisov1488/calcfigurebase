@@ -192,10 +192,11 @@ def _get_participation_counts():
 def _check_names_against_db_free(names):
     """Проверка списка ФИО по БД с учётом бесплатных участий (БЕСП).
     Возвращает (has_free, no_free, not_found):
-    - has_free: [(display_fio, db_info, total_participations, free_count), ...]
-    - no_free: [(display_fio, db_info, total_participations, 0), ...]
+    - has_free: [(display_fio, match_info, total_participations, free_count), ...]
+    - no_free: [(display_fio, match_info, total_participations, 0), ...]
     - not_found: [display_fio, ...]
-    db_info — строка для отображения (id и имя; при дубликатах — все id).
+    ВАЖНО: если по одному ФИО найдено несколько id, каждый id раскладывается отдельно
+    в свою колонку (с БЕСП / без БЕСП), чтобы не смешивать разных людей.
     """
     if not names:
         return [], [], []
@@ -204,14 +205,15 @@ def _check_names_against_db_free(names):
     has_free = []
     no_free = []
     for fio, matches in found:
-        # Суммируем по всем совпадениям (дубликаты в БД)
-        total = sum(total_by_athlete.get(m['id'], 0) for m in matches)
-        free = sum(free_by_athlete.get(m['id'], 0) for m in matches)
-        first_aid = matches[0]['id']
-        if free > 0:
-            has_free.append((fio, matches, total, free, first_aid))
-        else:
-            no_free.append((fio, matches, total, 0, first_aid))
+        # Каждый match рассматриваем отдельно, чтобы не объединять разных людей с одинаковым ФИО
+        for match in matches:
+            athlete_id = match['id']
+            total = total_by_athlete.get(athlete_id, 0)
+            free = free_by_athlete.get(athlete_id, 0)
+            if free > 0:
+                has_free.append((fio, match, total, free, athlete_id))
+            else:
+                no_free.append((fio, match, total, 0, athlete_id))
     return has_free, no_free, not_found
 
 
