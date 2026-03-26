@@ -239,26 +239,6 @@ def free_participation_analysis():
     return render_template('free_participation_analysis.html')
 
 
-@analytics_bp.route('/judge-helper', methods=['GET', 'POST'])
-def judge_helper():
-    """Помощник главным судьям: вставка списка ФИО и проверка, кого нет в БД."""
-    found = []
-    not_found = []
-    pasted = ''
-    if request.method == 'POST':
-        pasted = (request.form.get('names_text') or '').strip()
-        names = _parse_pasted_list(pasted)
-        if names:
-            found_raw, not_found = _check_names_against_db(names)
-            total_by_athlete, free_by_athlete = _get_participation_counts()
-            # Обогащаем found: (fio, matches, total, free)
-            for fio, matches in found_raw:
-                total = sum(total_by_athlete.get(m['id'], 0) for m in matches)
-                free = sum(free_by_athlete.get(m['id'], 0) for m in matches)
-                found.append((fio, matches, total, free))
-    return render_template('judge_helper.html', found=found, not_found=not_found, pasted=pasted)
-
-
 @analytics_bp.route('/judge-helper-free', methods=['GET', 'POST'])
 def judge_helper_free():
     """Помощник главным судьям — только для бесплатных участий: кто уже выступал с БЕСП, кто только платно, кого нет в базе."""
