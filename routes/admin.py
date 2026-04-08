@@ -3,6 +3,8 @@
 """Admin routes."""
 import logging
 import os
+import threading
+import time
 import xml.etree.ElementTree as ET
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session, flash, current_app
 from werkzeug.security import check_password_hash
@@ -18,6 +20,54 @@ from models import Event, Participant
 logger = logging.getLogger(__name__)
 
 admin_bp = Blueprint('admin', __name__)
+
+_export_job_lock = threading.Lock()
+_export_job_state = {
+    'running': False,
+    'started_at': None,
+    'finished_at': None,
+    'success': None,
+    'message': None,
+    'url': None,
+}
+
+
+def _start_google_export_background(app_obj):
+    """Запускает экспорт в отдельном потоке и обновляет состояние задачи."""
+    from google_sheets_sync import export_to_google_sheets
+
+    def _worker():
+        with app_obj.app_context():
+            try:
+                result = export_to_google_sheets()
+                with _export_job_lock:
+                    _export_job_state['running'] = False
+                    _export_job_state['finished_at'] = int(time.time())
+                    _export_job_state['success'] = bool(result.get('success'))
+                    _export_job_state['message'] = result.get('message', 'Экспорт завершён')
+                    _export_job_state['url'] = result.get('url')
+            except Exception as e:
+                logger.error(f"Ошибка фонового экспорта в Google Sheets: {e}", exc_info=True)
+                with _export_job_lock:
+                    _export_job_state['running'] = False
+                    _export_job_state['finished_at'] = int(time.time())
+                    _export_job_state['success'] = False
+                    _export_job_state['message'] = f'Ошибка экспорта: {str(e)}'
+                    _export_job_state['url'] = None
+
+    with _export_job_lock:
+        if _export_job_state['running']:
+            return False
+        _export_job_state['running'] = True
+        _export_job_state['started_at'] = int(time.time())
+        _export_job_state['finished_at'] = None
+        _export_job_state['success'] = None
+        _export_job_state['message'] = 'Экспорт запущен. Это может занять несколько минут...'
+        _export_job_state['url'] = None
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+    return True
 
 @admin_bp.route('/upload', methods=['GET', 'POST'])
 @admin_required
@@ -643,37 +693,34 @@ def admin_export_google_sheets():
                     pdf_urls={}
                 )
         
+        if wants_json:
+            # Для AJAX запускаем задачу в фоне и сразу возвращаем JSON, чтобы не упереться в timeout прокси
+            started = _start_google_export_background(current_app._get_current_object())
+            if started:
+                return jsonify({
+                    'success': True,
+                    'started': True,
+                    'running': True,
+                    'message': 'Экспорт запущен. Это может занять несколько минут...'
+                })
+            with _export_job_lock:
+                return jsonify({
+                    'success': True,
+                    'started': False,
+                    'running': bool(_export_job_state['running']),
+                    'message': _export_job_state.get('message') or 'Экспорт уже выполняется'
+                })
+
+        # Для обычного POST оставляем синхронное поведение
         try:
             result = export_to_google_sheets()
-            if wants_json:
-                # Возвращаем JSON для AJAX запросов
-                if result.get('success'):
-                    return jsonify({
-                        'success': True,
-                        'message': result.get('message', 'Данные успешно экспортированы в Google Sheets!'),
-                        'url': result.get('url'),
-                        'spreadsheet_id': result.get('spreadsheet_id')
-                    })
-                else:
-                    return jsonify({
-                        'success': False,
-                        'message': result.get('message', 'Неизвестная ошибка')
-                    }), 500
+            if result.get('success'):
+                flash('Данные успешно экспортированы в Google Sheets!', 'success')
             else:
-                # Возвращаем HTML с flash сообщениями для обычных POST запросов
-                if result.get('success'):
-                    flash('Данные успешно экспортированы в Google Sheets!', 'success')
-                else:
-                    flash(f'Ошибка экспорта: {result.get("message", "Неизвестная ошибка")}', 'error')
+                flash(f'Ошибка экспорта: {result.get("message", "Неизвестная ошибка")}', 'error')
         except Exception as e:
             logger.error(f"Ошибка экспорта в Google Sheets: {e}", exc_info=True)
-            if wants_json:
-                return jsonify({
-                    'success': False,
-                    'message': f'Ошибка экспорта: {str(e)}'
-                }), 500
-            else:
-                flash(f'Ошибка экспорта: {str(e)}', 'error')
+            flash(f'Ошибка экспорта: {str(e)}', 'error')
     
     # GET-запрос: просто показываем страницу с текущим статусом
     return render_template(
@@ -682,6 +729,21 @@ def admin_export_google_sheets():
         spreadsheet_id=DEFAULT_SPREADSHEET_ID,
         pdf_urls=pdf_urls
     )
+
+
+@admin_bp.route('/admin/export-google-sheets-status', methods=['GET'])
+@admin_required
+def admin_export_google_sheets_status():
+    """Статус фонового экспорта в Google Sheets для polling из UI."""
+    with _export_job_lock:
+        return jsonify({
+            'running': bool(_export_job_state['running']),
+            'success': _export_job_state['success'],
+            'message': _export_job_state['message'],
+            'url': _export_job_state['url'],
+            'started_at': _export_job_state['started_at'],
+            'finished_at': _export_job_state['finished_at'],
+        })
 
 @admin_bp.route('/admin/free-participation', methods=['GET', 'POST'])
 @admin_required

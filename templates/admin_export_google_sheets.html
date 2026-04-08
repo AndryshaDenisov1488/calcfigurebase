@@ -188,6 +188,59 @@
 </div>
 
 <script>
+let exportPollTimer = null;
+
+function resetExportButton() {
+    const btn = document.getElementById('exportBtn');
+    const btnText = document.getElementById('exportBtnText');
+    const btnLoading = document.getElementById('exportBtnLoading');
+    btn.disabled = false;
+    btnText.style.display = 'inline-block';
+    btnLoading.style.display = 'none';
+}
+
+function renderExportResult(isSuccess, message, url = null) {
+    const resultDiv = document.getElementById('exportResult');
+    resultDiv.style.display = 'block';
+    if (isSuccess) {
+        resultDiv.innerHTML = `
+            <div class="alert alert-success" role="alert">
+                <h5>✅ ${message}</h5>
+                ${url ? `<hr><p class="mb-0"><a href="${url}" target="_blank" class="btn btn-success"><i class="fas fa-external-link-alt"></i> Открыть таблицу</a></p>` : ''}
+            </div>
+        `;
+    } else {
+        resultDiv.innerHTML = `
+            <div class="alert alert-danger" role="alert">
+                <strong>❌ Ошибка:</strong> ${message}
+            </div>
+        `;
+    }
+}
+
+function pollExportStatus() {
+    fetch('/admin/export-google-sheets-status', { method: 'GET' })
+        .then(response => response.json())
+        .then(status => {
+            if (status.running) {
+                return;
+            }
+            if (exportPollTimer) {
+                clearInterval(exportPollTimer);
+                exportPollTimer = null;
+            }
+            resetExportButton();
+            if (status.success) {
+                renderExportResult(true, status.message || 'Экспорт завершен', status.url || null);
+            } else {
+                renderExportResult(false, status.message || 'Экспорт завершился с ошибкой');
+            }
+        })
+        .catch(() => {
+            // При кратковременных ошибках polling просто продолжается.
+        });
+}
+
 document.getElementById('exportBtn').addEventListener('click', function() {
     const btn = this;
     const btnText = document.getElementById('exportBtnText');
@@ -206,65 +259,51 @@ document.getElementById('exportBtn').addEventListener('click', function() {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            'Accept': 'application/json'
         },
         body: JSON.stringify({})
     })
     .then(response => {
-        // Проверяем что получили JSON, а не HTML
+        // Проверяем что получили JSON, а не HTML (например redirect на логин или 502/504)
         const contentType = response.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
-            throw new Error('Сервер вернул не JSON. Возможно требуется повторная авторизация.');
+            throw new Error('Экспорт запущен, но ответ от прокси не JSON. Проверьте через 1-2 минуты в таблице.');
         }
         return response.json();
     })
     .then(data => {
-        // Скрываем загрузку
-        btn.disabled = false;
-        btnText.style.display = 'inline-block';
-        btnLoading.style.display = 'none';
-        
-        // Показываем результат
-        resultDiv.style.display = 'block';
-        
-        if (data.success) {
+        if (data.success && data.running) {
+            resultDiv.style.display = 'block';
             resultDiv.innerHTML = `
-                <div class="alert alert-success" role="alert">
-                    <h5>✅ ${data.message}</h5>
-                    <hr>
-                    <p class="mb-0">
-                        <a href="${data.url}" target="_blank" class="btn btn-success">
-                            <i class="fas fa-external-link-alt"></i> Открыть таблицу
-                        </a>
-                    </p>
+                <div class="alert alert-info" role="alert">
+                    <strong>⏳ ${data.message || 'Экспорт запущен'}</strong><br>
+                    Страница будет ждать завершения и покажет итог автоматически.
                 </div>
             `;
+            if (exportPollTimer) {
+                clearInterval(exportPollTimer);
+            }
+            exportPollTimer = setInterval(pollExportStatus, 3000);
+            pollExportStatus();
+            return;
+        }
+
+        resetExportButton();
+        resultDiv.style.display = 'block';
+        if (data.success) {
+            renderExportResult(true, data.message || 'Экспорт завершен', data.url || null);
         } else {
             // Если есть редирект (авторизация) - перенаправляем
             if (data.redirect) {
                 window.location.href = data.redirect;
                 return;
             }
-            
-            resultDiv.innerHTML = `
-                <div class="alert alert-danger" role="alert">
-                    <strong>❌ Ошибка:</strong> ${data.message}
-                </div>
-            `;
+            renderExportResult(false, data.message || 'Неизвестная ошибка');
         }
     })
     .catch(error => {
-        // Скрываем загрузку
-        btn.disabled = false;
-        btnText.style.display = 'inline-block';
-        btnLoading.style.display = 'none';
-        
-        // Показываем ошибку
-        resultDiv.style.display = 'block';
-        resultDiv.innerHTML = `
-            <div class="alert alert-danger" role="alert">
-                <strong>❌ Ошибка:</strong> ${error.message}
-            </div>
-        `;
+        resetExportButton();
+        renderExportResult(false, error.message);
     });
 });
 </script>
