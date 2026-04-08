@@ -5,6 +5,7 @@ import logging
 import os
 import threading
 import time
+import json
 import xml.etree.ElementTree as ET
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, session, flash, current_app
 from werkzeug.security import check_password_hash
@@ -22,14 +23,53 @@ logger = logging.getLogger(__name__)
 admin_bp = Blueprint('admin', __name__)
 
 _export_job_lock = threading.Lock()
-_export_job_state = {
-    'running': False,
-    'started_at': None,
-    'finished_at': None,
-    'success': None,
-    'message': None,
-    'url': None,
-}
+
+
+def _export_state_path(app_obj):
+    """Путь к общему состоянию экспорта (доступен всем воркерам)."""
+    os.makedirs(app_obj.instance_path, exist_ok=True)
+    return os.path.join(app_obj.instance_path, 'google_export_state.json')
+
+
+def _read_export_state(app_obj):
+    path = _export_state_path(app_obj)
+    if not os.path.exists(path):
+        return {
+            'running': False,
+            'started_at': None,
+            'finished_at': None,
+            'success': None,
+            'message': None,
+            'url': None,
+        }
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            return {
+                'running': bool(data.get('running', False)),
+                'started_at': data.get('started_at'),
+                'finished_at': data.get('finished_at'),
+                'success': data.get('success'),
+                'message': data.get('message'),
+                'url': data.get('url'),
+            }
+    except Exception:
+        return {
+            'running': False,
+            'started_at': None,
+            'finished_at': None,
+            'success': None,
+            'message': None,
+            'url': None,
+        }
+
+
+def _write_export_state(app_obj, state):
+    path = _export_state_path(app_obj)
+    tmp_path = f"{path}.tmp"
+    with open(tmp_path, 'w', encoding='utf-8') as f:
+        json.dump(state, f, ensure_ascii=False)
+    os.replace(tmp_path, path)
 
 
 def _start_google_export_background(app_obj):
@@ -41,29 +81,35 @@ def _start_google_export_background(app_obj):
             try:
                 result = export_to_google_sheets()
                 with _export_job_lock:
-                    _export_job_state['running'] = False
-                    _export_job_state['finished_at'] = int(time.time())
-                    _export_job_state['success'] = bool(result.get('success'))
-                    _export_job_state['message'] = result.get('message', 'Экспорт завершён')
-                    _export_job_state['url'] = result.get('url')
+                    state = _read_export_state(app_obj)
+                    state['running'] = False
+                    state['finished_at'] = int(time.time())
+                    state['success'] = bool(result.get('success'))
+                    state['message'] = result.get('message', 'Экспорт завершён')
+                    state['url'] = result.get('url')
+                    _write_export_state(app_obj, state)
             except Exception as e:
                 logger.error(f"Ошибка фонового экспорта в Google Sheets: {e}", exc_info=True)
                 with _export_job_lock:
-                    _export_job_state['running'] = False
-                    _export_job_state['finished_at'] = int(time.time())
-                    _export_job_state['success'] = False
-                    _export_job_state['message'] = f'Ошибка экспорта: {str(e)}'
-                    _export_job_state['url'] = None
+                    state = _read_export_state(app_obj)
+                    state['running'] = False
+                    state['finished_at'] = int(time.time())
+                    state['success'] = False
+                    state['message'] = f'Ошибка экспорта: {str(e)}'
+                    state['url'] = None
+                    _write_export_state(app_obj, state)
 
     with _export_job_lock:
-        if _export_job_state['running']:
+        state = _read_export_state(app_obj)
+        if state.get('running'):
             return False
-        _export_job_state['running'] = True
-        _export_job_state['started_at'] = int(time.time())
-        _export_job_state['finished_at'] = None
-        _export_job_state['success'] = None
-        _export_job_state['message'] = 'Экспорт запущен. Это может занять несколько минут...'
-        _export_job_state['url'] = None
+        state['running'] = True
+        state['started_at'] = int(time.time())
+        state['finished_at'] = None
+        state['success'] = None
+        state['message'] = 'Экспорт запущен. Это может занять несколько минут...'
+        state['url'] = None
+        _write_export_state(app_obj, state)
 
     thread = threading.Thread(target=_worker, daemon=True)
     thread.start()
@@ -704,11 +750,12 @@ def admin_export_google_sheets():
                     'message': 'Экспорт запущен. Это может занять несколько минут...'
                 })
             with _export_job_lock:
+                state = _read_export_state(current_app._get_current_object())
                 return jsonify({
                     'success': True,
                     'started': False,
-                    'running': bool(_export_job_state['running']),
-                    'message': _export_job_state.get('message') or 'Экспорт уже выполняется'
+                    'running': bool(state.get('running')),
+                    'message': state.get('message') or 'Экспорт уже выполняется'
                 })
 
         # Для обычного POST оставляем синхронное поведение
@@ -736,13 +783,14 @@ def admin_export_google_sheets():
 def admin_export_google_sheets_status():
     """Статус фонового экспорта в Google Sheets для polling из UI."""
     with _export_job_lock:
+        state = _read_export_state(current_app._get_current_object())
         return jsonify({
-            'running': bool(_export_job_state['running']),
-            'success': _export_job_state['success'],
-            'message': _export_job_state['message'],
-            'url': _export_job_state['url'],
-            'started_at': _export_job_state['started_at'],
-            'finished_at': _export_job_state['finished_at'],
+            'running': bool(state.get('running')),
+            'success': state.get('success'),
+            'message': state.get('message'),
+            'url': state.get('url'),
+            'started_at': state.get('started_at'),
+            'finished_at': state.get('finished_at'),
         })
 
 @admin_bp.route('/admin/free-participation', methods=['GET', 'POST'])
