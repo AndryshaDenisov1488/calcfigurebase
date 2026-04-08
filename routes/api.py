@@ -652,12 +652,6 @@ def api_athletes():
     search_filter = None
     if search and search.strip():
         normalized = normalize_search_term(search)
-        logger.info(f"Поиск: '{search}' -> нормализовано: '{normalized}' (длина: {len(normalized)}, байты: {normalized.encode('utf-8')})")
-        # Проверяем, что нормализация не изменила строку неправильно
-        if search != normalized:
-            logger.info(f"  Исходная строка: '{search}' (байты: {search.encode('utf-8')})")
-            logger.info(f"  Нормализованная: '{normalized}' (байты: {normalized.encode('utf-8')})")
-        
         search_filter = create_multi_field_search_filter(
             search,
             Athlete.first_name,
@@ -665,123 +659,8 @@ def api_athletes():
             Athlete.full_name_xml,
             Athlete.patronymic
         )
-        
-        if search_filter is not None:
-            logger.info(f"Фильтр поиска создан для '{search}'")
-            logger.info(f"Тип фильтра: {type(search_filter)}")
-            logger.debug(f"Фильтр: {search_filter}")
-            
-            # Для отладки - проверяем, есть ли вообще спортсмены с таким именем
-            try:
-                # Логируем сгенерированный SQL запрос
-                query = db.session.query(Athlete).filter(search_filter)
-                try:
-                    compiled = query.statement.compile(compile_kwargs={'literal_binds': True})
-                    logger.info(f"SQL запрос для поиска '{search}': {str(compiled)}")
-                except Exception as compile_error:
-                    logger.warning(f"Не удалось скомпилировать SQL запрос: {compile_error}")
-                    logger.info(f"SQL запрос (без literal_binds): {str(query.statement)}")
-                
-                # Простой запрос без JOIN'ов для проверки
-                simple_count = query.count()
-                logger.info(f"Проверка: найдено {simple_count} спортсменов с '{search}' БЕЗ JOIN'ов")
-                
-                # Прямой SQL запрос для проверки (без LOWER/UPPER, так как в SQLite они могут работать некорректно с кириллицей)
-                try:
-                    from sqlalchemy import text
-                    # Пробуем прямой SQL запрос с разными вариантами регистра
-                    search_lower = normalized.lower()
-                    search_upper = normalized.upper()
-                    search_title = normalized.capitalize()
-                    
-                    direct_sql = text("""
-                        SELECT COUNT(*) FROM athlete 
-                        WHERE first_name LIKE :search_lower
-                           OR first_name LIKE :search_upper
-                           OR first_name LIKE :search_title
-                           OR first_name LIKE :search_orig
-                    """)
-                    result = db.session.execute(direct_sql, {
-                        'search_lower': f'%{search_lower}%',
-                        'search_upper': f'%{search_upper}%',
-                        'search_title': f'%{search_title}%',
-                        'search_orig': f'%{normalized}%'
-                    }).scalar()
-                    logger.info(f"Прямой SQL запрос (first_name, LIKE с разными регистрами): найдено {result} спортсменов")
-                    
-                    # Также проверяем, есть ли вообще "Иван" в базе (с заглавной буквы)
-                    ivan_check = text("SELECT COUNT(*) FROM athlete WHERE first_name LIKE '%Иван%'")
-                    ivan_count = db.session.execute(ivan_check).scalar()
-                    logger.info(f"Проверка наличия 'Иван' в базе (прямой LIKE '%Иван%'): найдено {ivan_count} записей")
-                    
-                    # Также проверяем с маленькой буквы
-                    ivan_lower_check = text("SELECT COUNT(*) FROM athlete WHERE first_name LIKE '%иван%'")
-                    ivan_lower_count = db.session.execute(ivan_lower_check).scalar()
-                    logger.info(f"Проверка наличия 'иван' в базе (прямой LIKE '%иван%'): найдено {ivan_lower_count} записей")
-                    
-                    # Показываем примеры
-                    if ivan_count > 0 or ivan_lower_count > 0:
-                        sample_sql = text("SELECT id, first_name, last_name FROM athlete WHERE first_name LIKE '%Иван%' OR first_name LIKE '%иван%' LIMIT 5")
-                        samples = db.session.execute(sample_sql).fetchall()
-                        for row in samples:
-                            logger.info(f"  Пример из БД: ID={row[0]}, first_name='{row[1]}', last_name='{row[2]}'")
-                except Exception as sql_error:
-                    logger.warning(f"Ошибка при прямом SQL запросе: {sql_error}", exc_info=True)
-                
-                # Если есть спортсмены без JOIN'ов, но нет с JOIN'ами - проблема в запросе
-                if simple_count > 0:
-                    logger.warning(f"ВНИМАНИЕ: Найдено {simple_count} спортсменов БЕЗ JOIN'ов, но 0 С JOIN'ами. Возможна проблема с применением фильтра после JOIN.")
-                    
-                    # Показываем примеры найденных спортсменов для отладки
-                    sample_athletes = db.session.query(Athlete).filter(search_filter).limit(3).all()
-                    for athlete in sample_athletes:
-                        logger.info(f"  Пример: ID={athlete.id}, first_name='{athlete.first_name}', last_name='{athlete.last_name}', full_name_xml='{athlete.full_name_xml}', patronymic='{athlete.patronymic}'")
-                else:
-                    # Если не найдено, проверяем альтернативные варианты поиска
-                    logger.info(f"Не найдено спортсменов с '{search}'. Проверяю альтернативные варианты...")
-                    # Проверяем поиск по каждому полю отдельно (используем поиск в разных регистрах для SQLite)
-                    search_lower = normalized.lower()
-                    search_upper = normalized.upper()
-                    search_title = normalized.capitalize()
-                    
-                    first_name_filter = db.or_(
-                        Athlete.first_name.like(f'%{search_lower}%'),
-                        Athlete.first_name.like(f'%{search_upper}%'),
-                        Athlete.first_name.like(f'%{search_title}%'),
-                        Athlete.first_name.like(f'%{normalized}%')
-                    )
-                    first_name_count = db.session.query(Athlete).filter(first_name_filter).count()
-                    
-                    last_name_filter = db.or_(
-                        Athlete.last_name.like(f'%{search_lower}%'),
-                        Athlete.last_name.like(f'%{search_upper}%'),
-                        Athlete.last_name.like(f'%{search_title}%'),
-                        Athlete.last_name.like(f'%{normalized}%')
-                    )
-                    last_name_count = db.session.query(Athlete).filter(last_name_filter).count()
-                    
-                    full_name_filter = db.or_(
-                        Athlete.full_name_xml.like(f'%{search_lower}%'),
-                        Athlete.full_name_xml.like(f'%{search_upper}%'),
-                        Athlete.full_name_xml.like(f'%{search_title}%'),
-                        Athlete.full_name_xml.like(f'%{normalized}%')
-                    )
-                    full_name_count = db.session.query(Athlete).filter(full_name_filter).count() if Athlete.full_name_xml else 0
-                    
-                    patronymic_filter = db.or_(
-                        Athlete.patronymic.like(f'%{search_lower}%'),
-                        Athlete.patronymic.like(f'%{search_upper}%'),
-                        Athlete.patronymic.like(f'%{search_title}%'),
-                        Athlete.patronymic.like(f'%{normalized}%')
-                    )
-                    patronymic_count = db.session.query(Athlete).filter(patronymic_filter).count() if Athlete.patronymic else 0
-                    
-                    logger.info(f"  По first_name: {first_name_count}, last_name: {last_name_count}, full_name_xml: {full_name_count}, patronymic: {patronymic_count}")
-            except Exception as e:
-                logger.warning(f"Ошибка при проверке простого запроса: {e}")
-        else:
-            # Если фильтр не создан (например, слишком короткий запрос)
-            logger.warning(f"Поисковый фильтр не создан для запроса: '{search}' (нормализовано: '{normalized}', длина: {len(normalized)})")
+        if search_filter is None:
+            logger.info(f"Поисковый фильтр не создан для запроса длиной {len(normalized)}")
     
     # Базовый запрос с JOIN для клубов
     # Применяем фильтр поиска СРАЗУ после создания базового запроса
@@ -792,7 +671,6 @@ def api_athletes():
     # Применяем фильтр поиска ДО всех остальных JOIN'ов
     if search_filter is not None:
         athletes_query = athletes_query.filter(search_filter)
-        logger.info(f"Фильтр поиска применен к базовому запросу для '{search}'")
     
     # Добавляем JOIN с Participant и Category для сортировки по разрядам (если нужно)
     # Делаем это ПОСЛЕ применения фильтра поиска

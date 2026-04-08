@@ -9,6 +9,7 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime, date
 import logging
 import time
+import random
 from app import app, db
 from models import Athlete, Club, Category, Participant, Event
 
@@ -59,10 +60,54 @@ def get_google_sheets_client():
             scopes=SCOPES
         )
         client = gspread.authorize(creds)
+        _install_gspread_retry(client)
         return client
     except Exception as e:
         logger.error(f"Ошибка подключения к Google Sheets: {e}")
         raise
+
+
+def _install_gspread_retry(client, max_retries=6, base_delay=2.0):
+    """Ставит retry/backoff на все gspread HTTP-запросы для устойчивости к 429."""
+    http_client = getattr(client, 'http_client', None)
+    if not http_client or not hasattr(http_client, 'request'):
+        return
+    if getattr(http_client, '_retry_patched', False):
+        return
+
+    original_request = http_client.request
+
+    def request_with_retry(method, endpoint, params=None, data=None, json=None, files=None, headers=None):
+        for attempt in range(max_retries):
+            try:
+                return original_request(
+                    method,
+                    endpoint,
+                    params=params,
+                    data=data,
+                    json=json,
+                    files=files,
+                    headers=headers,
+                )
+            except Exception as e:
+                error_text = str(e).lower()
+                is_rate_limited = (
+                    '429' in error_text
+                    or 'rate limit' in error_text
+                    or 'quota exceeded' in error_text
+                    or 'resource_exhausted' in error_text
+                )
+                if (not is_rate_limited) or attempt == max_retries - 1:
+                    raise
+
+                wait_time = (base_delay * (2 ** attempt)) + random.uniform(0, 0.5)
+                logger.warning(
+                    f"Google Sheets rate limit (429), retry {attempt + 1}/{max_retries}, sleep {wait_time:.1f}s"
+                )
+                time.sleep(wait_time)
+
+    http_client.request = request_with_retry
+    http_client._retry_patched = True
 
 def safe_api_call(func, *args, max_retries=3, delay=1, **kwargs):
     """
