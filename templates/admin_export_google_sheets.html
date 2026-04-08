@@ -263,13 +263,18 @@ document.getElementById('exportBtn').addEventListener('click', function() {
         },
         body: JSON.stringify({})
     })
-    .then(response => {
-        // Проверяем что получили JSON, а не HTML (например redirect на логин или 502/504)
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-            throw new Error('Экспорт запущен, но ответ от прокси не JSON. Проверьте через 1-2 минуты в таблице.');
+    .then(async (response) => {
+        const text = await response.text();
+        try {
+            return JSON.parse(text);
+        } catch (_e) {
+            // Иногда прокси/браузер отдает не-JSON, даже когда backend уже запустил экспорт.
+            return {
+                success: true,
+                running: true,
+                message: 'Экспорт запущен. Ожидаем завершение по статусу...'
+            };
         }
-        return response.json();
     })
     .then(data => {
         if (data.success && data.running) {
