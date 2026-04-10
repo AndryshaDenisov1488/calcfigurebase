@@ -58,12 +58,26 @@
                     </thead>
                     <tbody>
                         {% for event in events %}
+                        {% set d = event_list_details[event.id] %}
                         <tr>
                             <td>
                                 <strong>{{ event.name }}</strong>
                                 {% if event.place %}
                                     <br><small class="text-muted">{{ event.place }}</small>
                                 {% endif %}
+                                <div class="small text-muted mt-2 lh-sm">
+                                    Участий: <span class="text-body">{{ d.participants_total }}</span>
+                                    · Уник. спортсменов: <span class="text-body">{{ d.participants_unique }}</span>
+                                    · БЕСП: <span class="text-body">{{ d.free_total }}</span>
+                                    <span class="d-block mt-1">
+                                        <span class="text-secondary">Разряды:</span>
+                                        {% if d.category_labels %}
+                                            {{ d.category_labels | join(', ') }}
+                                        {% else %}
+                                            <span class="text-muted">—</span>
+                                        {% endif %}
+                                    </span>
+                                </div>
                             </td>
                             <td>
                                 {% if event.begin_date %}

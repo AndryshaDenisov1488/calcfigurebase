@@ -16,7 +16,12 @@ from utils.auth import admin_required
 from parsers.isu_calcfs_parser import ISUCalcFSParser
 from services.rank_service import analyze_categories_from_xml
 from services.import_service import save_to_database
-from models import Event, Participant
+from collections import defaultdict
+
+from sqlalchemy import and_, case, func
+
+from event_rank_constants import EVENT_RANK_OPTIONS
+from models import Category, Event, Participant
 
 logger = logging.getLogger(__name__)
 
@@ -798,8 +803,6 @@ def admin_export_google_sheets_status():
 @admin_required
 def admin_event_rank_update():
     """Сохранение ранга турнира через AJAX (без перезагрузки страницы)."""
-    from google_sheets_sync import EVENT_RANK_OPTIONS
-
     allowed_ranks = set(EVENT_RANK_OPTIONS)
     data = request.get_json(silent=True) or {}
     event_id = data.get('event_id')
@@ -832,11 +835,74 @@ def admin_event_rank_update():
         return jsonify({'success': False, 'message': f'Ошибка: {str(e)}'}), 500
 
 
+def _event_ranks_list_details_by_id(event_ids: list[int]) -> dict[int, dict]:
+    """Участия, уникальные спортсмены, БЕСП (как в отчётах), названия разрядов — по id турнира."""
+    if not event_ids:
+        return {}
+
+    free_flag = case(
+        (
+            and_(
+                Participant.pct_ppname == 'БЕСП',
+                Participant.exclude_free_from_reports.is_(False),
+                Event.exclude_free_from_reports.is_(False),
+            ),
+            1,
+        ),
+        else_=0,
+    )
+
+    agg_rows = (
+        db.session.query(
+            Participant.event_id,
+            func.count(Participant.id).label('participants_total'),
+            func.count(func.distinct(Participant.athlete_id)).label('participants_unique'),
+            func.coalesce(func.sum(free_flag), 0).label('free_total'),
+        )
+        .join(Event, Participant.event_id == Event.id)
+        .filter(Participant.event_id.in_(event_ids))
+        .group_by(Participant.event_id)
+        .all()
+    )
+
+    by_id = {
+        eid: {
+            'participants_total': 0,
+            'participants_unique': 0,
+            'free_total': 0,
+            'category_labels': [],
+        }
+        for eid in event_ids
+    }
+
+    for row in agg_rows:
+        eid = row.event_id
+        by_id[eid]['participants_total'] = int(row.participants_total or 0)
+        by_id[eid]['participants_unique'] = int(row.participants_unique or 0)
+        by_id[eid]['free_total'] = int(row.free_total or 0)
+
+    cat_rows = (
+        db.session.query(Category.event_id, Category.name, Category.normalized_name)
+        .filter(Category.event_id.in_(event_ids))
+        .all()
+    )
+    labels_by_event: dict[int, set[str]] = defaultdict(set)
+    for eid, name, norm in cat_rows:
+        label = (norm or name or '').strip()
+        if label:
+            labels_by_event[eid].add(label)
+
+    for eid in event_ids:
+        by_id[eid]['category_labels'] = sorted(labels_by_event[eid])
+
+    return by_id
+
+
 @admin_bp.route('/admin/event-ranks', methods=['GET', 'POST'])
 @admin_required
 def admin_event_ranks():
     """Управление рангами турниров + статистика по рангам."""
-    from google_sheets_sync import EVENT_RANK_OPTIONS, get_event_rank_statistics_data
+    from google_sheets_sync import get_event_rank_statistics_data
 
     allowed_ranks = set(EVENT_RANK_OPTIONS)
 
@@ -864,11 +930,14 @@ def admin_event_ranks():
 
     events = Event.query.order_by(Event.begin_date.desc(), Event.id.desc()).all()
     rank_stats = get_event_rank_statistics_data()
+    event_ids = [e.id for e in events]
+    event_list_details = _event_ranks_list_details_by_id(event_ids)
     return render_template(
         'admin_event_ranks.html',
         events=events,
         rank_options=EVENT_RANK_OPTIONS,
         rank_stats=rank_stats,
+        event_list_details=event_list_details,
     )
 
 @admin_bp.route('/admin/free-participation', methods=['GET', 'POST'])

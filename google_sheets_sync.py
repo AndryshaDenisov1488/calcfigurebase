@@ -11,6 +11,7 @@ import logging
 import time
 import random
 from app import app, db
+from event_rank_constants import EVENT_RANK_OPTIONS, UNASSIGNED_EVENT_RANK
 from models import Athlete, Club, Category, Participant, Event
 
 logger = logging.getLogger(__name__)
@@ -38,15 +39,6 @@ EXCLUDED_DATES_FOR_1SP_STATS = {
     date(2025, 12, 11),   # Новогодний турнир Академии спорта
     date(2026, 1, 21),    # Зимний Турнир Академии спорта
 }
-
-EVENT_RANK_OPTIONS = [
-    'Физкультурное мероприятие',
-    'Спортивное мероприятие',
-    'Всероссийское мероприятие',
-    'Основное мероприятие Москвы',
-]
-
-UNASSIGNED_EVENT_RANK = 'Без ранга'
 
 def get_google_sheets_client():
     """Подключается к Google Sheets API"""
