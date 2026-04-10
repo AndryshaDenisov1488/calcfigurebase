@@ -794,6 +794,44 @@ def admin_export_google_sheets_status():
         })
 
 
+@admin_bp.route('/admin/event-rank-update', methods=['POST'])
+@admin_required
+def admin_event_rank_update():
+    """Сохранение ранга турнира через AJAX (без перезагрузки страницы)."""
+    from google_sheets_sync import EVENT_RANK_OPTIONS
+
+    allowed_ranks = set(EVENT_RANK_OPTIONS)
+    data = request.get_json(silent=True) or {}
+    event_id = data.get('event_id')
+    if event_id is not None:
+        try:
+            event_id = int(event_id)
+        except (TypeError, ValueError):
+            event_id = None
+    selected_rank = (data.get('event_rank') or '').strip()
+
+    event = Event.query.get(event_id) if event_id else None
+    if not event:
+        return jsonify({'success': False, 'message': 'Турнир не найден'}), 404
+
+    if selected_rank and selected_rank not in allowed_ranks:
+        return jsonify({'success': False, 'message': 'Недопустимый ранг турнира'}), 400
+
+    event.event_rank = selected_rank or None
+    try:
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'message': 'Сохранено',
+            'event_id': event.id,
+            'event_rank': event.event_rank or '',
+        })
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f'Error updating event rank for event_id={event_id}: {e}')
+        return jsonify({'success': False, 'message': f'Ошибка: {str(e)}'}), 500
+
+
 @admin_bp.route('/admin/event-ranks', methods=['GET', 'POST'])
 @admin_required
 def admin_event_ranks():

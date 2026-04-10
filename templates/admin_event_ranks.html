@@ -53,8 +53,7 @@
                         <tr>
                             <th style="min-width: 280px;">Турнир</th>
                             <th style="min-width: 130px;">Дата</th>
-                            <th style="min-width: 260px;">Ранг</th>
-                            <th style="min-width: 120px;">Действие</th>
+                            <th style="min-width: 320px;">Ранг</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -74,18 +73,21 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <form method="POST" class="d-flex gap-2">
-                                    <input type="hidden" name="event_id" value="{{ event.id }}">
-                                    <select class="form-select form-select-sm" name="event_rank">
+                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                    <select
+                                        class="form-select form-select-sm event-rank-select flex-grow-1"
+                                        style="min-width: 200px;"
+                                        name="event_rank"
+                                        data-event-id="{{ event.id }}"
+                                        aria-label="Ранг турнира {{ event.name|e }}"
+                                    >
                                         <option value="" {% if not event.event_rank %}selected{% endif %}>Без ранга</option>
                                         {% for rank in rank_options %}
                                             <option value="{{ rank }}" {% if event.event_rank == rank %}selected{% endif %}>{{ rank }}</option>
                                         {% endfor %}
                                     </select>
-                            </td>
-                            <td>
-                                    <button class="btn btn-sm btn-primary" type="submit">Сохранить</button>
-                                </form>
+                                    <span class="event-rank-status small text-muted" style="min-width: 7rem;" aria-live="polite"></span>
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
@@ -95,5 +97,72 @@
         </div>
     </div>
 </div>
+<script>
+(function () {
+    const saveUrl = {{ url_for('admin.admin_event_rank_update') | tojson }};
+    document.querySelectorAll('.event-rank-select').forEach(function (select) {
+        let previousValue = select.value;
+        select.addEventListener('focus', function () {
+            previousValue = select.value;
+        });
+        select.addEventListener('change', async function () {
+            const eventId = select.dataset.eventId;
+            const row = select.closest('tr');
+            const statusEl = row ? row.querySelector('.event-rank-status') : null;
+            if (statusEl) {
+                statusEl.textContent = 'Сохранение…';
+                statusEl.classList.remove('text-danger', 'text-success');
+                statusEl.classList.add('text-muted');
+            }
+            select.disabled = true;
+            try {
+                const res = await fetch(saveUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        event_id: parseInt(eventId, 10),
+                        event_rank: select.value,
+                    }),
+                });
+                const data = await res.json().catch(function () { return {}; });
+                if (!res.ok || !data.success) {
+                    select.value = previousValue;
+                    if (statusEl) {
+                        statusEl.textContent = data.message || 'Ошибка сохранения';
+                        statusEl.classList.remove('text-muted', 'text-success');
+                        statusEl.classList.add('text-danger');
+                    }
+                    return;
+                }
+                previousValue = select.value;
+                if (statusEl) {
+                    statusEl.textContent = data.message || 'Сохранено';
+                    statusEl.classList.remove('text-muted', 'text-danger');
+                    statusEl.classList.add('text-success');
+                    window.setTimeout(function () {
+                        if (statusEl.textContent === (data.message || 'Сохранено')) {
+                            statusEl.textContent = '';
+                            statusEl.classList.remove('text-success');
+                            statusEl.classList.add('text-muted');
+                        }
+                    }, 2000);
+                }
+            } catch (e) {
+                select.value = previousValue;
+                if (statusEl) {
+                    statusEl.textContent = 'Сеть недоступна';
+                    statusEl.classList.remove('text-muted', 'text-success');
+                    statusEl.classList.add('text-danger');
+                }
+            } finally {
+                select.disabled = false;
+            }
+        });
+    });
+})();
+</script>
 {% endblock %}
 
