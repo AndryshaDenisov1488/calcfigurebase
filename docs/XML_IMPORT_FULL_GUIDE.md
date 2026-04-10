@@ -377,3 +377,4 @@
 - `parsers/isu_calcfs_parser.py` — актуальная реализация парсера, на которую опирается импорт.
 - `services/import_service.py` — реальный код импорта, описанный в этом документе пошагово.
 
+![1773826601194](image/XML_IMPORT_FULL_GUIDE/1773826601194.png)![1773826605108](image/XML_IMPORT_FULL_GUIDE/1773826605108.png)![1773826614783](image/XML_IMPORT_FULL_GUIDE/1773826614783.png)

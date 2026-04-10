@@ -793,6 +793,46 @@ def admin_export_google_sheets_status():
             'finished_at': state.get('finished_at'),
         })
 
+
+@admin_bp.route('/admin/event-ranks', methods=['GET', 'POST'])
+@admin_required
+def admin_event_ranks():
+    """Управление рангами турниров + статистика по рангам."""
+    from google_sheets_sync import EVENT_RANK_OPTIONS, get_event_rank_statistics_data
+
+    allowed_ranks = set(EVENT_RANK_OPTIONS)
+
+    if request.method == 'POST':
+        event_id = request.form.get('event_id', type=int)
+        selected_rank = (request.form.get('event_rank') or '').strip()
+        event = Event.query.get(event_id) if event_id else None
+        if not event:
+            flash('Турнир не найден', 'error')
+            return redirect(url_for('admin.admin_event_ranks'))
+
+        if selected_rank and selected_rank not in allowed_ranks:
+            flash('Недопустимый ранг турнира', 'error')
+            return redirect(url_for('admin.admin_event_ranks'))
+
+        event.event_rank = selected_rank or None
+        try:
+            db.session.commit()
+            flash(f'Ранг турнира "{event.name}" обновлён', 'success')
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Ошибка при обновлении ранга: {str(e)}', 'error')
+            logger.error(f'Error updating event rank for event_id={event_id}: {e}')
+        return redirect(url_for('admin.admin_event_ranks'))
+
+    events = Event.query.order_by(Event.begin_date.desc(), Event.id.desc()).all()
+    rank_stats = get_event_rank_statistics_data()
+    return render_template(
+        'admin_event_ranks.html',
+        events=events,
+        rank_options=EVENT_RANK_OPTIONS,
+        rank_stats=rank_stats,
+    )
+
 @admin_bp.route('/admin/free-participation', methods=['GET', 'POST'])
 @admin_required
 def admin_free_participation():

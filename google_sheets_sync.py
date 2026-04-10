@@ -39,6 +39,15 @@ EXCLUDED_DATES_FOR_1SP_STATS = {
     date(2026, 1, 21),    # Зимний Турнир Академии спорта
 }
 
+EVENT_RANK_OPTIONS = [
+    'Физкультурное мероприятие',
+    'Спортивное мероприятие',
+    'Всероссийское мероприятие',
+    'Основное мероприятие Москвы',
+]
+
+UNASSIGNED_EVENT_RANK = 'Без ранга'
+
 def get_google_sheets_client():
     """Подключается к Google Sheets API"""
     try:
@@ -145,6 +154,91 @@ def safe_api_call(func, *args, max_retries=3, delay=1, **kwargs):
                 # Последняя попытка - пробрасываем ошибку
                 logger.error(f"Ошибка API после {max_retries} попыток: {e}")
                 raise
+
+
+def get_event_rank_statistics_data():
+    """Статистика по рангам турниров (для админки и Google Sheets)."""
+    with app.app_context():
+        events = db.session.query(Event.id, Event.event_rank).all()
+
+        rank_to_event_ids = {}
+        for event_id, event_rank in events:
+            rank = (event_rank or '').strip() or UNASSIGNED_EVENT_RANK
+            rank_to_event_ids.setdefault(rank, set()).add(event_id)
+
+        participant_rows = db.session.query(
+            Participant.event_id,
+            Participant.athlete_id,
+            Participant.pct_ppname,
+            Participant.exclude_free_from_reports,
+            Event.exclude_free_from_reports,
+            Event.event_rank,
+        ).join(
+            Event, Participant.event_id == Event.id
+        ).all()
+
+        stats = {}
+        for rank, event_ids in rank_to_event_ids.items():
+            stats[rank] = {
+                'rank': rank,
+                'tournaments_count': len(event_ids),
+                'participants_total': 0,
+                'participants_unique': 0,
+                'free_total': 0,
+                'free_unique': 0,
+                '_unique_set': set(),
+                '_free_unique_set': set(),
+            }
+
+        for event_id, athlete_id, pct_ppname, participant_excl, event_excl, event_rank in participant_rows:
+            rank = (event_rank or '').strip() or UNASSIGNED_EVENT_RANK
+            if rank not in stats:
+                stats[rank] = {
+                    'rank': rank,
+                    'tournaments_count': 0,
+                    'participants_total': 0,
+                    'participants_unique': 0,
+                    'free_total': 0,
+                    'free_unique': 0,
+                    '_unique_set': set(),
+                    '_free_unique_set': set(),
+                }
+            row_stats = stats[rank]
+            row_stats['participants_total'] += 1
+            if athlete_id is not None:
+                row_stats['_unique_set'].add(athlete_id)
+            is_free = _is_free_for_reports(pct_ppname, event_excl, participant_excl)
+            if is_free:
+                row_stats['free_total'] += 1
+                if athlete_id is not None:
+                    row_stats['_free_unique_set'].add(athlete_id)
+
+        ordered_ranks = EVENT_RANK_OPTIONS + [UNASSIGNED_EVENT_RANK]
+        remaining = sorted([r for r in stats.keys() if r not in ordered_ranks])
+        ordered_ranks.extend(remaining)
+
+        result = []
+        for rank in ordered_ranks:
+            if rank not in stats:
+                result.append({
+                    'rank': rank,
+                    'tournaments_count': 0,
+                    'participants_total': 0,
+                    'participants_unique': 0,
+                    'free_total': 0,
+                    'free_unique': 0,
+                })
+                continue
+            row_stats = stats[rank]
+            result.append({
+                'rank': rank,
+                'tournaments_count': row_stats['tournaments_count'],
+                'participants_total': row_stats['participants_total'],
+                'participants_unique': len(row_stats['_unique_set']),
+                'free_total': row_stats['free_total'],
+                'free_unique': len(row_stats['_free_unique_set']),
+            })
+        return result
 
 def get_athletes_data():
     """Получает данные всех спортсменов из БД, сгруппированные по разрядам (без МС и КМС)"""
@@ -3512,6 +3606,28 @@ def export_to_google_sheets(spreadsheet_id=None):
             '',
             ''
         ])
+        summary_data.append(['', '', '', '', '', ''])
+
+        # 2.1 Статистика по рангам турниров
+        event_rank_stats = get_event_rank_statistics_data()
+        summary_data.append(['СТАТИСТИКА ПО РАНГАМ ТУРНИРОВ', '', '', '', '', ''])
+        summary_data.append([
+            'Ранг турнира',
+            'Турниров',
+            'Участий (всего)',
+            'Участников (уник.)',
+            'БЕСП (всего)',
+            'БЕСП (уник.)',
+        ])
+        for row in event_rank_stats:
+            summary_data.append([
+                row['rank'],
+                row['tournaments_count'],
+                row['participants_total'],
+                row['participants_unique'],
+                row['free_total'],
+                row['free_unique'],
+            ])
         summary_data.append(['', '', '', '', '', ''])
         
         # 3. Количество уникальных участий по каждому разряду с разделением платно/бесплатно
