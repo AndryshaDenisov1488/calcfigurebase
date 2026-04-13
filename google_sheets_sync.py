@@ -11,7 +11,11 @@ import logging
 import time
 import random
 from app import app, db
-from event_rank_constants import EVENT_RANK_OPTIONS, UNASSIGNED_EVENT_RANK
+from event_rank_constants import (
+    CATEGORY_RANKS_MS_KMS,
+    EVENT_RANK_OPTIONS,
+    UNASSIGNED_EVENT_RANK,
+)
 from models import Athlete, Club, Category, Participant, Event
 
 logger = logging.getLogger(__name__)
@@ -148,8 +152,60 @@ def safe_api_call(func, *args, max_retries=3, delay=1, **kwargs):
                 raise
 
 
+def _empty_event_rank_stats_row(rank: str, tournaments_count: int = 0) -> dict:
+    return {
+        'rank': rank,
+        'tournaments_count': tournaments_count,
+        'participants_total': 0,
+        'participants_unique': 0,
+        'free_total': 0,
+        'free_unique': 0,
+        '_unique_set': set(),
+        '_free_unique_set': set(),
+    }
+
+
+def _finalize_event_rank_stats_table(stats: dict):
+    ordered_ranks = EVENT_RANK_OPTIONS + [UNASSIGNED_EVENT_RANK]
+    remaining = sorted([r for r in stats.keys() if r not in ordered_ranks])
+    ordered_ranks.extend(remaining)
+
+    result = []
+    for rank in ordered_ranks:
+        if rank not in stats:
+            result.append({
+                'rank': rank,
+                'tournaments_count': 0,
+                'participants_total': 0,
+                'participants_unique': 0,
+                'free_total': 0,
+                'free_unique': 0,
+            })
+            continue
+        row_stats = stats[rank]
+        result.append({
+            'rank': rank,
+            'tournaments_count': row_stats['tournaments_count'],
+            'participants_total': row_stats['participants_total'],
+            'participants_unique': len(row_stats['_unique_set']),
+            'free_total': row_stats['free_total'],
+            'free_unique': len(row_stats['_free_unique_set']),
+        })
+    return result
+
+
+def _is_ms_kms_normalized_category(normalized_name) -> bool:
+    n = (normalized_name or '').strip()
+    if not n:
+        return False
+    return n in CATEGORY_RANKS_MS_KMS
+
+
 def get_event_rank_statistics_data():
-    """Статистика по рангам турниров (для админки и Google Sheets)."""
+    """Статистика по рангам турниров (для админки и Google Sheets).
+
+    Возвращает два набора строк: без разрядов МС/КМС (как в аналитике) и со всеми разрядами.
+    """
     with app.app_context():
         events = db.session.query(Event.id, Event.event_rank).all()
 
@@ -158,6 +214,18 @@ def get_event_rank_statistics_data():
             rank = (event_rank or '').strip() or UNASSIGNED_EVENT_RANK
             rank_to_event_ids.setdefault(rank, set()).add(event_id)
 
+        stats_full: dict = {}
+        stats_filtered: dict = {}
+        for rank, event_ids in rank_to_event_ids.items():
+            tc = len(event_ids)
+            stats_full[rank] = _empty_event_rank_stats_row(rank, tc)
+            stats_filtered[rank] = _empty_event_rank_stats_row(rank, tc)
+
+        athletes_all: set = set()
+        athletes_free_all: set = set()
+        athletes_filtered: set = set()
+        athletes_free_filtered: set = set()
+
         participant_rows = db.session.query(
             Participant.event_id,
             Participant.athlete_id,
@@ -165,72 +233,72 @@ def get_event_rank_statistics_data():
             Participant.exclude_free_from_reports,
             Event.exclude_free_from_reports,
             Event.event_rank,
+            Category.normalized_name,
         ).join(
             Event, Participant.event_id == Event.id
+        ).outerjoin(
+            Category, Participant.category_id == Category.id
         ).all()
 
-        stats = {}
-        for rank, event_ids in rank_to_event_ids.items():
-            stats[rank] = {
-                'rank': rank,
-                'tournaments_count': len(event_ids),
-                'participants_total': 0,
-                'participants_unique': 0,
-                'free_total': 0,
-                'free_unique': 0,
-                '_unique_set': set(),
-                '_free_unique_set': set(),
-            }
-
-        for event_id, athlete_id, pct_ppname, participant_excl, event_excl, event_rank in participant_rows:
+        for (
+            _event_id,
+            athlete_id,
+            pct_ppname,
+            participant_excl,
+            event_excl,
+            event_rank,
+            category_normalized,
+        ) in participant_rows:
             rank = (event_rank or '').strip() or UNASSIGNED_EVENT_RANK
-            if rank not in stats:
-                stats[rank] = {
-                    'rank': rank,
-                    'tournaments_count': 0,
-                    'participants_total': 0,
-                    'participants_unique': 0,
-                    'free_total': 0,
-                    'free_unique': 0,
-                    '_unique_set': set(),
-                    '_free_unique_set': set(),
-                }
-            row_stats = stats[rank]
-            row_stats['participants_total'] += 1
+            for bucket in (stats_full, stats_filtered):
+                if rank not in bucket:
+                    bucket[rank] = _empty_event_rank_stats_row(rank, 0)
+
+            row_full = stats_full[rank]
+            row_full['participants_total'] += 1
             if athlete_id is not None:
-                row_stats['_unique_set'].add(athlete_id)
+                row_full['_unique_set'].add(athlete_id)
+                athletes_all.add(athlete_id)
             is_free = _is_free_for_reports(pct_ppname, event_excl, participant_excl)
             if is_free:
-                row_stats['free_total'] += 1
+                row_full['free_total'] += 1
                 if athlete_id is not None:
-                    row_stats['_free_unique_set'].add(athlete_id)
+                    row_full['_free_unique_set'].add(athlete_id)
+                    athletes_free_all.add(athlete_id)
 
-        ordered_ranks = EVENT_RANK_OPTIONS + [UNASSIGNED_EVENT_RANK]
-        remaining = sorted([r for r in stats.keys() if r not in ordered_ranks])
-        ordered_ranks.extend(remaining)
-
-        result = []
-        for rank in ordered_ranks:
-            if rank not in stats:
-                result.append({
-                    'rank': rank,
-                    'tournaments_count': 0,
-                    'participants_total': 0,
-                    'participants_unique': 0,
-                    'free_total': 0,
-                    'free_unique': 0,
-                })
+            if _is_ms_kms_normalized_category(category_normalized):
                 continue
-            row_stats = stats[rank]
-            result.append({
-                'rank': rank,
-                'tournaments_count': row_stats['tournaments_count'],
-                'participants_total': row_stats['participants_total'],
-                'participants_unique': len(row_stats['_unique_set']),
-                'free_total': row_stats['free_total'],
-                'free_unique': len(row_stats['_free_unique_set']),
-            })
-        return result
+
+            row_f = stats_filtered[rank]
+            row_f['participants_total'] += 1
+            if athlete_id is not None:
+                row_f['_unique_set'].add(athlete_id)
+                athletes_filtered.add(athlete_id)
+            if is_free:
+                row_f['free_total'] += 1
+                if athlete_id is not None:
+                    row_f['_free_unique_set'].add(athlete_id)
+                    athletes_free_filtered.add(athlete_id)
+
+        result_filtered = _finalize_event_rank_stats_table(stats_filtered)
+        result_full = _finalize_event_rank_stats_table(stats_full)
+        total_events = len(events)
+
+        def _footer_rows(rows, athletes_u: set, athletes_free_u: set) -> dict:
+            return {
+                'tournaments_count': total_events,
+                'participants_total': sum(r['participants_total'] for r in rows),
+                'participants_unique': len(athletes_u),
+                'free_total': sum(r['free_total'] for r in rows),
+                'free_unique': len(athletes_free_u),
+            }
+
+        return {
+            'without_ms_kms': result_filtered,
+            'with_ms_kms': result_full,
+            'totals_without_ms_kms': _footer_rows(result_filtered, athletes_filtered, athletes_free_filtered),
+            'totals_with_ms_kms': _footer_rows(result_full, athletes_all, athletes_free_all),
+        }
 
 def get_athletes_data():
     """Получает данные всех спортсменов из БД, сгруппированные по разрядам (без МС и КМС)"""
@@ -3611,7 +3679,7 @@ def export_to_google_sheets(spreadsheet_id=None):
             'БЕСП (всего)',
             'БЕСП (уник.)',
         ])
-        for row in event_rank_stats:
+        for row in event_rank_stats['without_ms_kms']:
             summary_data.append([
                 row['rank'],
                 row['tournaments_count'],
@@ -3620,6 +3688,15 @@ def export_to_google_sheets(spreadsheet_id=None):
                 row['free_total'],
                 row['free_unique'],
             ])
+        tw = event_rank_stats['totals_without_ms_kms']
+        summary_data.append([
+            'ИТОГО (без МС/КМС)',
+            tw['tournaments_count'],
+            tw['participants_total'],
+            tw['participants_unique'],
+            tw['free_total'],
+            tw['free_unique'],
+        ])
         summary_data.append(['', '', '', '', '', ''])
         
         # 3. Количество уникальных участий по каждому разряду с разделением платно/бесплатно

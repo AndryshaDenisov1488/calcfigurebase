@@ -7,6 +7,7 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request, Response
 
 from extensions import db
+from event_rank_constants import CATEGORY_RANKS_MS_KMS
 from models import Event, Category, Athlete, Participant, Club, Segment, Performance, Coach, CoachAssignment, Element, ComponentScore
 from season_utils import get_season_from_date
 from services.rank_service import normalize_category_name, get_rank_weight
@@ -340,10 +341,7 @@ def api_category_statistics():
     return jsonify(result)
 
 # Разряды МС и КМС — исключаются из подсчёта на странице бесплатного участия (как и везде: только 3 юн–1 сп)
-FREE_PARTICIPATION_EXCLUDED_RANKS = {
-    'МС, Женщины', 'МС, Мужчины', 'МС, Пары', 'МС, Танцы',
-    'КМС, Девушки', 'КМС, Юноши', 'КМС, Пары', 'КМС, Танцы'
-}
+FREE_PARTICIPATION_EXCLUDED_RANKS = CATEGORY_RANKS_MS_KMS
 
 
 @api_bp.route('/analytics/free-participation')

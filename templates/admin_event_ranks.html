@@ -11,18 +11,22 @@
     <div class="card mb-4">
         <div class="card-header">
             <strong>Сводная статистика по рангам</strong>
+            <p class="small text-muted mb-0 mt-2">
+                <i class="fas fa-info-circle" aria-hidden="true"></i>
+                Учитываются участия без разрядов МС и КМС (как на аналитике и в отчётах: 1 сп — 3 юн. и прочие категории, кроме мастерских).
+            </p>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-sm table-striped mb-0">
                     <thead>
                         <tr>
-                            <th>Ранг турнира</th>
-                            <th>Турниров</th>
-                            <th>Участий (всего)</th>
-                            <th>Участников (уник.)</th>
-                            <th>БЕСП (всего)</th>
-                            <th>БЕСП (уник.)</th>
+                            <th scope="col">Ранг турнира</th>
+                            <th scope="col">Турниров</th>
+                            <th scope="col">Участий (всего)</th>
+                            <th scope="col">Участников (уник.)</th>
+                            <th scope="col">БЕСП (всего)</th>
+                            <th scope="col">БЕСП (уник.)</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -37,10 +41,65 @@
                         </tr>
                         {% endfor %}
                     </tbody>
+                    <tfoot class="table-group-divider">
+                        <tr class="fw-semibold">
+                            <th scope="row">Итого</th>
+                            <td>{{ rank_stats_totals.tournaments_count }}</td>
+                            <td>{{ rank_stats_totals.participants_total }}</td>
+                            <td>{{ rank_stats_totals.participants_unique }}</td>
+                            <td>{{ rank_stats_totals.free_total }}</td>
+                            <td>{{ rank_stats_totals.free_unique }}</td>
+                        </tr>
+                    </tfoot>
                 </table>
             </div>
         </div>
     </div>
+
+    <details class="card mb-4">
+        <summary class="card-header m-0" style="cursor: pointer;">
+            <strong>Сводная статистика со всеми разрядами</strong>
+            <span class="d-block small text-muted mt-1">Включая МС и КМС — те же столбцы, полный учёт всех категорий.</span>
+        </summary>
+        <div class="card-body p-0 border-top">
+            <div class="table-responsive">
+                <table class="table table-sm table-striped mb-0">
+                    <thead>
+                        <tr>
+                            <th scope="col">Ранг турнира</th>
+                            <th scope="col">Турниров</th>
+                            <th scope="col">Участий (всего)</th>
+                            <th scope="col">Участников (уник.)</th>
+                            <th scope="col">БЕСП (всего)</th>
+                            <th scope="col">БЕСП (уник.)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in rank_stats_with_ms_kms %}
+                        <tr>
+                            <td>{{ row.rank }}</td>
+                            <td>{{ row.tournaments_count }}</td>
+                            <td>{{ row.participants_total }}</td>
+                            <td>{{ row.participants_unique }}</td>
+                            <td>{{ row.free_total }}</td>
+                            <td>{{ row.free_unique }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="table-group-divider">
+                        <tr class="fw-semibold">
+                            <th scope="row">Итого</th>
+                            <td>{{ rank_stats_with_ms_kms_totals.tournaments_count }}</td>
+                            <td>{{ rank_stats_with_ms_kms_totals.participants_total }}</td>
+                            <td>{{ rank_stats_with_ms_kms_totals.participants_unique }}</td>
+                            <td>{{ rank_stats_with_ms_kms_totals.free_total }}</td>
+                            <td>{{ rank_stats_with_ms_kms_totals.free_unique }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </details>
 
     <div class="card">
         <div class="card-header">

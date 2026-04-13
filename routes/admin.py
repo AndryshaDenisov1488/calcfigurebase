@@ -929,14 +929,17 @@ def admin_event_ranks():
         return redirect(url_for('admin.admin_event_ranks'))
 
     events = Event.query.order_by(Event.begin_date.desc(), Event.id.desc()).all()
-    rank_stats = get_event_rank_statistics_data()
+    rank_stats_bundle = get_event_rank_statistics_data()
     event_ids = [e.id for e in events]
     event_list_details = _event_ranks_list_details_by_id(event_ids)
     return render_template(
         'admin_event_ranks.html',
         events=events,
         rank_options=EVENT_RANK_OPTIONS,
-        rank_stats=rank_stats,
+        rank_stats=rank_stats_bundle['without_ms_kms'],
+        rank_stats_with_ms_kms=rank_stats_bundle['with_ms_kms'],
+        rank_stats_totals=rank_stats_bundle['totals_without_ms_kms'],
+        rank_stats_with_ms_kms_totals=rank_stats_bundle['totals_with_ms_kms'],
         event_list_details=event_list_details,
     )
 
