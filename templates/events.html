@@ -117,9 +117,28 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2><i class="fas fa-trophy"></i> Турниры</h2>
-    <a href="{{ url_for('admin.upload_file') }}" class="btn btn-primary">
-        <i class="fas fa-plus"></i> Добавить турнир
-    </a>
+    <div class="d-flex gap-2">
+        <div class="position-relative" style="width: 360px;">
+            <input
+                type="text"
+                class="form-control"
+                id="searchInput"
+                placeholder="Поиск по названию, месту, площадке..."
+                value="{{ search or '' }}"
+            >
+        </div>
+        <button class="btn btn-outline-primary" onclick="applySearch()">
+            <i class="fas fa-search"></i>
+        </button>
+        {% if search %}
+        <button class="btn btn-outline-secondary" onclick="clearSearch()">
+            <i class="fas fa-times"></i>
+        </button>
+        {% endif %}
+        <a href="{{ url_for('admin.upload_file') }}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Добавить турнир
+        </a>
+    </div>
 </div>
 
 {% if seasons or available_ranks or available_months %}
@@ -169,12 +188,10 @@
             </div>
             <div class="card-body">
                 <div class="mb-2">
-                    <label class="form-label">Сортировка:</label>
-                    <select class="form-select" id="sortSelect" onchange="changeSorting()">
-                        <option value="alphabetical" {% if current_sort == 'alphabetical' %}selected{% endif %}>По алфавиту</option>
-                        <option value="date" {% if current_sort == 'date' %}selected{% endif %}>По дате</option>
-                        <option value="rank" {% if current_sort == 'rank' %}selected{% endif %}>По разряду</option>
-                    </select>
+                    <label class="form-label mb-0">Сортировка:</label>
+                    <div class="text-muted small">
+                        Нажмите на заголовок столбца в таблице (Название, Место, Дата, Категории, Участники)
+                    </div>
                 </div>
                 <div>
                     <label class="form-label">Фильтр по разряду:</label>
@@ -208,11 +225,56 @@
                 <table class="table table-hover">
                     <thead>
                         <tr>
-                            <th>Название</th>
-                            <th>Место проведения</th>
-                            <th>Дата проведения</th>
-                            <th>Категории</th>
-                            <th>Количество выступивших детей</th>
+                            <th>
+                                <a class="text-decoration-none link-dark" href="{{ url_for('public.events', search=search, rank=current_rank_filter, month=current_month_filter, sort_by='name', sort_order='desc' if current_sort_by == 'name' and current_sort_order == 'asc' else 'asc') }}">
+                                    Название
+                                    {% if current_sort_by == 'name' %}
+                                        <i class="fas fa-sort-{{ 'up' if current_sort_order == 'asc' else 'down' }}"></i>
+                                    {% else %}
+                                        <i class="fas fa-sort text-muted"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
+                            <th>
+                                <a class="text-decoration-none link-dark" href="{{ url_for('public.events', search=search, rank=current_rank_filter, month=current_month_filter, sort_by='place', sort_order='desc' if current_sort_by == 'place' and current_sort_order == 'asc' else 'asc') }}">
+                                    Место проведения
+                                    {% if current_sort_by == 'place' %}
+                                        <i class="fas fa-sort-{{ 'up' if current_sort_order == 'asc' else 'down' }}"></i>
+                                    {% else %}
+                                        <i class="fas fa-sort text-muted"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
+                            <th>
+                                <a class="text-decoration-none link-dark" href="{{ url_for('public.events', search=search, rank=current_rank_filter, month=current_month_filter, sort_by='begin_date', sort_order='desc' if current_sort_by == 'begin_date' and current_sort_order == 'asc' else 'asc') }}">
+                                    Дата проведения
+                                    {% if current_sort_by == 'begin_date' %}
+                                        <i class="fas fa-sort-{{ 'up' if current_sort_order == 'asc' else 'down' }}"></i>
+                                    {% else %}
+                                        <i class="fas fa-sort text-muted"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
+                            <th>
+                                <a class="text-decoration-none link-dark" href="{{ url_for('public.events', search=search, rank=current_rank_filter, month=current_month_filter, sort_by='categories_count', sort_order='desc' if current_sort_by == 'categories_count' and current_sort_order == 'asc' else 'asc') }}">
+                                    Категории
+                                    {% if current_sort_by == 'categories_count' %}
+                                        <i class="fas fa-sort-{{ 'up' if current_sort_order == 'asc' else 'down' }}"></i>
+                                    {% else %}
+                                        <i class="fas fa-sort text-muted"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
+                            <th>
+                                <a class="text-decoration-none link-dark" href="{{ url_for('public.events', search=search, rank=current_rank_filter, month=current_month_filter, sort_by='participants_count', sort_order='desc' if current_sort_by == 'participants_count' and current_sort_order == 'asc' else 'asc') }}">
+                                    Количество выступивших детей
+                                    {% if current_sort_by == 'participants_count' %}
+                                        <i class="fas fa-sort-{{ 'up' if current_sort_order == 'asc' else 'down' }}"></i>
+                                    {% else %}
+                                        <i class="fas fa-sort text-muted"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
                             <th>Действия</th>
                         </tr>
                     </thead>
@@ -307,6 +369,24 @@
 
 {% block extra_js %}
 <script>
+function applySearch() {
+    const searchInput = document.getElementById('searchInput')
+    const params = new URLSearchParams(window.location.search)
+    const searchValue = (searchInput ? searchInput.value : '').trim()
+    if (searchValue) {
+        params.set('search', searchValue)
+    } else {
+        params.delete('search')
+    }
+    window.location.href = window.location.pathname + '?' + params.toString()
+}
+
+function clearSearch() {
+    const params = new URLSearchParams(window.location.search)
+    params.delete('search')
+    window.location.href = window.location.pathname + '?' + params.toString()
+}
+
 function goToEvent(eventId) {
     window.location.href = `/event/${eventId}`;
 }
@@ -338,12 +418,17 @@ function filterBySeason(season) {
 }
 
 function updateFilters() {
-    const sortSelect = document.getElementById('sortSelect');
     const rankFilter = document.getElementById('rankFilter');
     const monthFilter = document.getElementById('monthFilter');
+    const searchInput = document.getElementById('searchInput');
     
     const params = new URLSearchParams(window.location.search);
-    params.set('sort', sortSelect.value);
+    const searchValue = searchInput ? searchInput.value.trim() : '';
+    if (searchValue) {
+        params.set('search', searchValue);
+    } else {
+        params.delete('search');
+    }
     
     if (rankFilter && rankFilter.value) {
         params.set('rank', rankFilter.value);
@@ -371,5 +456,15 @@ function changeRankFilter() {
 function changeMonthFilter() {
     updateFilters();
 }
+
+document.addEventListener('DOMContentLoaded', function () {
+    const searchInput = document.getElementById('searchInput');
+    if (!searchInput) return;
+    searchInput.addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+            applySearch();
+        }
+    });
+})
 </script>
 {% endblock %}

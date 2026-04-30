@@ -62,10 +62,44 @@ def athlete_detail(athlete_id):
 @public_bp.route('/events')
 def events():
     """Страница со списком турниров"""
-    sort_by = request.args.get('sort', 'alphabetical')
+    search = request.args.get('search', '').strip()
+    sort_by = request.args.get('sort_by', '').strip()
+    sort_order = request.args.get('sort_order', 'desc').strip().lower()
+    legacy_sort = request.args.get('sort', '').strip()
     rank_filter = request.args.get('rank', '')
     month_filter = request.args.get('month', '')
+
+    if not sort_by:
+        if legacy_sort == 'alphabetical':
+            sort_by = 'name'
+            sort_order = 'asc'
+        elif legacy_sort == 'date':
+            sort_by = 'begin_date'
+            sort_order = 'desc'
+        elif legacy_sort == 'rank':
+            sort_by = 'name'
+            sort_order = 'asc'
+        else:
+            sort_by = 'begin_date'
+
+    if sort_order not in ('asc', 'desc'):
+        sort_order = 'desc'
+
     query = Event.query
+
+    if search:
+        search_terms = [term for term in search.split() if term]
+        for term in search_terms:
+            like_term = f'%{term}%'
+            query = query.filter(
+                db.or_(
+                    Event.name.ilike(like_term),
+                    Event.long_name.ilike(like_term),
+                    Event.place.ilike(like_term),
+                    Event.venue.ilike(like_term),
+                )
+            )
+
     if rank_filter:
         query = query.join(Category, Event.id == Category.event_id).filter(
             Category.normalized_name == rank_filter
@@ -79,16 +113,26 @@ def events():
             )
         except (ValueError, AttributeError):
             pass
-    if sort_by == 'alphabetical':
-        events_list = query.order_by(Event.name.asc()).all()
-    elif sort_by == 'date':
-        events_list = query.order_by(Event.begin_date.desc()).all()
-    elif sort_by == 'rank':
-        events_list = query.join(Category, Event.id == Category.event_id).order_by(
-            Category.normalized_name.asc()
-        ).distinct().all()
+    sql_sort_fields = {
+        'name': Event.name,
+        'place': Event.place,
+        'begin_date': Event.begin_date,
+    }
+
+    if sort_by in sql_sort_fields:
+        sort_field = sql_sort_fields[sort_by]
+        if sort_order == 'asc':
+            events_list = query.order_by(sort_field.asc().nullslast(), Event.id.desc()).all()
+        else:
+            events_list = query.order_by(sort_field.desc().nullslast(), Event.id.desc()).all()
     else:
-        events_list = query.order_by(Event.name.asc()).all()
+        events_list = query.order_by(Event.begin_date.desc(), Event.id.desc()).all()
+        reverse = sort_order == 'desc'
+        if sort_by == 'categories_count':
+            events_list = sorted(events_list, key=lambda event: len(event.categories or []), reverse=reverse)
+        elif sort_by == 'participants_count':
+            events_list = sorted(events_list, key=lambda event: len(event.participants or []), reverse=reverse)
+
     seasons = get_all_seasons_from_events(events_list)
     all_ranks = db.session.query(Category.normalized_name).distinct().filter(
         Category.normalized_name.isnot(None),
@@ -112,8 +156,10 @@ def events():
     return render_template(
         'events.html',
         events=events_list,
+        search=search,
         seasons=seasons,
-        current_sort=sort_by,
+        current_sort_by=sort_by,
+        current_sort_order=sort_order,
         current_rank_filter=rank_filter,
         current_month_filter=month_filter,
         available_ranks=available_ranks,
