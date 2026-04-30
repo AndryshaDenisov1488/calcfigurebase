@@ -24,10 +24,10 @@
     </button>
 </form>
 
-{% if has_free is defined and (has_free or no_free or not_found) %}
+{% if has_free is defined and (has_free or no_free or fio_only_matches or not_found) %}
 <hr class="my-4">
 <div class="row">
-    <div class="col-md-4">
+    <div class="col-lg-3 col-md-6 mb-3">
         <div class="card border-success h-100">
             <div class="card-header bg-success text-white">
                 <i class="fas fa-check-circle"></i> Есть бесплатные участия (БЕСП) <span class="badge bg-light text-dark">{{ has_free|length }}</span>
@@ -54,7 +54,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-lg-3 col-md-6 mb-3">
         <div class="card border-warning h-100">
             <div class="card-header bg-warning text-dark">
                 <i class="fas fa-ticket-alt"></i> Нет бесплатных (все платно) <span class="badge bg-dark">{{ no_free|length }}</span>
@@ -81,7 +81,38 @@
             </div>
         </div>
     </div>
-    <div class="col-md-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card border-info h-100">
+            <div class="card-header bg-info text-dark">
+                <i class="fas fa-circle-question"></i> Нет точного ФИО, но есть по ФИ <span class="badge bg-dark">{{ fio_only_matches|length }}</span>
+            </div>
+            <div class="card-body">
+                {% if fio_only_matches %}
+                <ul class="list-unstyled mb-0">
+                    {% for fio, match, total, free, first_aid in fio_only_matches %}
+                    <li class="mb-2">
+                        <strong>{{ fio }}</strong>
+                        {% if free > 0 %}
+                        <span class="badge bg-success ms-1">{{ free }} беспл.</span>
+                        {% else %}
+                        <span class="badge bg-danger ms-1">0 беспл.</span>
+                        {% endif %}
+                        <span class="text-muted small">· всего {{ total }}</span>
+                        <br><small class="text-muted">
+                            → <a href="{{ url_for('public.athlete_detail', athlete_id=match.id) }}" class="text-muted text-decoration-none">id={{ match.id }}: {{ match.full_name }}</a>
+                            · ДР: {{ match.birth_date }}
+                            · Разряд: {{ match.rank }}
+                        </small>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted mb-0">Нет таких в списке.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
         <div class="card border-danger h-100">
             <div class="card-header bg-danger text-white">
                 <i class="fas fa-user-times"></i> Нет в базе <span class="badge bg-light text-dark">{{ not_found|length }}</span>
@@ -101,7 +132,7 @@
     </div>
 </div>
 <p class="mt-3 text-muted small">
-    Совпадение по фамилии и имени с базой. БЕСП — участие с отметкой бесплатного старта в системе.
+    Если указано отчество, совпадение ищется по фамилии, имени и отчеству. Если отчество не указано — по фамилии и имени с показом всех найденных вариантов. БЕСП — участие с отметкой бесплатного старта в системе.
 </p>
 {% endif %}
 

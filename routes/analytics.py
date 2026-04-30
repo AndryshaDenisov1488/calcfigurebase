@@ -64,7 +64,10 @@ def _looks_like_fio(s):
 
 def _parse_pasted_list(text):
     """Умный разбор: из вставленного текста извлечь все строки, похожие на ФИО (игнорируя год, разряд, город/школу).
-    Сохраняем полное ФИО как вставил судья (для отображения); поиск по БД — по фамилии и имени (2 слова)."""
+    Сохраняем полное ФИО как вставил судья (для отображения).
+    Поиск по БД:
+    - если введено отчество, матчим по 3 словам (фамилия+имя+отчество)
+    - если отчества нет, матчим по 2 словам (фамилия+имя)"""
     lines = [ln.strip() for ln in (text or '').splitlines() if ln.strip()]
     result = []
     seen = set()
@@ -76,7 +79,9 @@ def _parse_pasted_list(text):
         words = _normalize_words(ln)
         if len(words) < 2:
             continue
-        fio_key = (words[0], words[1])
+        # Не схлопываем разных людей с одинаковыми фамилией+именем:
+        # если есть отчество, считаем ключ по 3 словам.
+        fio_key = tuple(words[:3]) if len(words) >= 3 else tuple(words[:2])
         if fio_key in seen:
             continue
         seen.add(fio_key)
@@ -85,20 +90,27 @@ def _parse_pasted_list(text):
 
 
 def _check_names_against_db(names):
-    """По списку «Фамилия Имя» вернуть (found, not_found).
+    """По списку ФИО вернуть (found, fio_only_matches, not_found).
     found = [(name, [match_info, ...]), ...], где match_info содержит:
       id, full_name, birth_date, patronymic, rank
+    fio_only_matches = [(input_fio, [match_info, ...]), ...] — когда точного ФИО нет,
+      но есть совпадения по фамилии+имени
     """
     if not names:
-        return [], []
-    # Собираем по два слова из каждой записи
+        return [], [], []
+    # Собираем ключи поиска:
+    # - full_key (3 слова), если в вводе есть отчество
+    # - base_key (2 слова) для случая без отчества
     name_keys = []
     for fio in names:
         words = _normalize_words(fio)
         if len(words) >= 2:
-            name_keys.append((fio, frozenset(words[:2])))
+            base_key = frozenset(words[:2])
+            full_key = frozenset(words[:3]) if len(words) >= 3 else None
+            dedup_key = tuple(words[:3]) if len(words) >= 3 else tuple(words[:2])
+            name_keys.append((fio, base_key, full_key, dedup_key))
     if not name_keys:
-        return [], list(names)
+        return [], [], list(names)
     # Все спортсмены из БД: (id, full_name, set слов)
     athletes_data = []
     for a in Athlete.query.all():
@@ -107,19 +119,34 @@ def _check_names_against_db(names):
         if words:
             athletes_data.append((a.id, name, words))
     found = []
+    fio_only_matches = []
     not_found = []
     seen_key = set()
-    for fio, key in name_keys:
-        if key in seen_key:
+    for fio, base_key, full_key, dedup_key in name_keys:
+        if dedup_key in seen_key:
             continue
-        seen_key.add(key)
-        raw_matches = [(aid, db_name) for aid, db_name, name_words in athletes_data if key <= name_words]
+        seen_key.add(dedup_key)
+
+        # Если ввели отчество — ищем точное совпадение по 3 словам.
+        if full_key:
+            raw_matches = [(aid, db_name) for aid, db_name, name_words in athletes_data if full_key <= name_words]
+            if not raw_matches:
+                # Мягкий fallback: точного ФИО нет, но есть совпадения по ФИ.
+                base_matches = [(aid, db_name) for aid, db_name, name_words in athletes_data if base_key <= name_words]
+                matches = _enrich_matches(base_matches)
+                if matches:
+                    fio_only_matches.append((fio, matches))
+                    continue
+        else:
+            # Без отчества показываем все варианты с одинаковыми фамилией и именем.
+            raw_matches = [(aid, db_name) for aid, db_name, name_words in athletes_data if base_key <= name_words]
+
         matches = _enrich_matches(raw_matches)
         if matches:
             found.append((fio, matches))
         else:
             not_found.append(fio)
-    return found, not_found
+    return found, fio_only_matches, not_found
 
 
 def _enrich_matches(raw_matches):
@@ -192,19 +219,21 @@ def _get_participation_counts():
 
 def _check_names_against_db_free(names):
     """Проверка списка ФИО по БД с учётом бесплатных участий (БЕСП).
-    Возвращает (has_free, no_free, not_found):
+    Возвращает (has_free, no_free, fio_only_matches, not_found):
     - has_free: [(display_fio, match_info, total_participations, free_count), ...]
     - no_free: [(display_fio, match_info, total_participations, 0), ...]
+    - fio_only_matches: [(display_fio, match_info, total_participations, free_count), ...]
     - not_found: [display_fio, ...]
     ВАЖНО: если по одному ФИО найдено несколько id, каждый id раскладывается отдельно
     в свою колонку (с БЕСП / без БЕСП), чтобы не смешивать разных людей.
     """
     if not names:
-        return [], [], []
-    found, not_found = _check_names_against_db(names)
+        return [], [], [], []
+    found, fio_only_found, not_found = _check_names_against_db(names)
     total_by_athlete, free_by_athlete = _get_participation_counts()
     has_free = []
     no_free = []
+    fio_only_matches = []
     for fio, matches in found:
         # Каждый match рассматриваем отдельно, чтобы не объединять разных людей с одинаковым ФИО
         for match in matches:
@@ -215,7 +244,16 @@ def _check_names_against_db_free(names):
                 has_free.append((fio, match, total, free, athlete_id))
             else:
                 no_free.append((fio, match, total, 0, athlete_id))
-    return has_free, no_free, not_found
+
+    # Мягкий fallback: нет точного ФИО, но есть совпадения по ФИ.
+    for fio, matches in fio_only_found:
+        for match in matches:
+            athlete_id = match['id']
+            total = total_by_athlete.get(athlete_id, 0)
+            free = free_by_athlete.get(athlete_id, 0)
+            fio_only_matches.append((fio, match, total, free, athlete_id))
+
+    return has_free, no_free, fio_only_matches, not_found
 
 
 @analytics_bp.route('/analytics')
@@ -244,17 +282,19 @@ def judge_helper_free():
     """Помощник главным судьям — только для бесплатных участий: кто уже выступал с БЕСП, кто только платно, кого нет в базе."""
     has_free = []
     no_free = []
+    fio_only_matches = []
     not_found = []
     pasted = ''
     if request.method == 'POST':
         pasted = (request.form.get('names_text') or '').strip()
         names = _parse_pasted_list(pasted)
         if names:
-            has_free, no_free, not_found = _check_names_against_db_free(names)
+            has_free, no_free, fio_only_matches, not_found = _check_names_against_db_free(names)
     return render_template(
         'judge_helper_free.html',
         has_free=has_free,
         no_free=no_free,
+        fio_only_matches=fio_only_matches,
         not_found=not_found,
         pasted=pasted,
     )
