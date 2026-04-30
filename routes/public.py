@@ -14,6 +14,14 @@ logger = logging.getLogger(__name__)
 
 public_bp = Blueprint('public', __name__)
 
+
+def _normalize_search_text(value):
+    """Нормализация строки для гибкого поиска (регистр/е-ё)."""
+    if not value:
+        return ''
+    return str(value).casefold().replace('ё', 'е')
+
+
 @public_bp.route('/')
 def index():
     """Главная страница"""
@@ -87,19 +95,6 @@ def events():
 
     query = Event.query
 
-    if search:
-        search_terms = [term for term in search.split() if term]
-        for term in search_terms:
-            like_term = f'%{term}%'
-            query = query.filter(
-                db.or_(
-                    Event.name.ilike(like_term),
-                    Event.long_name.ilike(like_term),
-                    Event.place.ilike(like_term),
-                    Event.venue.ilike(like_term),
-                )
-            )
-
     if rank_filter:
         query = query.join(Category, Event.id == Category.event_id).filter(
             Category.normalized_name == rank_filter
@@ -132,6 +127,21 @@ def events():
             events_list = sorted(events_list, key=lambda event: len(event.categories or []), reverse=reverse)
         elif sort_by == 'participants_count':
             events_list = sorted(events_list, key=lambda event: len(event.participants or []), reverse=reverse)
+
+    if search:
+        normalized_terms = [_normalize_search_text(term) for term in search.split() if term.strip()]
+        if normalized_terms:
+            filtered_events = []
+            for event in events_list:
+                searchable_text = _normalize_search_text(' '.join([
+                    event.name or '',
+                    event.long_name or '',
+                    event.place or '',
+                    event.venue or '',
+                ]))
+                if all(term in searchable_text for term in normalized_terms):
+                    filtered_events.append(event)
+            events_list = filtered_events
 
     seasons = get_all_seasons_from_events(events_list)
     all_ranks = db.session.query(Category.normalized_name).distinct().filter(
