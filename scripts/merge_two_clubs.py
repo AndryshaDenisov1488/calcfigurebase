@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Объединение двух конкретных клубов по ID
-Использование: python merge_two_clubs.py <keep_id> <remove_id>
+Объединение двух конкретных клубов по ID.
+Поддерживает интерактивный и неинтерактивный режимы.
 """
 
 import os
 import sys
 import shutil
+import argparse
 from datetime import datetime
 
-# Добавляем текущую директорию в путь
-project_root = os.path.dirname(os.path.abspath(__file__))
+# Добавляем корень проекта (родитель папки scripts) в путь
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
@@ -42,7 +43,13 @@ def create_backup():
         return None
 
 
-def merge_two_clubs(keep_club_id, remove_club_id):
+def _is_positive_confirmation(value):
+    """Позитивные варианты подтверждения."""
+    normalized = (value or '').strip().lower()
+    return normalized in {'yes', 'y', 'да', 'д'}
+
+
+def merge_two_clubs(keep_club_id, remove_club_id, skip_confirm=False):
     """Объединяет два клуба"""
     
     with app.app_context():
@@ -52,8 +59,8 @@ def merge_two_clubs(keep_club_id, remove_club_id):
         print()
         
         # Получаем клубы
-        keep_club = Club.query.get(keep_club_id)
-        remove_club = Club.query.get(remove_club_id)
+        keep_club = db.session.get(Club, keep_club_id)
+        remove_club = db.session.get(Club, remove_club_id)
         
         if not keep_club:
             print(f"❌ Клуб с ID {keep_club_id} не найден!")
@@ -85,11 +92,13 @@ def merge_two_clubs(keep_club_id, remove_club_id):
         print()
         
         # Подтверждение
-        confirm = input("Объединить эти клубы? (yes/NO): ").strip().lower()
-        
-        if confirm != 'yes':
-            print("❌ Объединение отменено")
-            return 0
+        if not skip_confirm:
+            confirm = input("Объединить эти клубы? (yes/y/да/д, иначе NO): ").strip()
+            if not _is_positive_confirmation(confirm):
+                print("❌ Объединение отменено")
+                return 0
+        else:
+            print("Подтверждение пропущено (--yes)")
         
         # Создаем бэкап
         print("\nСоздание бэкапа...")
@@ -139,28 +148,36 @@ def merge_two_clubs(keep_club_id, remove_club_id):
             return 1
 
 
+def _build_arg_parser():
+    parser = argparse.ArgumentParser(
+        description='Объединение двух клубов по ID с переносом спортсменов',
+    )
+    parser.add_argument('id1', type=int, help='ID первого клуба')
+    parser.add_argument('id2', type=int, help='ID второго клуба')
+    parser.add_argument(
+        '--yes',
+        action='store_true',
+        help='пропустить подтверждение и выполнить объединение сразу',
+    )
+    parser.add_argument(
+        '--keep-id',
+        type=int,
+        help='какой ID клуба оставить (должен быть одним из id1/id2)',
+    )
+    return parser
+
+
 def main():
     """Основная функция"""
-    if len(sys.argv) != 3:
-        print("Использование: python merge_two_clubs.py <id1> <id2>")
-        print()
-        print("Пример:")
-        print("  python merge_two_clubs.py 13 99")
-        print()
-        print("Скрипт покажет информацию о клубах и предложит выбрать, какой оставить.")
-        return 1
-    
-    try:
-        club_id1 = int(sys.argv[1])
-        club_id2 = int(sys.argv[2])
-    except ValueError:
-        print("❌ Ошибка: ID должны быть числами!")
-        return 1
+    parser = _build_arg_parser()
+    args = parser.parse_args()
+    club_id1 = args.id1
+    club_id2 = args.id2
     
     # Определяем какой клуб оставить
     with app.app_context():
-        club1 = Club.query.get(club_id1)
-        club2 = Club.query.get(club_id2)
+        club1 = db.session.get(Club, club_id1)
+        club2 = db.session.get(Club, club_id2)
         
         if not club1:
             print(f"❌ Клуб с ID {club_id1} не найден!")
@@ -194,28 +211,36 @@ def main():
             default = '2'
             print(f"💡 Рекомендация: оставить клуб 2 (больше спортсменов)")
         
-        choice = input(f"Какой клуб оставить? (1/2, Enter для '{default}'): ").strip()
-        
-        if not choice:
-            choice = default
-        
-        if choice == '1':
-            keep_id = club_id1
-            remove_id = club_id2
-        elif choice == '2':
-            keep_id = club_id2
-            remove_id = club_id1
+        if args.keep_id is not None:
+            if args.keep_id not in (club_id1, club_id2):
+                print(f"❌ Ошибка: --keep-id={args.keep_id} должен быть равен {club_id1} или {club_id2}")
+                return 1
+            keep_id = args.keep_id
+            remove_id = club_id2 if keep_id == club_id1 else club_id1
+            print(f"Выбран клуб для сохранения через --keep-id: {keep_id}")
         else:
-            print("❌ Некорректный выбор! Используется рекомендация.")
-            if athletes1 >= athletes2:
+            choice = input(f"Какой клуб оставить? (1/2, Enter для '{default}'): ").strip()
+
+            if not choice:
+                choice = default
+
+            if choice == '1':
                 keep_id = club_id1
                 remove_id = club_id2
-            else:
+            elif choice == '2':
                 keep_id = club_id2
                 remove_id = club_id1
+            else:
+                print("❌ Некорректный выбор! Используется рекомендация.")
+                if athletes1 >= athletes2:
+                    keep_id = club_id1
+                    remove_id = club_id2
+                else:
+                    keep_id = club_id2
+                    remove_id = club_id1
     
     try:
-        return merge_two_clubs(keep_id, remove_id)
+        return merge_two_clubs(keep_id, remove_id, skip_confirm=args.yes)
     except KeyboardInterrupt:
         print("\n\n❌ Прервано пользователем")
         return 1
