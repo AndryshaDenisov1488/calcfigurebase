@@ -29,8 +29,8 @@
                 <span class="navbar-toggler-icon"></span>
             </button>
             
-            <div class="collapse navbar-collapse align-items-xl-center" id="navbarNav">
-                <ul class="navbar-nav flex-wrap flex-xl-nowrap me-auto py-2 py-xl-0 gap-xl-1 navbar-nav-touch">
+            <div class="collapse navbar-collapse flex-grow-1 align-items-xl-center" id="navbarNav">
+                <ul class="navbar-nav flex-wrap flex-xl-nowrap justify-content-start justify-content-xl-center w-100 py-2 py-xl-0 gap-xl-1 navbar-nav-touch">
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('public.index') }}">
                             <i class="fas fa-home"></i> Главная
@@ -75,9 +75,6 @@
                         {% endif %}
                     </li>
                     {% endif %}
-                </ul>
-                
-                <ul class="navbar-nav flex-wrap flex-xl-nowrap py-2 py-xl-0 gap-xl-1 ms-xl-2 navbar-nav-touch">
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="navbarAnalytics" role="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
                             <i class="fas fa-chart-bar"></i> Аналитика
