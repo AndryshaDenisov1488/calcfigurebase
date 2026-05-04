@@ -15,6 +15,7 @@
   python scripts/merge_schools.py merge 1 7 --no-delete    # не удалять пустую школу 7 после переноса
   python scripts/merge_schools.py merge 27 10 78 100 75 68  # все перечисленные школы → в 27
   python scripts/merge_schools.py delete 86                 # удалить пустую школу (0 спортсменов)
+  python scripts/merge_schools.py delete-empty --yes        # удалить все школы без спортсменов
   python scripts/merge_schools.py show 86                   # проверить школу по БД (ID или --search)
   python scripts/merge_schools.py unassign 1595 --yes       # снять спортсмена с клуба (чтобы удалить пустую школу)
   python scripts/merge_schools.py delete-athlete 1595 --yes # удалить спортсмена из БД полностью
@@ -333,6 +334,56 @@ def cmd_delete_athlete(app, athlete_id, yes=False):
             return 1
 
 
+def cmd_delete_empty(app, yes=False):
+    """Удалить все школы, у которых нет ни одного athlete с club_id = этот клуб."""
+    with app.app_context():
+        empty_clubs = (
+            db.session.query(Club)
+            .outerjoin(Athlete, Club.id == Athlete.club_id)
+            .group_by(Club.id)
+            .having(db.func.count(Athlete.id) == 0)
+            .order_by(Club.id)
+            .all()
+        )
+        if not empty_clubs:
+            print("Пустых школ не найдено.")
+            return 0
+
+        print(f"Найдено пустых школ: {len(empty_clubs)}")
+        for c in empty_clubs:
+            print(f"  ID {c.id:4d} — «{c.name}»")
+
+        if not yes:
+            answer = input("Удалить все перечисленные школы? (yes/NO): ").strip().lower()
+            if answer != 'yes':
+                print("Отменено.")
+                return 0
+
+        backup_name = create_backup(app)
+        if not backup_name:
+            print("Внимание: бэкап недоступен (не SQLite или нет прав на запись).", file=sys.stderr)
+            if not yes:
+                answer = input("Продолжить без бэкапа? (yes/NO): ").strip().lower()
+                if answer != 'yes':
+                    print("Отменено.")
+                    return 1
+            backup_name = "(не создан)"
+
+        try:
+            for c in empty_clubs:
+                db.session.delete(c)
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            print(f"Ошибка: {e}", file=sys.stderr)
+            return 1
+
+        print(f"Удалено школ: {len(empty_clubs)}.")
+        if backup_name and backup_name != "(не создан)":
+            print(f"  Бэкап: backups/{backup_name}")
+        return 0
+
+
 def cmd_delete(app, club_id, yes=False):
     """Удалить школу из базы. Разрешено только если в ней 0 спортсменов."""
     with app.app_context():
@@ -367,7 +418,7 @@ def main():
     parser = argparse.ArgumentParser(
         description='Объединение школ (клубов): перенос спортсменов из одной школы в другую.'
     )
-    sub = parser.add_subparsers(dest='command', help='list | show | merge | unassign | delete | delete-athlete')
+    sub = parser.add_subparsers(dest='command', help='list | show | merge | unassign | delete | delete-empty | delete-athlete')
 
     # list
     plist = sub.add_parser('list', help='Список клубов с числом спортсменов')
@@ -397,6 +448,9 @@ def main():
     pdelete = sub.add_parser('delete', help='Удалить пустую школу (0 спортсменов)')
     pdelete.add_argument('club_id', type=int, help='ID школы для удаления')
     pdelete.add_argument('--yes', '-y', action='store_true', help='Не спрашивать подтверждение')
+
+    pdelempty = sub.add_parser('delete-empty', help='Удалить все школы без привязанных спортсменов')
+    pdelempty.add_argument('--yes', '-y', action='store_true', help='Не спрашивать подтверждение')
 
     # delete-athlete (спортсмена)
     pdelath = sub.add_parser('delete-athlete', help='Удалить спортсмена из БД полностью')
@@ -444,6 +498,9 @@ def main():
 
     if args.command == 'delete':
         return cmd_delete(app, args.club_id, yes=args.yes)
+
+    if args.command == 'delete-empty':
+        return cmd_delete_empty(app, yes=args.yes)
 
     if args.command == 'delete-athlete':
         return cmd_delete_athlete(app, args.athlete_id, yes=args.yes)

@@ -271,6 +271,15 @@ def club_free_analysis():
     """Страница анализа бесплатного участия по школам"""
     return render_template('club_free_analysis.html')
 
+
+@analytics_bp.route('/school-segment-event-ranks')
+def school_segment_event_ranks():
+    """Участия по рангам турниров: МАФКК / ЦСКА Жук / коммерческие (кол-во и %)."""
+    from services.school_segment_stats import build_event_rank_school_segment_report
+
+    report = build_event_rank_school_segment_report(db.session)
+    return render_template('school_segment_event_rank.html', report=report)
+
 @analytics_bp.route('/free-participation-analysis')
 def free_participation_analysis():
     """Страница анализа бесплатного участия с фильтрацией"""
