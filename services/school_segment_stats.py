@@ -90,13 +90,12 @@ def _totals_from_bucket(bucket):
     return totals
 
 
-def _totals_row_generic(totals, label='ИТОГО', extra=None):
+def _totals_row_generic(totals, extra=None):
     extra = extra or {}
     m, c, k = totals['mafk'], totals['cska'], totals['commercial']
     ta = m['athletes'] + c['athletes'] + k['athletes']
     tp = m['participations'] + c['participations'] + k['participations']
     row = _row_from_metrics(m, c, k, ta, tp, extra)
-    row['totals_label'] = label
     return row
 
 
@@ -141,7 +140,7 @@ def build_event_rank_school_segment_report(session):
 
     rows_out.sort(key=lambda r: (-r['total_participations'], str(r['event_rank'])))
     totals = _totals_from_bucket(bucket)
-    totals_row = _totals_row_generic(totals, 'ИТОГО', {'event_rank': 'ИТОГО'})
+    totals_row = _totals_row_generic(totals, {'event_rank': 'ИТОГО'})
 
     out = _report_meta(session, mafk_id, cska_id)
     out.update({'rows': rows_out, 'totals_row': totals_row})
@@ -203,7 +202,7 @@ def build_per_event_school_segment_report(session):
     ))
 
     totals = _totals_from_bucket(bucket)
-    totals_row = _totals_row_generic(totals, 'ИТОГО', {
+    totals_row = _totals_row_generic(totals, {
         'event_name': 'ИТОГО',
         'event_date_display': '',
         'tournament_rank': '',
@@ -250,7 +249,7 @@ def build_per_category_school_segment_report(session):
     rows_out.sort(key=lambda r: (-r['total_participations'], str(r['category_label'])))
 
     totals = _totals_from_bucket(bucket)
-    totals_row = _totals_row_generic(totals, 'ИТОГО', {'category_label': 'ИТОГО'})
+    totals_row = _totals_row_generic(totals, {'category_label': 'ИТОГО'})
 
     out = _report_meta(session, mafk_id, cska_id)
     out.update({'rows': rows_out, 'totals_row': totals_row})
@@ -323,7 +322,7 @@ def build_per_event_category_school_segment_report(session):
     ))
 
     totals = _totals_from_bucket(bucket)
-    totals_row = _totals_row_generic(totals, 'ИТОГО', {
+    totals_row = _totals_row_generic(totals, {
         'event_name': 'ИТОГО',
         'event_date_display': '',
         'tournament_rank': '',
