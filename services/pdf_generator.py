@@ -278,6 +278,9 @@ def generate_school_segment_pdf_bytes(report: dict, mode: str) -> bytes:
         'Коммерческие и прочие: все остальные школы и спортсмены без школы. '
         'Проценты в строке — от суммы по трём группам в этой строке.'
     )
+    note = (report.get('rank_filter_note') or '').strip()
+    if note:
+        legend = legend + ' ' + note
     story.append(Paragraph(escape(legend), normal_style))
     story.append(Spacer(1, 6))
 

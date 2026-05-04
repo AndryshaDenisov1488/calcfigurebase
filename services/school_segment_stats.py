@@ -12,6 +12,57 @@ from models import Athlete, Category, Club, Event, Participant
 CLUB_NAME_MAFKK = 'ГБУ ДО Московская академия фигурного катания на коньках'
 CLUB_NAME_CSKA = 'СШОР ЦСКА им.С.А.Жука по фигурному катанию на коньках'
 
+# Учитываем только 3–1 юношеский и 3–1 спортивный; МС и КМС не входят.
+ALLOWED_CATEGORY_RANK_PREFIXES = (
+    '1 Спортивный',
+    '2 Спортивный',
+    '3 Спортивный',
+    '1 Юношеский',
+    '2 Юношеский',
+    '3 Юношеский',
+)
+
+MS_KMS_NORMALIZED_NAMES = frozenset({
+    'МС, Женщины',
+    'МС, Мужчины',
+    'МС, Пары',
+    'МС, Танцы',
+    'КМС, Девушки',
+    'КМС, Юноши',
+    'КМС, Пары',
+    'КМС, Танцы',
+})
+
+RANK_FILTER_NOTE = (
+    'Учитываются только участия в разрядах с «3 юношеский» по «1 юношеский» '
+    'и с «3 спортивный» по «1 спортивный»; разряды МС и КМС не включаются.'
+)
+
+
+def _effective_category_label_raw():
+    """Подпись разряда для фильтрации."""
+    return func.coalesce(
+        func.nullif(func.trim(Category.normalized_name), ''),
+        Category.name,
+        '',
+    )
+
+
+def _category_label_display():
+    return func.coalesce(
+        func.nullif(func.trim(Category.normalized_name), ''),
+        Category.name,
+        'Не указан',
+    )
+
+
+def _allowed_category_rank_clause():
+    from sqlalchemy import and_, or_
+
+    eff = _effective_category_label_raw()
+    prefix_ok = or_(*[eff.like(pref + '%') for pref in ALLOWED_CATEGORY_RANK_PREFIXES])
+    return and_(prefix_ok, eff.notin_(MS_KMS_NORMALIZED_NAMES))
+
 
 def _pct(numerator: int, denominator: int) -> float:
     if not denominator:
@@ -106,6 +157,7 @@ def _report_meta(session, mafk_id, cska_id):
         'club_name_mafkk': CLUB_NAME_MAFKK,
         'club_name_cska': CLUB_NAME_CSKA,
         'generated_date': date.today().isoformat(),
+        'rank_filter_note': RANK_FILTER_NOTE,
     }
 
 
@@ -125,6 +177,8 @@ def build_event_rank_school_segment_report(session):
         .select_from(Participant)
         .join(Athlete, Participant.athlete_id == Athlete.id)
         .join(Event, Participant.event_id == Event.id)
+        .join(Category, Participant.category_id == Category.id)
+        .filter(_allowed_category_rank_clause())
         .group_by(rank_label, segment)
         .all()
     )
@@ -162,6 +216,8 @@ def build_per_event_school_segment_report(session):
         .select_from(Participant)
         .join(Athlete, Participant.athlete_id == Athlete.id)
         .join(Event, Participant.event_id == Event.id)
+        .join(Category, Participant.category_id == Category.id)
+        .filter(_allowed_category_rank_clause())
         .group_by(Event.id, segment)
         .all()
     )
@@ -217,11 +273,7 @@ def build_per_category_school_segment_report(session):
     """По спортивному разряду (категории) в целом по базе."""
     mafk_id, cska_id = _resolve_club_ids(session)
     segment = _segment_column(mafk_id, cska_id)
-    cat_label = func.coalesce(
-        func.nullif(func.trim(Category.normalized_name), ''),
-        Category.name,
-        'Не указан',
-    )
+    cat_label = _category_label_display()
 
     raw = (
         session.query(
@@ -233,6 +285,7 @@ def build_per_category_school_segment_report(session):
         .select_from(Participant)
         .join(Athlete, Participant.athlete_id == Athlete.id)
         .join(Category, Participant.category_id == Category.id)
+        .filter(_allowed_category_rank_clause())
         .group_by(cat_label, segment)
         .all()
     )
@@ -260,11 +313,7 @@ def build_per_event_category_school_segment_report(session):
     """По каждому турниру и разряду внутри него."""
     mafk_id, cska_id = _resolve_club_ids(session)
     segment = _segment_column(mafk_id, cska_id)
-    cat_label = func.coalesce(
-        func.nullif(func.trim(Category.normalized_name), ''),
-        Category.name,
-        'Не указан',
-    )
+    cat_label = _category_label_display()
 
     raw = (
         session.query(
@@ -278,6 +327,7 @@ def build_per_event_category_school_segment_report(session):
         .join(Athlete, Participant.athlete_id == Athlete.id)
         .join(Event, Participant.event_id == Event.id)
         .join(Category, Participant.category_id == Category.id)
+        .filter(_allowed_category_rank_clause())
         .group_by(Event.id, cat_label, segment)
         .all()
     )
