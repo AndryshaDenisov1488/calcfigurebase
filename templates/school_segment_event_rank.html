@@ -1,61 +1,22 @@
 {% extends "base.html" %}
 
-{% block title %}МАФКК / ЦСКА / коммерческие по рангам турниров{% endblock %}
+{% block title %}МАФКК / ЦСКА / коммерция — сводки{% endblock %}
 
-{% block extra_css %}
-<style>
-    .table-segment th, .table-segment td { vertical-align: middle; white-space: nowrap; }
-    .table-segment .rank-cell { white-space: normal; min-width: 12rem; max-width: 22rem; }
-    .pct-muted { font-size: 0.85em; color: #6c757d; }
-    @media (max-width: 992px) {
-        .table-responsive-stack { font-size: 0.85rem; }
-    }
-</style>
-{% endblock %}
-
-{% block content %}
-<div class="mb-3">
-    <nav aria-label="breadcrumb">
-        <ol class="breadcrumb mb-2">
-            <li class="breadcrumb-item"><a href="{{ url_for('analytics.analytics') }}">Аналитика</a></li>
-            <li class="breadcrumb-item active" aria-current="page">Школы по рангам турниров</li>
-        </ol>
-    </nav>
-    <h2><i class="fas fa-layer-group"></i> МАФКК, ЦСКА и коммерческие школы по рангам турниров</h2>
-</div>
-
-<div class="alert alert-info">
-    <p class="mb-2"><strong>Классификация школ:</strong></p>
-    <ul class="mb-0">
-        <li><strong>МАФКК</strong> — клуб «{{ report.club_name_mafkk }}»
-            {% if report.mafk_club_id %}<span class="text-muted">(id {{ report.mafk_club_id }})</span>{% else %}<span class="badge bg-warning text-dark">не найден в БД — все отнесены к прочим</span>{% endif %}
-        </li>
-        <li><strong>ЦСКА</strong> — «{{ report.club_name_cska }}»
-            {% if report.cska_club_id %}<span class="text-muted">(id {{ report.cska_club_id }})</span>{% else %}<span class="badge bg-warning text-dark">не найден в БД</span>{% endif %}
-        </li>
-        <li><strong>Коммерческие и прочие</strong> — все остальные школы, а также спортсмены без привязки к школе.</li>
-    </ul>
-</div>
-
-<p class="text-muted">
-    Ранг турнира берётся из поля «Ранг турнира» у события (<code>event.event_rank</code>). Для каждого ранга показаны
-    <strong>уникальные спортсмены</strong> (человек считается один раз в строке ранга, если выступал хотя бы в одной дисциплине турнира этого ранга)
-    и <strong>число участий</strong> — строк в таблице участников (отдельные заявки по категориям/турнирам).
-    Проценты в строке считаются от суммы по трём столбцам для данного ранга.
-</p>
-
+{# dimensions: список {label, key} для первых колонок; totals подтягиваются из totals_row по тем же key #}
+{% macro school_two_tables(report, dimensions) %}
 {% if not report.rows %}
-<div class="alert alert-warning">Нет данных об участиях.</div>
+<p class="text-muted mb-0">Нет данных.</p>
 {% else %}
-
-<div class="card mb-4">
+<div class="card mb-3">
     <div class="card-header"><h5 class="mb-0"><i class="fas fa-user-friends"></i> Уникальные спортсмены</h5></div>
     <div class="card-body p-0">
         <div class="table-responsive table-responsive-stack">
             <table class="table table-striped table-hover table-segment mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th class="rank-cell">Ранг турнира</th>
+                        {% for d in dimensions %}
+                        <th class="rank-cell">{{ d.label }}</th>
+                        {% endfor %}
                         <th class="text-end">МАФКК</th>
                         <th class="text-end">%</th>
                         <th class="text-end">ЦСКА</th>
@@ -68,7 +29,9 @@
                 <tbody>
                     {% for r in report.rows %}
                     <tr>
-                        <td class="rank-cell">{{ r.event_rank }}</td>
+                        {% for d in dimensions %}
+                        <td class="rank-cell">{{ r.get(d.key, '') }}</td>
+                        {% endfor %}
                         <td class="text-end">{{ r.mafk_athletes }}</td>
                         <td class="text-end pct-muted">{{ r.mafk_athletes_pct }}%</td>
                         <td class="text-end">{{ r.cska_athletes }}</td>
@@ -81,7 +44,9 @@
                 </tbody>
                 <tfoot class="table-secondary fw-semibold">
                     <tr>
-                        <td class="rank-cell">{{ report.totals_row.event_rank }}</td>
+                        {% for d in dimensions %}
+                        <td class="rank-cell">{{ report.totals_row.get(d.key, '') }}</td>
+                        {% endfor %}
                         <td class="text-end">{{ report.totals_row.mafk_athletes }}</td>
                         <td class="text-end pct-muted">{{ report.totals_row.mafk_athletes_pct }}%</td>
                         <td class="text-end">{{ report.totals_row.cska_athletes }}</td>
@@ -103,7 +68,9 @@
             <table class="table table-striped table-hover table-segment mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th class="rank-cell">Ранг турнира</th>
+                        {% for d in dimensions %}
+                        <th class="rank-cell">{{ d.label }}</th>
+                        {% endfor %}
                         <th class="text-end">МАФКК</th>
                         <th class="text-end">%</th>
                         <th class="text-end">ЦСКА</th>
@@ -116,7 +83,9 @@
                 <tbody>
                     {% for r in report.rows %}
                     <tr>
-                        <td class="rank-cell">{{ r.event_rank }}</td>
+                        {% for d in dimensions %}
+                        <td class="rank-cell">{{ r.get(d.key, '') }}</td>
+                        {% endfor %}
                         <td class="text-end">{{ r.mafk_parts }}</td>
                         <td class="text-end pct-muted">{{ r.mafk_parts_pct }}%</td>
                         <td class="text-end">{{ r.cska_parts }}</td>
@@ -129,7 +98,9 @@
                 </tbody>
                 <tfoot class="table-secondary fw-semibold">
                     <tr>
-                        <td class="rank-cell">{{ report.totals_row.event_rank }}</td>
+                        {% for d in dimensions %}
+                        <td class="rank-cell">{{ report.totals_row.get(d.key, '') }}</td>
+                        {% endfor %}
                         <td class="text-end">{{ report.totals_row.mafk_parts }}</td>
                         <td class="text-end pct-muted">{{ report.totals_row.mafk_parts_pct }}%</td>
                         <td class="text-end">{{ report.totals_row.cska_parts }}</td>
@@ -144,5 +115,97 @@
     </div>
 </div>
 {% endif %}
+{% endmacro %}
+
+{% block extra_css %}
+<style>
+    .table-segment th, .table-segment td { vertical-align: middle; white-space: nowrap; }
+    .table-segment .rank-cell { white-space: normal; min-width: 10rem; max-width: 22rem; }
+    .pct-muted { font-size: 0.85em; color: #6c757d; }
+    @media (max-width: 992px) {
+        .table-responsive-stack { font-size: 0.85rem; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set meta = reports.overall %}
+
+<div class="mb-3">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb mb-2">
+            <li class="breadcrumb-item"><a href="{{ url_for('analytics.analytics') }}">Аналитика</a></li>
+            <li class="breadcrumb-item active" aria-current="page">МАФКК / ЦСКА / коммерция</li>
+        </ol>
+    </nav>
+    <h2><i class="fas fa-layer-group"></i> МАФКК, ЦСКА и коммерческие школы — сводные таблицы</h2>
+</div>
+
+<div class="card mb-4 border-primary">
+    <div class="card-header bg-primary text-white d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <span><i class="fas fa-file-pdf"></i> Выгрузка PDF</span>
+        <div class="btn-group flex-wrap">
+            <a class="btn btn-light btn-sm" href="{{ url_for('analytics.school_segment_report_pdf', kind='overall') }}">Общие (ранг турнира)</a>
+            <a class="btn btn-light btn-sm" href="{{ url_for('analytics.school_segment_report_pdf', kind='events') }}">По турнирам</a>
+            <a class="btn btn-light btn-sm" href="{{ url_for('analytics.school_segment_report_pdf', kind='categories') }}">По разрядам</a>
+            <a class="btn btn-light btn-sm" href="{{ url_for('analytics.school_segment_report_pdf', kind='event_categories') }}">Турниры × разряды</a>
+        </div>
+    </div>
+    <div class="card-body py-2">
+        <small class="text-muted">Четыре варианта соответствуют блокам ниже; каждый PDF содержит две таблицы — уникальные спортсмены и участия.</small>
+    </div>
+</div>
+
+<div class="alert alert-info">
+    <p class="mb-2"><strong>Классификация школ:</strong></p>
+    <ul class="mb-0">
+        <li><strong>МАФКК</strong> — «{{ meta.club_name_mafkk }}»
+            {% if meta.mafk_club_id %}<span class="text-muted">(id {{ meta.mafk_club_id }})</span>{% else %}<span class="badge bg-warning text-dark">не найден в БД</span>{% endif %}
+        </li>
+        <li><strong>ЦСКА</strong> — «{{ meta.club_name_cska }}»
+            {% if meta.cska_club_id %}<span class="text-muted">(id {{ meta.cska_club_id }})</span>{% else %}<span class="badge bg-warning text-dark">не найден в БД</span>{% endif %}
+        </li>
+        <li><strong>Коммерческие и прочие</strong> — все остальные школы и спортсмены без школы.</li>
+    </ul>
+</div>
+
+<p class="text-muted">
+    <strong>Уникальные спортсмены</strong> в строке — сколько людей данной школы попало хотя бы в одну заявку внутри этой строки разреза.
+    <strong>Участия</strong> — число строк участников (разные категории одного турнира считаются отдельно).
+    Проценты в строке — от суммы трёх групп в этой строке.
+</p>
+
+<hr class="my-4">
+
+<h3 id="sec-overall" class="h4"><i class="fas fa-database"></i> 1. Общие данные по рангу турнира</h3>
+<p class="text-muted small">Поле «Ранг турнира» у события: спортивное / физкультурное мероприятие и т.д. (<code>event.event_rank</code>).</p>
+{{ school_two_tables(reports.overall, [{'label': 'Ранг турнира', 'key': 'event_rank'}]) }}
+
+<hr class="my-4">
+
+<h3 id="sec-events" class="h4"><i class="fas fa-trophy"></i> 2. По каждому турниру</h3>
+<p class="text-muted small">Одна строка — одно соревнование из базы.</p>
+{{ school_two_tables(reports.events, [
+    {'label': 'Турнир', 'key': 'event_name'},
+    {'label': 'Дата', 'key': 'event_date_display'},
+    {'label': 'Ранг турнира', 'key': 'tournament_rank'},
+]) }}
+
+<hr class="my-4">
+
+<h3 id="sec-categories" class="h4"><i class="fas fa-medal"></i> 3. По спортивным разрядам в целом</h3>
+<p class="text-muted small">Агрегация по всей базе: нормализованное название разряда категории или имя категории.</p>
+{{ school_two_tables(reports.categories, [{'label': 'Разряд', 'key': 'category_label'}]) }}
+
+<hr class="my-4">
+
+<h3 id="sec-event-categories" class="h4"><i class="fas fa-sitemap"></i> 4. По турнирам и разрядам внутри турниров</h3>
+<p class="text-muted small">Каждая пара «турнир + разряд» — отдельная строка.</p>
+{{ school_two_tables(reports.event_categories, [
+    {'label': 'Турнир', 'key': 'event_name'},
+    {'label': 'Дата', 'key': 'event_date_display'},
+    {'label': 'Ранг турнира', 'key': 'tournament_rank'},
+    {'label': 'Разряд', 'key': 'category_label'},
+]) }}
 
 {% endblock %}

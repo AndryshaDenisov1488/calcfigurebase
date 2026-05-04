@@ -274,11 +274,53 @@ def club_free_analysis():
 
 @analytics_bp.route('/school-segment-event-ranks')
 def school_segment_event_ranks():
-    """Участия по рангам турниров: МАФКК / ЦСКА Жук / коммерческие (кол-во и %)."""
-    from services.school_segment_stats import build_event_rank_school_segment_report
+    """Участия по типам школ: МАФКК / ЦСКА Жук / коммерческие — несколько срезов и PDF."""
+    from services.school_segment_stats import (
+        build_event_rank_school_segment_report,
+        build_per_category_school_segment_report,
+        build_per_event_category_school_segment_report,
+        build_per_event_school_segment_report,
+    )
 
-    report = build_event_rank_school_segment_report(db.session)
-    return render_template('school_segment_event_rank.html', report=report)
+    reports = {
+        'overall': build_event_rank_school_segment_report(db.session),
+        'events': build_per_event_school_segment_report(db.session),
+        'categories': build_per_category_school_segment_report(db.session),
+        'event_categories': build_per_event_category_school_segment_report(db.session),
+    }
+    return render_template('school_segment_event_rank.html', reports=reports)
+
+
+@analytics_bp.route('/school-segment-report.pdf')
+def school_segment_report_pdf():
+    """Скачать PDF отчёта МАФКК / ЦСКА / коммерция. kind=overall|events|categories|event_categories."""
+    from services.pdf_generator import generate_school_segment_pdf_bytes
+    from services.school_segment_stats import (
+        build_event_rank_school_segment_report,
+        build_per_category_school_segment_report,
+        build_per_event_category_school_segment_report,
+        build_per_event_school_segment_report,
+    )
+
+    kind = (request.args.get('kind') or 'overall').strip().lower()
+    builders = {
+        'overall': build_event_rank_school_segment_report,
+        'events': build_per_event_school_segment_report,
+        'categories': build_per_category_school_segment_report,
+        'event_categories': build_per_event_category_school_segment_report,
+    }
+    if kind not in builders:
+        kind = 'overall'
+
+    report = builders[kind](db.session)
+    pdf_bytes = generate_school_segment_pdf_bytes(report, kind)
+    filename = f'school-segment-{kind}-{date.today().isoformat()}.pdf'
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=filename,
+    )
 
 @analytics_bp.route('/free-participation-analysis')
 def free_participation_analysis():

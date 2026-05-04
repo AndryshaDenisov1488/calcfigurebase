@@ -197,6 +197,172 @@ def generate_first_timers_detail_pdf_bytes(report, title: str | None = None):
     return buffer.getvalue()
 
 
+def generate_school_segment_pdf_bytes(report: dict, mode: str) -> bytes:
+    """PDF: МАФКК / ЦСКА / коммерция. mode: overall | events | categories | event_categories."""
+    from xml.sax.saxutils import escape
+
+    modes = ('overall', 'events', 'categories', 'event_categories')
+    if mode not in modes:
+        mode = 'overall'
+
+    titles = {
+        'overall': 'МАФКК / ЦСКА / коммерция — по рангу турнира (общие данные)',
+        'events': 'МАФКК / ЦСКА / коммерция — по каждому турниру',
+        'categories': 'МАФКК / ЦСКА / коммерция — по спортивным разрядам (в целом)',
+        'event_categories': 'МАФКК / ЦСКА / коммерция — по турнирам и разрядам внутри турниров',
+    }
+
+    dim_specs = {
+        'overall': [('Ранг турнира', 'event_rank')],
+        'events': [
+            ('Турнир', 'event_name'),
+            ('Дата', 'event_date_display'),
+            ('Ранг турнира', 'tournament_rank'),
+        ],
+        'categories': [('Разряд', 'category_label')],
+        'event_categories': [
+            ('Турнир', 'event_name'),
+            ('Дата', 'event_date_display'),
+            ('Ранг турнира', 'tournament_rank'),
+            ('Разряд', 'category_label'),
+        ],
+    }
+
+    font_name = _register_cyrillic_font()
+    styles = getSampleStyleSheet()
+
+    title_style = styles['Title'].clone('SSPTitle')
+    title_style.fontName = font_name
+    title_style.fontSize = 13
+    title_style.leading = 16
+
+    normal_style = styles['Normal'].clone('SSPNorm')
+    normal_style.fontName = font_name
+    normal_style.fontSize = 8
+    normal_style.leading = 10
+
+    small_style = styles['Normal'].clone('SSPSmall')
+    small_style.fontName = font_name
+    small_style.fontSize = 7
+    small_style.leading = 9
+
+    header_style = styles['Normal'].clone('SSPHead')
+    header_style.fontName = font_name
+    header_style.fontSize = 7
+    header_style.leading = 9
+
+    def pcell(text):
+        t = escape(str(text if text is not None else '')).replace('\n', '<br/>')
+        return Paragraph(t, small_style)
+
+    def hcell(text):
+        t = escape(str(text or ''))
+        return Paragraph(t, header_style)
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        leftMargin=4 * mm,
+        rightMargin=4 * mm,
+        topMargin=4 * mm,
+        bottomMargin=4 * mm,
+        title=titles[mode],
+    )
+
+    story = []
+    story.append(Paragraph(escape(titles[mode]), title_style))
+    legend = (
+        f"МАФКК: {(report.get('club_name_mafkk') or '')}. "
+        f"ЦСКА: {(report.get('club_name_cska') or '')}. "
+        'Коммерческие и прочие: все остальные школы и спортсмены без школы. '
+        'Проценты в строке — от суммы по трём группам в этой строке.'
+    )
+    story.append(Paragraph(escape(legend), normal_style))
+    story.append(Spacer(1, 6))
+
+    dim_cols = dim_specs[mode]
+    n_dim = len(dim_cols)
+
+    metric_headers_ath = [
+        'МАФКК чел.', '%', 'ЦСКА чел.', '%', 'Комм. чел.', '%', 'Всего чел.',
+    ]
+    metric_headers_part = [
+        'МАФКК уч.', '%', 'ЦСКА уч.', '%', 'Комм. уч.', '%', 'Всего уч.',
+    ]
+
+    def build_table_block(block_title, metric_keys_header, row_metric_keys, rows, totals_row):
+        story.append(Paragraph(escape(block_title), normal_style))
+        head = [hcell(lbl) for lbl, _ in dim_cols]
+        head.extend(hcell(h) for h in metric_keys_header)
+        data = [head]
+        for row in rows:
+            r = []
+            for _, k in dim_cols:
+                r.append(pcell(row.get(k) if row.get(k) is not None else ''))
+            r.extend(pcell(row.get(k)) for k in row_metric_keys)
+            data.append(r)
+        tr = totals_row or {}
+        foot = [hcell(tr.get(col_key) or ('ИТОГО' if i == 0 else '')) for i, (_, col_key) in enumerate(dim_cols)]
+        foot.extend(pcell(tr.get(k)) for k in row_metric_keys)
+        data.append(foot)
+
+        tw = doc.width
+        dim_w = tw * 0.38 / max(n_dim, 1)
+        met_w = tw * 0.62 / max(len(metric_keys_header), 1)
+        col_widths = [dim_w] * n_dim + [met_w] * len(metric_keys_header)
+
+        tbl = Table(data, colWidths=col_widths, repeatRows=1)
+        tbl.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), font_name),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.lightgrey),
+            ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('ALIGN', (n_dim, 0), (-1, -1), 'RIGHT'),
+            ('FONTSIZE', (0, 0), (-1, -1), 7),
+            ('LEFTPADDING', (0, 0), (-1, -1), 2),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+        ]))
+        story.append(tbl)
+        story.append(Spacer(1, 10))
+
+    rows = report.get('rows') or []
+    totals_row = report.get('totals_row') or {}
+
+    keys_ath = [
+        'mafk_athletes', 'mafk_athletes_pct', 'cska_athletes', 'cska_athletes_pct',
+        'commercial_athletes', 'commercial_athletes_pct', 'total_athletes',
+    ]
+    keys_part = [
+        'mafk_parts', 'mafk_parts_pct', 'cska_parts', 'cska_parts_pct',
+        'commercial_parts', 'commercial_parts_pct', 'total_participations',
+    ]
+
+    if not rows:
+        story.append(Paragraph('Нет данных.', normal_style))
+        doc.build(story)
+        return buffer.getvalue()
+
+    build_table_block(
+        'Уникальные спортсмены',
+        metric_headers_ath,
+        keys_ath,
+        rows,
+        totals_row,
+    )
+    build_table_block(
+        'Участия (записей в заявках)',
+        metric_headers_part,
+        keys_part,
+        rows,
+        totals_row,
+    )
+
+    doc.build(story)
+    return buffer.getvalue()
+
+
 def generate_performance_pdf(performance_id, output_path):
     """Generate a detailed PDF protocol for a single performance."""
     performance = Performance.query.get(performance_id)
