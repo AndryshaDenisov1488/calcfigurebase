@@ -401,7 +401,6 @@ def first_timers_detail_pdf():
     """Скачать детальный отчёт «Новички и повторяющиеся» в PDF."""
     from google_sheets_sync import get_events_first_timers_report_data
     from services.pdf_generator import generate_first_timers_detail_pdf_bytes
-    import re
 
     rank = (request.args.get('rank') or '').strip() or None
     free_only = request.args.get('free_only', '').strip().lower() in ('1', 'true', 'yes')

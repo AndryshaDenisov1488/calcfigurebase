@@ -221,7 +221,79 @@ def get_rank_catalog():
             catalog[base_name] = _create_rank_entry(base_name, 'U', base_name)
     return catalog
 
-def build_rank_groups(event_id=None):
+def athlete_display_name(first_name, last_name, full_name_xml):
+    """ФИО без отдельного запроса Athlete (как property full_name в модели)."""
+    if full_name_xml and str(full_name_xml).strip():
+        return str(full_name_xml).strip()
+    s = f'{last_name or ""} {first_name or ""}'.strip()
+    return s if s else '—'
+
+
+def compute_rank_unique_participation_stats(excluded_normalized_ranks):
+    """
+    Уникальные спортсмены по разряду и доля с бесплатным участием.
+    Агрегация до пары (athlete_id, category_id), а не все строки participant.
+    """
+    if excluded_normalized_ranks is None:
+        excl = ()
+    else:
+        excl = tuple(excluded_normalized_ranks)
+    free_cond = db.and_(
+        Participant.pct_ppname == 'БЕСП',
+        db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
+        db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
+    )
+    rows = db.session.query(
+        Participant.athlete_id,
+        Category.id.label('category_id'),
+        db.func.max(Category.normalized_name).label('normalized_name'),
+        db.func.max(Category.name).label('category_name'),
+        db.func.max(Category.gender).label('category_gender'),
+        db.func.max(db.case((free_cond, 1), else_=0)).label('has_free'),
+    ).select_from(Participant).join(
+        Category, Participant.category_id == Category.id
+    ).join(
+        Event, Participant.event_id == Event.id
+    ).filter(
+        db.or_(
+            Category.normalized_name.is_(None),
+            Category.normalized_name.notin_(excl),
+        )
+    ).group_by(
+        Participant.athlete_id,
+        Category.id,
+    ).all()
+
+    rank_sets = {}
+    excluded_set = frozenset(excl) if excl else frozenset()
+    for row in rows:
+        if not row.athlete_id:
+            continue
+        rank = row.normalized_name or normalize_category_name(row.category_name, row.category_gender)
+        if rank in excluded_set:
+            continue
+        bucket = rank_sets.setdefault(rank, {'all': set(), 'free': set()})
+        bucket['all'].add(row.athlete_id)
+        if row.has_free:
+            bucket['free'].add(row.athlete_id)
+
+    rank_unique_stats = []
+    for rank, sets in rank_sets.items():
+        total_unique = len(sets['all'])
+        free_unique = len(sets['free'])
+        pct = round((free_unique / total_unique) * 100, 1) if total_unique else 0.0
+        rank_unique_stats.append({
+            'rank': rank,
+            'weight': get_rank_weight(rank),
+            'unique_participations': total_unique,
+            'unique_free_participations': free_unique,
+            'unique_free_percent': pct,
+        })
+    rank_unique_stats.sort(key=lambda x: (x.get('weight', 0), x.get('rank', '')))
+    return rank_unique_stats
+
+
+def build_rank_groups(event_id=None, only_free_participation=False, excluded_normalized_ranks=None):
     rank_catalog = get_rank_catalog()
     participants_query = db.session.query(
         Athlete.id.label('athlete_id'),
@@ -257,6 +329,19 @@ def build_rank_groups(event_id=None):
     ).join(Event, Category.event_id == Event.id)
     if event_id:
         participants_query = participants_query.filter(Event.id == event_id)
+    if only_free_participation:
+        participants_query = participants_query.filter(
+            Participant.pct_ppname == 'БЕСП',
+            db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
+            db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
+        )
+    if excluded_normalized_ranks:
+        participants_query = participants_query.filter(
+            db.or_(
+                Category.normalized_name.is_(None),
+                Category.normalized_name.notin_(list(excluded_normalized_ranks)),
+            )
+        )
     participants_query = participants_query.group_by(
         Athlete.id, Athlete.first_name, Athlete.last_name, Athlete.full_name_xml,
         Category.name, Category.gender, Category.normalized_name

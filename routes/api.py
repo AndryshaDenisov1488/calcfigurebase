@@ -11,7 +11,13 @@ from utils.access_control import request_has_api_access
 from event_rank_constants import CATEGORY_RANKS_MS_KMS
 from models import Event, Category, Athlete, Participant, Club, Segment, Performance, Coach, CoachAssignment, Element, ComponentScore
 from season_utils import get_season_from_date
-from services.rank_service import normalize_category_name, get_rank_weight
+from services.rank_service import (
+    normalize_category_name,
+    get_rank_weight,
+    build_rank_groups,
+    athlete_display_name,
+    compute_rank_unique_participation_stats,
+)
 from utils.search_utils import normalize_search_term, create_multi_field_search_filter
 from utils.normalizers import normalize_string
 
@@ -365,8 +371,6 @@ FREE_PARTICIPATION_EXCLUDED_RANKS = CATEGORY_RANKS_MS_KMS
 def api_free_participation():
     """API для получения спортсменов с бесплатным участием (без МС и КМС, только 3 юн–1 сп)."""
     try:
-        from services.rank_service import build_rank_groups, get_rank_weight
-
         # Получаем данные о бесплатных участиях только по разрядам без МС/КМС
         free_participants = db.session.query(
             Athlete.id,
@@ -400,15 +404,14 @@ def api_free_participation():
             Event.begin_date.desc(), Athlete.last_name, Athlete.first_name
         ).all()
 
-        # Группируем по спортсменам
+        # Группируем по спортсменам (без N+1: имя из строки запроса)
         athletes_data = {}
         for row in free_participants:
             athlete_id = row.id
             if athlete_id not in athletes_data:
-                athlete = Athlete.query.get(athlete_id)
                 athletes_data[athlete_id] = {
                     'id': athlete_id,
-                    'name': athlete.full_name if athlete else (row.full_name_xml or f"{row.last_name} {row.first_name}"),
+                    'name': athlete_display_name(row.first_name, row.last_name, row.full_name_xml),
                     'free_participations': 0,
                     'participations': 0,
                     'events': [],
@@ -433,8 +436,7 @@ def api_free_participation():
                 'place': row.total_place,
                 'points': points_display
             })
-            
-            # Собираем разряды
+
             rank_found = False
             for rank_info in athletes_data[athlete_id]['ranks']:
                 if rank_info['name'] == rank:
@@ -443,59 +445,51 @@ def api_free_participation():
                     break
             if not rank_found:
                 athletes_data[athlete_id]['ranks'].append({'name': rank, 'count': 1})
-        
-        # Определяем доминирующий разряд для каждого спортсмена
+
         for athlete_data in athletes_data.values():
             if athlete_data['ranks']:
                 athlete_data['ranks'].sort(key=lambda x: x['count'], reverse=True)
                 athlete_data['dominant_rank'] = athlete_data['ranks'][0]['name']
-        
+
         athletes_list = sorted(athletes_data.values(), key=lambda x: x['free_participations'], reverse=True)
 
-        # Получаем данные по разрядам (только для спортсменов с бесплатным участием)
-        rank_groups_data = build_rank_groups(event_id=None)
-        # Исключаем МС и КМС — на странице считаем только 3 юн–1 сп
+        # Только бесплатные старты и без МС/КМС — без полного прохода по всем участиям
+        rank_groups_data = build_rank_groups(
+            event_id=None,
+            only_free_participation=True,
+            excluded_normalized_ranks=FREE_PARTICIPATION_EXCLUDED_RANKS,
+        )
         rank_groups_data = [g for g in rank_groups_data if g.get('display_name') not in FREE_PARTICIPATION_EXCLUDED_RANKS]
-        # Фильтруем только разряды с бесплатными участиями
         filtered_rank_groups = []
         for group in rank_groups_data:
-            # Оставляем только спортсменов с бесплатным участием
             free_athletes = [a for a in group.get('athletes', []) if a.get('has_free_participation', False)]
             if free_athletes:
-                # Добавляем информацию о турнирах для каждого спортсмена из уже загруженных данных
                 for athlete in free_athletes:
                     athlete_id = athlete.get('id')
                     if athlete_id and athlete_id in athletes_data:
-                        # Добавляем поле events из athletes_data (только бесплатные участия)
                         athlete['events'] = athletes_data[athlete_id].get('events', [])
-                        # Добавляем last_event_display для отображения (форматированная дата последнего турнира)
                         if athlete['events']:
-                            # События уже отсортированы по дате desc, первое - самое последнее
                             last_event = athlete['events'][0]
                             athlete['last_event_display'] = last_event.get('event_date', '—')
                         else:
                             athlete['last_event_display'] = '—'
-                        # Убеждаемся, что events_count соответствует количеству уникальных турниров
                         if athlete['events']:
-                            unique_events = set()
-                            for event in athlete['events']:
-                                unique_events.add(event.get('event_name', ''))
+                            unique_events = {e.get('event_name', '') for e in athlete['events']}
                             athlete['events_count'] = len(unique_events)
-                
+
                 group_copy = group.copy()
                 group_copy['athletes'] = free_athletes
                 group_copy['athlete_count'] = len(free_athletes)
                 group_copy['total_free_participations'] = sum(a.get('free_participations', 0) for a in free_athletes)
                 filtered_rank_groups.append(group_copy)
-        
-        # Формируем сводку
+
         ranks_with_data = [g for g in filtered_rank_groups if g.get('athletes')]
         unique_athlete_ids = set()
         for group in filtered_rank_groups:
             for athlete in group.get('athletes', []):
                 if athlete.get('id'):
                     unique_athlete_ids.add(athlete['id'])
-        
+
         rank_summary = {
             'total_ranks': len(filtered_rank_groups),
             'ranks_with_data': len(ranks_with_data),
@@ -503,60 +497,11 @@ def api_free_participation():
             'total_free_participations': sum(g.get('total_free_participations', 0) for g in ranks_with_data)
         }
 
-        # Сводная статистика по разрядам:
-        # - уникальные участники по разряду (distinct athlete_id)
-        # - уникальные участники с БЕСП по разряду (distinct athlete_id where pct_ppname == 'БЕСП')
-        # - % уникальных бесплатных из уникальных всего
-        rank_sets = {}
-        rows = db.session.query(
-            Category.normalized_name,
-            Category.name,
-            Category.gender,
-            Participant.athlete_id,
-            Participant.pct_ppname,
-            Event.exclude_free_from_reports,
-            Participant.exclude_free_from_reports
-        ).select_from(Participant).join(
-            Category, Participant.category_id == Category.id
-        ).join(
-            Event, Participant.event_id == Event.id
-        ).filter(
-            db.or_(
-                Category.normalized_name.is_(None),
-                Category.normalized_name.notin_(FREE_PARTICIPATION_EXCLUDED_RANKS)
-            )
-        ).all()
+        rank_unique_stats = compute_rank_unique_participation_stats(FREE_PARTICIPATION_EXCLUDED_RANKS)
 
-        for normalized_name, category_name, category_gender, athlete_id, pct_ppname, exclude_from_reports, participant_exclude_from_reports in rows:
-            if not athlete_id:
-                continue
-            rank = normalized_name or normalize_category_name(category_name, category_gender)
-            if rank in FREE_PARTICIPATION_EXCLUDED_RANKS:
-                continue
-            if rank not in rank_sets:
-                rank_sets[rank] = {'all': set(), 'free': set()}
-            rank_sets[rank]['all'].add(athlete_id)
-            if pct_ppname == 'БЕСП' and not bool(exclude_from_reports) and not bool(participant_exclude_from_reports):
-                rank_sets[rank]['free'].add(athlete_id)
-
-        rank_unique_stats = []
-        for rank, sets in rank_sets.items():
-            total_unique = len(sets['all'])
-            free_unique = len(sets['free'])
-            pct = round((free_unique / total_unique) * 100, 1) if total_unique else 0.0
-            rank_unique_stats.append({
-                'rank': rank,
-                'weight': get_rank_weight(rank),
-                'unique_participations': total_unique,
-                'unique_free_participations': free_unique,
-                'unique_free_percent': pct,
-            })
-
-        rank_unique_stats.sort(key=lambda x: (x.get('weight', 0), x.get('rank', '')))
-        
         total_athletes = len(athletes_list)
         total_free_participations = sum(a['free_participations'] for a in athletes_list)
-        
+
         return jsonify({
             'athletes': athletes_list,
             'total_athletes': total_athletes,
