@@ -6,6 +6,21 @@ import base64
 from extensions import db
 from models import Athlete, Category, Participant, Event, Club
 
+
+def _athletes_by_id_bulk(athlete_ids):
+    """Один-два запроса вместо тысяч Athlete.query.get (ускоряет /best_results и разряды)."""
+    if not athlete_ids:
+        return {}
+    ids = list({int(x) for x in athlete_ids if x is not None})
+    out = {}
+    chunk_size = 900
+    for i in range(0, len(ids), chunk_size):
+        chunk = ids[i : i + chunk_size]
+        for a in Athlete.query.filter(Athlete.id.in_(chunk)).all():
+            out[a.id] = a
+    return out
+
+
 RANK_DICTIONARY = {
     'мс': {
         'name': 'МС',
@@ -247,6 +262,7 @@ def build_rank_groups(event_id=None):
         Category.name, Category.gender, Category.normalized_name
     )
     results = participants_query.all()
+    athletes_by_id = _athletes_by_id_bulk(row.athlete_id for row in results)
     for row in results:
         rank_name = row.normalized_name or normalize_category_name(row.category_name, row.category_gender)
         gender_code = (row.category_gender or 'U').upper()
@@ -260,7 +276,7 @@ def build_rank_groups(event_id=None):
             except (TypeError, ValueError):
                 best_points_value = 0
         # Используем property full_name из модели для правильного отображения без дублирования
-        athlete_obj = Athlete.query.get(row.athlete_id)
+        athlete_obj = athletes_by_id.get(row.athlete_id)
         athlete_name = athlete_obj.full_name if athlete_obj else (row.full_name_xml or f"{row.last_name or ''} {row.first_name or ''}".strip())
         athlete_data = {
             'id': row.athlete_id,
@@ -323,6 +339,7 @@ def build_best_results(rank_name=None):
         best_results_query = best_results_query.filter(Category.normalized_name == rank_name)
     results = best_results_query.all()
     athlete_ids = {row.athlete_id for row in results}
+    athletes_by_id = _athletes_by_id_bulk(athlete_ids)
     participations_counts = {}
     if athlete_ids:
         counts = db.session.query(
@@ -347,7 +364,7 @@ def build_best_results(rank_name=None):
             except (TypeError, ValueError):
                 points_value = 0
         # Используем property full_name из модели для правильного отображения без дублирования
-        athlete_obj = Athlete.query.get(row.athlete_id)
+        athlete_obj = athletes_by_id.get(row.athlete_id)
         athlete_name = athlete_obj.full_name if athlete_obj else (row.full_name_xml or f"{row.last_name or ''} {row.first_name or ''}".strip())
         event_date_iso = None
         event_date_display = 'Дата не указана'

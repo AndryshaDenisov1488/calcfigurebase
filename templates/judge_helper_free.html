@@ -14,6 +14,7 @@
 </p>
 
 <form method="post" action="{{ url_for('analytics.judge_helper_free') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
     <div class="mb-3">
         <label for="names_text" class="form-label">Список ФИО (можно блоки «ФИО, год, разряд, город» или только ФИО)</label>
         <textarea class="form-control font-monospace" id="names_text" name="names_text" rows="16" 

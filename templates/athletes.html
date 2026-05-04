@@ -324,7 +324,7 @@ function loadAthletes(search = '', page = 1, sortBy = currentSort.by, sortOrder 
     
     console.log('Запрос к API:', url.toString()); // Для отладки
     
-    fetch(url)
+    fetch(url, { credentials: 'same-origin' })
         .then(response => {
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);

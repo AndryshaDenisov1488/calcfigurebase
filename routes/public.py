@@ -3,12 +3,14 @@
 """Public HTML routes."""
 import json
 import logging
-from flask import Blueprint, render_template, request
+import hmac
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, current_app
 
 from extensions import db
 from models import Event, Category, Athlete, Participant, Club, Coach, CoachAssignment
 from season_utils import get_all_seasons_from_events
 from services.rank_service import build_rank_groups, build_best_results
+from utils.access_control import SESSION_SITE_READER_KEY, safe_same_site_redirect_path
 
 logger = logging.getLogger(__name__)
 
@@ -537,3 +539,30 @@ def club_detail(club_id):
             'participant': participant
         })
     return render_template('club_detail.html', club=club, athletes_data=list(athletes_data.values()))
+
+
+@public_bp.route('/site-access', methods=['GET', 'POST'])
+def site_access():
+    """Пароль для доступа к JSON API из браузера (главные судьи и т.п.)."""
+    pwd_cfg = (current_app.config.get('SITE_READ_PASSWORD') or '').strip()
+    next_clean = safe_same_site_redirect_path(request.values.get('next') or '') or ''
+    if not pwd_cfg:
+        flash('Доступ по паролю не настроен (SITE_READ_PASSWORD в окружении).', 'error')
+        return redirect(url_for('public.index'))
+    if request.method == 'POST':
+        candidate = request.form.get('password') or ''
+        if hmac.compare_digest(candidate.encode('utf-8'), pwd_cfg.encode('utf-8')):
+            session[SESSION_SITE_READER_KEY] = True
+            session.permanent = True
+            flash('Доступ для просмотра данных и страниц включён.', 'success')
+            dest = safe_same_site_redirect_path(request.form.get('next') or '') or url_for('public.index')
+            return redirect(dest)
+        flash('Неверный пароль', 'error')
+    return render_template('site_access.html', next=next_clean)
+
+
+@public_bp.route('/site-reader-logout')
+def site_reader_logout():
+    session.pop(SESSION_SITE_READER_KEY, None)
+    flash('Сессия просмотра данных завершена.', 'info')
+    return redirect(url_for('public.index'))

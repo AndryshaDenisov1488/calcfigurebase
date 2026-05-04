@@ -242,6 +242,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     fetch('/upload', {
         method: 'POST',
+        headers: window.__csrfHeaders(),
         body: formData
     })
     .then(response => {
@@ -293,9 +294,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Теперь анализируем загруженные файлы
                 fetch('/analyze-xml', {
                     method: 'POST',
-                    headers: {
+                    headers: window.__csrfHeaders({
                         'Content-Type': 'application/json'
-                    }
+                    })
                 }).then(resolve);
             }, 500);
         });
@@ -399,7 +400,8 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
     
     // Отправляем запрос на загрузку
     fetch('/upload-to-database', {
-        method: 'POST'
+        method: 'POST',
+        headers: window.__csrfHeaders()
     })
     .then(response => response.json())
     .then(data => {

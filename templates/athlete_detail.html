@@ -915,6 +915,7 @@
                                         {% endif %}
                                         {% if session.admin_logged_in and participant.pct_ppname == 'БЕСП' %}
                                             <form method="POST" action="{{ url_for('admin.participant_free_report_toggle') }}" class="mt-1">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                                                 <input type="hidden" name="participant_id" value="{{ participant.id }}">
                                                 <input type="hidden" name="include_in_reports" value="{{ '1' if participant.exclude_free_from_reports else '0' }}">
                                                 <input type="hidden" name="redirect_to" value="{{ request.full_path if request.query_string else request.path }}">
@@ -1022,7 +1023,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const athleteId = parseInt(athleteData.dataset.athleteId);
     
     // Загружаем данные для графиков
-    fetch(`/api/athlete/${athleteId}/results-chart`)
+    fetch(`/api/athlete/${athleteId}/results-chart`, { credentials: 'same-origin' })
         .then(response => {
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -1326,7 +1327,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     function loadPrintoutData(participantId) {
-        fetch(`/api/participant/${participantId}/performance-details`)
+        fetch(`/api/participant/${participantId}/performance-details`, { credentials: 'same-origin' })
             .then(response => {
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);

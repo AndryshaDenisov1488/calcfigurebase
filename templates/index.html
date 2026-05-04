@@ -184,7 +184,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function loadStatistics() {
-    fetch('/api/statistics')
+    fetch('/api/statistics', { credentials: 'same-origin' })
         .then(response => response.json())
         .then(data => {
             document.getElementById('total-athletes').textContent = data.total_athletes;

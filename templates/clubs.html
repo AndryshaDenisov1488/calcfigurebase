@@ -165,7 +165,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function loadClubs() {
-    fetch('/api/clubs')
+    fetch('/api/clubs', { credentials: 'same-origin' })
         .then(response => response.json())
         .then(data => {
             allClubs = data;

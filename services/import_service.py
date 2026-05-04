@@ -66,7 +66,6 @@ def save_to_database(parser):
     # После регистрации всех клубов автоматически объединяем дубликаты
     merged_count = club_registry.merge_all_duplicates()
     if merged_count > 0:
-        db.session.commit()
         logger.info(f"Автоматически объединено {merged_count} дубликатов клубов при импорте")
 
     # Инициализируем реестр тренеров

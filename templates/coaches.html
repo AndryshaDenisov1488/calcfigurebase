@@ -111,7 +111,7 @@ function loadCoaches(search = '', sortBy = currentSort.by, sortOrder = currentSo
     if (sortBy) url.searchParams.set('sort_by', sortBy);
     if (sortOrder) url.searchParams.set('sort_order', sortOrder);
     
-    fetch(url)
+    fetch(url, { credentials: 'same-origin' })
         .then(response => response.json())
         .then(data => {
             loadingSpinner.style.display = 'none';

@@ -257,10 +257,10 @@ document.getElementById('exportBtn').addEventListener('click', function() {
     // Отправляем запрос (ID таблицы вшит в код на сервере)
     fetch('/admin/export-google-sheets', {
         method: 'POST',
-        headers: {
+        headers: window.__csrfHeaders({
             'Content-Type': 'application/json',
             'Accept': 'application/json'
-        },
+        }),
         body: JSON.stringify({})
     })
     .then(async (response) => {

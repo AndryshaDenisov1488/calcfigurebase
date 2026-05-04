@@ -808,7 +808,7 @@ function initRankSection(groups, summary, uniqueStats) {
 }
 
 function loadFreeParticipationData() {
-    fetch('/api/analytics/free-participation')
+    fetch('/api/analytics/free-participation', { credentials: 'same-origin' })
         .then(response => response.json())
         .then(data => {
             updateTopStats(data);

@@ -690,7 +690,9 @@ def admin_login():
         elif password_plain:
             is_valid_password = password == password_plain
         if username == current_app.config['ADMIN_USERNAME'] and is_valid_password:
+            session.clear()
             session['admin_logged_in'] = True
+            session.permanent = True
             flash('Успешный вход в систему', 'success')
             return redirect(url_for('public.index'))
         flash('Неверное имя пользователя или пароль', 'error')

@@ -4,9 +4,10 @@
 import json
 import logging
 from datetime import datetime
-from flask import Blueprint, jsonify, request, Response
+from flask import Blueprint, jsonify, request, Response, abort
 
 from extensions import db
+from utils.access_control import request_has_api_access
 from event_rank_constants import CATEGORY_RANKS_MS_KMS
 from models import Event, Category, Athlete, Participant, Club, Segment, Performance, Coach, CoachAssignment, Element, ComponentScore
 from season_utils import get_season_from_date
@@ -16,6 +17,22 @@ from utils.normalizers import normalize_string
 
 logger = logging.getLogger(__name__)
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+
+
+@api_bp.before_request
+def _require_api_auth():
+    if request.endpoint == 'api.api_health':
+        return None
+    if request_has_api_access():
+        return None
+    abort(403)
+
+
+@api_bp.route('/health')
+def api_health():
+    """Минимальная проверка живости без авторизации (для мониторинга)."""
+    return jsonify({'status': 'ok'})
+
 
 @api_bp.route('/athlete/<int:athlete_id>/results-chart')
 def api_athlete_results_chart(athlete_id):

@@ -264,7 +264,7 @@ let allClubsData = [];
 
 // Загрузка данных о школах с бесплатным участием
 function loadClubFreeParticipationData() {
-    fetch('/api/analytics/club-free-participation')
+    fetch('/api/analytics/club-free-participation', { credentials: 'same-origin' })
         .then(response => response.json())
         .then(data => {
             allClubsData = data.clubs;

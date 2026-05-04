@@ -191,10 +191,10 @@
             try {
                 const res = await fetch(saveUrl, {
                     method: 'POST',
-                    headers: {
+                    headers: window.__csrfHeaders({
                         'Content-Type': 'application/json',
                         'Accept': 'application/json',
-                    },
+                    }),
                     body: JSON.stringify({
                         event_id: parseInt(eventId, 10),
                         event_rank: select.value,

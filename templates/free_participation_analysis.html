@@ -343,7 +343,7 @@ function loadAnalysisData() {
     
     console.log('Загружаем данные с URL:', url);
     
-    fetch(url)
+    fetch(url, { credentials: 'same-origin' })
         .then(response => {
             console.log('Ответ сервера:', response.status, response.statusText);
             if (!response.ok) {

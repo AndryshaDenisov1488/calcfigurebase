@@ -6,6 +6,7 @@ import io
 import re
 
 from flask import Blueprint, render_template, request, send_file, url_for
+
 from sqlalchemy import func
 from extensions import db
 from models import Athlete, Participant, Event, Category

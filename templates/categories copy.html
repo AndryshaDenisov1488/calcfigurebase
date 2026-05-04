@@ -171,7 +171,7 @@ function filterByEvent() {
 
 function showCategoryDetails(categoryId) {
     // Загружаем детали категории через AJAX
-    fetch(`/api/category/${categoryId}`)
+    fetch(`/api/category/${categoryId}`, { credentials: 'same-origin' })
         .then(response => response.json())
         .then(data => {
             document.getElementById('modalCategoryName').textContent = data.name;

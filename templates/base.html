@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}Система управления турнирами по фигурному катанию{% endblock %}</title>
     
     <!-- Bootstrap CSS -->
@@ -78,6 +79,19 @@
                         </ul>
                     </li>
                     {% endif %}
+                    {% if site_reader_gate_enabled %}
+                    <li class="nav-item">
+                        {% if site_reader_ok %}
+                        <a class="nav-link" href="{{ url_for('public.site_reader_logout') }}" title="Завершить сессию просмотра данных">
+                            <i class="fas fa-unlock"></i> Выйти из режима судьи
+                        </a>
+                        {% else %}
+                        <a class="nav-link" href="{{ url_for('public.site_access') }}">
+                            <i class="fas fa-key"></i> Доступ судьи
+                        </a>
+                        {% endif %}
+                    </li>
+                    {% endif %}
                 </ul>
                 
                 <ul class="navbar-nav">
@@ -120,7 +134,7 @@
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}
-                    <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }} alert-dismissible fade show" role="alert">
+                    <div class="alert alert-{{ {'error': 'danger', 'warning': 'warning', 'success': 'success', 'info': 'info'}.get(category, 'info') }} alert-dismissible fade show" role="alert">
                         {{ message }}
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
@@ -147,6 +161,14 @@
     <!-- Custom JS -->
     <script src="{{ url_for('static', filename='js/search_utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+    window.__csrfHeaders = function (extra) {
+        var h = Object.assign({}, extra || {});
+        var m = document.querySelector('meta[name="csrf-token"]');
+        if (m && m.content) { h['X-CSRFToken'] = m.content; }
+        return h;
+    };
+    </script>
     
     {% block extra_js %}{% endblock %}
 </body>

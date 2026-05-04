@@ -243,7 +243,7 @@
 <script>
 // Загрузка общей статистики
 function loadGeneralStatistics() {
-    fetch('/api/statistics')
+    fetch('/api/statistics', { credentials: 'same-origin' })
         .then(response => response.json())
         .then(data => {
             document.getElementById('totalAthletes').textContent = data.total_athletes;
@@ -256,7 +256,7 @@ function loadGeneralStatistics() {
 
 // Загрузка топ спортсменов
 function loadTopAthletes() {
-    fetch('/api/analytics/top-athletes')
+    fetch('/api/analytics/top-athletes', { credentials: 'same-origin' })
         .then(response => {
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -364,7 +364,7 @@ function loadTopAthletes() {
 
 // Загрузка статистики бесплатного участия
 function loadFreeParticipationStats() {
-    fetch('/api/analytics/free-participation')
+    fetch('/api/analytics/free-participation', { credentials: 'same-origin' })
         .then(response => response.json())
         .then(data => {
             const freeStatsDiv = document.getElementById('freeParticipationStats');

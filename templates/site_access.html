@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Доступ для просмотра данных{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-6 col-lg-5">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="fas fa-unlock-alt"></i> Доступ судьи / просмотра</h4>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">
+                    После входа открываются страницы с данными турниров и спортсменов и запросы к <code>/api/</code>.
+                    Это не заменяет вход администратора для загрузки турниров.
+                </p>
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <input type="hidden" name="next" value="{{ next }}"/>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Пароль доступа</label>
+                        <input type="password" class="form-control" id="password" name="password" required autocomplete="current-password">
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-sign-in-alt"></i> Войти
+                    </button>
+                </form>
+            </div>
+            <div class="card-footer text-center">
+                <a href="{{ url_for('public.index') }}" class="text-decoration-none"><i class="fas fa-arrow-left"></i> На главную</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

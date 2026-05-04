@@ -203,6 +203,7 @@
                                         <div class="d-grid gap-2 action-buttons">
                                             {% if event_data.free_participants < event_data.total_participants %}
                                                 <form method="POST" class="d-inline">
+                                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                                                     <input type="hidden" name="action" value="set_free">
                                                     <input type="hidden" name="event_id" value="{{ event_data.event.id }}">
                                                     <button type="submit" class="btn btn-success btn-sm w-100" 
@@ -214,6 +215,7 @@
                                             
                                             {% if event_data.free_participants > 0 %}
                                                 <form method="POST" class="d-inline">
+                                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                                                     <input type="hidden" name="action" value="remove_free">
                                                     <input type="hidden" name="event_id" value="{{ event_data.event.id }}">
                                                     <button type="submit" class="btn btn-warning btn-sm w-100"
@@ -224,6 +226,7 @@
                                             {% endif %}
 
                                             <form method="POST" class="d-inline">
+                                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                                                 <input type="hidden" name="action" value="toggle_report_exclusion">
                                                 <input type="hidden" name="event_id" value="{{ event_data.event.id }}">
                                                 <input type="hidden" name="exclude_from_reports" value="{{ '0' if event_data.event.exclude_free_from_reports else '1' }}">
