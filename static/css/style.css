@@ -33,7 +33,7 @@ body {
 
 .navbar-brand {
     font-weight: 700;
-    font-size: 1.5rem;
+    font-size: clamp(1rem, 2.5vw, 1.35rem);
     color: white !important;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
@@ -41,30 +41,43 @@ body {
 .navbar-nav .nav-link {
     font-weight: 500;
     color: rgba(255, 255, 255, 0.9) !important;
-    transition: all 0.3s ease;
-    padding: 0.5rem 1rem !important;
+    transition: background 0.2s ease, color 0.2s ease;
+    padding: 0.55rem 0.75rem !important;
     border-radius: 0.375rem;
-    margin: 0 0.25rem;
+    margin: 0;
+    white-space: nowrap;
 }
 
 .navbar-nav .nav-link:hover {
     color: white !important;
     background: rgba(255, 255, 255, 0.15);
-    transform: translateY(-1px);
 }
 
-/* На десктопе пункты меню в одну строку, без переноса по буквам */
-@media (min-width: 992px) {
-    .navbar-nav {
-        flex-wrap: nowrap;
+/* Удобные зоны нажатия в раскрытом меню (моб. / планшет) */
+@media (max-width: 1199.98px) {
+    .navbar-nav-touch .nav-link,
+    .navbar-nav-touch .dropdown-toggle {
+        min-height: 44px;
+        display: flex;
+        align-items: center;
     }
-    .navbar-nav .nav-item {
-        flex-shrink: 0;
+    .navbar .dropdown-menu .dropdown-item {
+        min-height:44px;
+        display: flex;
+        align-items: center;
+        padding-top: 0.5rem;
+        padding-bottom: 0.5rem;
     }
+}
+
+/* Широкий экран: компактнее отступы, при нехватке места перенос блоков меню */
+@media (min-width: 1200px) {
     .navbar-nav .nav-link {
-        white-space: nowrap;
-        overflow-wrap: normal;
-        word-wrap: normal;
+        padding: 0.45rem 0.6rem !important;
+    }
+    .navbar .dropdown-menu {
+        max-height: min(70vh, 28rem);
+        overflow-y: auto;
     }
 }
 
