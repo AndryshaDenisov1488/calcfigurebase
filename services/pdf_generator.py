@@ -281,6 +281,13 @@ def generate_school_segment_pdf_bytes(report: dict, mode: str) -> bytes:
     note = (report.get('rank_filter_note') or '').strip()
     if note:
         legend = legend + ' ' + note
+    dup_note = (
+        'Сумма столбца «Всего чел.» по строкам (и в строке ИТОГО по людям) не равна числу уникальных спортсменов: '
+        'один человек может попасть в несколько строк разреза (например, разные ранги турниров). '
+        'Глобально уникальных спортсменов с этим фильтром разрядов: '
+        f"{report.get('distinct_athletes_filtered', '—')}."
+    )
+    legend = legend + ' ' + dup_note
     story.append(Paragraph(escape(legend), normal_style))
     story.append(Spacer(1, 6))
 

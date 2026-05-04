@@ -280,6 +280,7 @@ def school_segment_event_ranks():
         build_per_category_school_segment_report,
         build_per_event_category_school_segment_report,
         build_per_event_school_segment_report,
+        count_distinct_athletes_filtered,
     )
 
     reports = {
@@ -288,7 +289,13 @@ def school_segment_event_ranks():
         'categories': build_per_category_school_segment_report(db.session),
         'event_categories': build_per_event_category_school_segment_report(db.session),
     }
-    return render_template('school_segment_event_rank.html', reports=reports)
+
+    distinct_athletes_filtered = count_distinct_athletes_filtered(db.session)
+    return render_template(
+        'school_segment_event_rank.html',
+        reports=reports,
+        distinct_athletes_filtered=distinct_athletes_filtered,
+    )
 
 
 @analytics_bp.route('/school-segment-report.pdf')
@@ -300,6 +307,7 @@ def school_segment_report_pdf():
         build_per_category_school_segment_report,
         build_per_event_category_school_segment_report,
         build_per_event_school_segment_report,
+        count_distinct_athletes_filtered,
     )
 
     kind = (request.args.get('kind') or 'overall').strip().lower()
@@ -313,6 +321,7 @@ def school_segment_report_pdf():
         kind = 'overall'
 
     report = builders[kind](db.session)
+    report['distinct_athletes_filtered'] = count_distinct_athletes_filtered(db.session)
     pdf_bytes = generate_school_segment_pdf_bytes(report, kind)
     filename = f'school-segment-{kind}-{date.today().isoformat()}.pdf'
     return send_file(

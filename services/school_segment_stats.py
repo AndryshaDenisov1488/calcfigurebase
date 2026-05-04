@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Статистика участий МАФКК / ЦСКА (Жук) / коммерческие школы в разных разрезах."""
+"""Статистика участий МАФКК / ЦСКА (Жук) / коммерческие школы (только разряды 3–1 юн. и 3–1 сп., без МС/КМС)."""
 
 from collections import defaultdict
 from datetime import date
@@ -62,6 +62,19 @@ def _allowed_category_rank_clause():
     eff = _effective_category_label_raw()
     prefix_ok = or_(*[eff.like(pref + '%') for pref in ALLOWED_CATEGORY_RANK_PREFIXES])
     return and_(prefix_ok, eff.notin_(MS_KMS_NORMALIZED_NAMES))
+
+
+def count_distinct_athletes_filtered(session):
+    """Сколько разных спортсменов имеют хотя бы одно участие с учётом фильтра разрядов этой сводки."""
+    n = (
+        session.query(func.count(func.distinct(Athlete.id)))
+        .select_from(Participant)
+        .join(Athlete, Participant.athlete_id == Athlete.id)
+        .join(Category, Participant.category_id == Category.id)
+        .filter(_allowed_category_rank_clause())
+        .scalar()
+    )
+    return int(n or 0)
 
 
 def _pct(numerator: int, denominator: int) -> float:
