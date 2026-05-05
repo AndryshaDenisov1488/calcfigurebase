@@ -16,6 +16,11 @@ from utils.auth import admin_required
 from parsers.isu_calcfs_parser import ISUCalcFSParser
 from services.rank_service import analyze_categories_from_xml
 from services.import_service import save_to_database
+from services.xml_import_prepare import iter_ready_parsers
+from services.import_birth_conflict import (
+    apply_birth_conflict_resolutions_json,
+    find_birth_date_conflicts,
+)
 from collections import defaultdict
 
 from sqlalchemy import and_, case, func
@@ -26,6 +31,89 @@ from models import Category, Event, Participant
 logger = logging.getLogger(__name__)
 
 admin_bp = Blueprint('admin', __name__)
+
+
+def _parse_normalize_category_form(request):
+    """Читает normalize_* и delete_* из формы нормализации категорий."""
+    normalizations = {}
+    deleted_indices = set()
+    for key, value in request.form.items():
+        if key.startswith('normalize_'):
+            normalizations[int(key.replace('normalize_', ''))] = value
+        elif key.startswith('delete_') and value == '1':
+            deleted_indices.add(int(key.replace('delete_', '')))
+    return normalizations, deleted_indices
+
+
+def _safe_parse_birth_conflict_resolutions(raw: str) -> list:
+    if not raw or not str(raw).strip():
+        return []
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.warning('birth_conflict_resolutions: невалидный JSON')
+        return []
+    if not isinstance(data, list):
+        return []
+    out = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        use = item.get('use')
+        if use not in ('xml', 'db'):
+            continue
+        try:
+            out.append({
+                'person_id': str(item['person_id']),
+                'athlete_id': int(item['athlete_id']),
+                'use': use,
+            })
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
+@admin_bp.route('/check-import-birth-conflicts', methods=['POST'])
+@admin_required
+@limiter.limit('30 per minute')
+def check_import_birth_conflicts():
+    """Проверка перед импортом: совпадение ФИО при разной дате рождения."""
+    if 'parser_data' not in session:
+        return jsonify({'success': False, 'error': 'Нет данных импорта в сессии'}), 400
+    parser_data = session['parser_data']
+    categories_analysis = parser_data['categories_analysis']
+
+    normalizations, deleted_indices_form = _parse_normalize_category_form(request)
+    ca_work = [dict(c) for c in categories_analysis]
+
+    for index, normalized_name in normalizations.items():
+        if index < len(ca_work):
+            ca_work[index]['normalized'] = normalized_name
+            ca_work[index]['needs_manual'] = False
+
+    if 'files' in parser_data:
+        deleted_indices = set(parser_data.get('deleted_category_indices', []))
+    else:
+        deleted_indices = deleted_indices_form
+
+    conflicts_all = []
+    try:
+        for parser, _fp in iter_ready_parsers(parser_data, ca_work, deleted_indices):
+            conflicts_all.extend(find_birth_date_conflicts(parser))
+    except Exception as e:
+        logger.error('check_import_birth_conflicts: %s', e, exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+    seen = set()
+    uniq = []
+    for c in conflicts_all:
+        k = (c['person_id'], c['athlete_id'])
+        if k in seen:
+            continue
+        seen.add(k)
+        uniq.append(c)
+
+    return jsonify({'success': True, 'conflicts': uniq})
 
 _export_job_lock = threading.Lock()
 
@@ -413,58 +501,22 @@ def normalize_categories():
             
             # Сохраняем все файлы последовательно
             try:
-                category_index = 0
-                total_athletes = 0
                 deleted_indices = set(parser_data.get('deleted_category_indices', []))
-                
-                for file_info in parser_data['files']:
-                    filepath = file_info.get('filepath')
-                    if not filepath:
-                        logger.warning(f"Пропущен файл без пути: {file_info.get('filename', 'unknown')}")
-                        continue
-                    
-                    if not os.path.exists(filepath):
-                        logger.error(f"Файл не найден: {filepath}")
-                        flash(f'Ошибка: файл {os.path.basename(filepath)} не найден. Возможно, он был удален. Попробуйте загрузить файлы заново.', 'error')
-                        continue
-                    
-                    parser = ISUCalcFSParser(filepath)
-                    parser.parse()
-                    
-                    # Применяем нормализацию к категориям этого файла и исключаем удаленные
-                    file_categories_count = file_info['categories_count']
-                    categories_to_save = []
-                    deleted_category_ids = set()  # ID категорий, которые нужно исключить
-                    
-                    for i, category in enumerate(parser.categories):
-                        if category_index < len(categories_analysis):
-                            # Пропускаем удаленные категории
-                            if category_index not in deleted_indices:
-                                category['normalized_name'] = categories_analysis[category_index]['normalized']
-                                categories_to_save.append(category)
-                            else:
-                                # Сохраняем ID удаленной категории для фильтрации сегментов и участников
-                                deleted_category_ids.add(category.get('id'))
-                            category_index += 1
-                        else:
-                            # Если индекс выходит за пределы, все равно добавляем
-                            categories_to_save.append(category)
-                    
-                    # Заменяем список категорий на отфильтрованный
-                    parser.categories = categories_to_save
-                    
-                    # Фильтруем сегменты - исключаем те, что относятся к удаленным категориям
-                    if deleted_category_ids:
-                        parser.segments = [s for s in parser.segments if s.get('category_id') not in deleted_category_ids]
-                        # Фильтруем участников - исключаем тех, что относятся к удаленным категориям
-                        parser.participants = [p for p in parser.participants if p.get('category_id') not in deleted_category_ids]
-                    
-                    # Сохраняем только если есть категории для сохранения
-                    if parser.categories:
-                        save_to_database(parser)
-                        total_athletes += len(parser.get_athletes_with_results())
-                    
-                    # Удаляем файл только если он существует
+                resolutions = _safe_parse_birth_conflict_resolutions(
+                    request.form.get('birth_conflict_resolutions', '')
+                )
+
+                parsers_bundle = list(iter_ready_parsers(parser_data, categories_analysis, deleted_indices))
+                if parsers_bundle:
+                    apply_birth_conflict_resolutions_json(
+                        resolutions, [p for p, _fp in parsers_bundle]
+                    )
+                    db.session.flush()
+
+                total_athletes = 0
+                for parser, filepath in parsers_bundle:
+                    save_to_database(parser)
+                    total_athletes += len(parser.get_athletes_with_results())
                     if os.path.exists(filepath):
                         try:
                             os.remove(filepath)
@@ -472,7 +524,7 @@ def normalize_categories():
                             logger.warning(f"Не удалось удалить файл {filepath}: {str(e)}")
                     else:
                         logger.warning(f"Файл уже не существует при попытке удаления: {filepath}")
-                
+
                 # Очищаем сессию
                 session.pop('parser_data', None)
                 session.pop('uploaded_files', None)
@@ -534,45 +586,28 @@ def normalize_categories():
                 filepath = parser_data.get('filepath')
                 if not filepath:
                     flash('Ошибка: путь к файлу не найден в данных сессии. Попробуйте загрузить файл заново.', 'error')
-                    return redirect(url_for('admin.upload'))
+                    return redirect(url_for('admin.upload_file'))
                 
                 if not os.path.exists(filepath):
                     logger.error(f"Файл не найден: {filepath}")
                     flash(f'Ошибка: файл {os.path.basename(filepath)} не найден. Возможно, он был удален. Попробуйте загрузить файл заново.', 'error')
                     session.pop('parser_data', None)
-                    return redirect(url_for('admin.upload'))
-                
-                parser = ISUCalcFSParser(filepath)
-                parser.parse()
-                
-                # Применяем нормализацию и исключаем удаленные категории
-                categories_to_save = []
-                deleted_category_ids = set()  # ID категорий, которые нужно исключить
-                
-                for i, category in enumerate(parser.categories):
-                    if i < len(categories_analysis):
-                        # Пропускаем удаленные категории
-                        if i not in deleted_indices:
-                            category['normalized_name'] = categories_analysis[i]['normalized']
-                            categories_to_save.append(category)
-                        else:
-                            # Сохраняем ID удаленной категории для фильтрации сегментов и участников
-                            deleted_category_ids.add(category.get('id'))
-                    else:
-                        categories_to_save.append(category)
-                
-                # Заменяем список категорий на отфильтрованный
-                parser.categories = categories_to_save
-                
-                # Фильтруем сегменты - исключаем те, что относятся к удаленным категориям
-                if deleted_category_ids:
-                    parser.segments = [s for s in parser.segments if s.get('category_id') not in deleted_category_ids]
-                    # Фильтруем участников - исключаем тех, что относятся к удаленным категориям
-                    parser.participants = [p for p in parser.participants if p.get('category_id') not in deleted_category_ids]
-                
-                # Сохраняем только если есть категории для сохранения
+                    return redirect(url_for('admin.upload_file'))
+
+                resolutions = _safe_parse_birth_conflict_resolutions(
+                    request.form.get('birth_conflict_resolutions', '')
+                )
+
+                parsers_bundle = list(iter_ready_parsers(parser_data, categories_analysis, deleted_indices))
+                if parsers_bundle:
+                    apply_birth_conflict_resolutions_json(
+                        resolutions, [p for p, _fp in parsers_bundle]
+                    )
+                    db.session.flush()
+
                 deleted_count = len(deleted_indices)
-                if parser.categories:
+                if parsers_bundle:
+                    parser, filepath = parsers_bundle[0]
                     save_to_database(parser)
                     if deleted_count > 0:
                         flash(f'Файл успешно загружен и обработан с нормализацией категорий! Исключено категорий: {deleted_count}', 'success')
@@ -580,16 +615,17 @@ def normalize_categories():
                         flash('Файл успешно загружен и обработан с нормализацией категорий!', 'success')
                 else:
                     flash('Файл обработан, но все категории были исключены из импорта.', 'warning')
-                
-                # Удаляем файл только если он существует
-                if os.path.exists(filepath):
-                    try:
-                        os.remove(filepath)
-                    except OSError as e:
-                        logger.warning(f"Не удалось удалить файл {filepath}: {str(e)}")
-                else:
-                    logger.warning(f"Файл уже не существует при попытке удаления: {filepath}")
-                
+
+                if parsers_bundle:
+                    _parser, fp_del = parsers_bundle[0]
+                    if os.path.exists(fp_del):
+                        try:
+                            os.remove(fp_del)
+                        except OSError as e:
+                            logger.warning(f"Не удалось удалить файл {fp_del}: {str(e)}")
+                    else:
+                        logger.warning(f"Файл уже не существует при попытке удаления: {fp_del}")
+
                 session.pop('parser_data', None)
                 return redirect(url_for('public.index'))
             except Exception as e:

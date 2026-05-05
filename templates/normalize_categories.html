@@ -44,8 +44,9 @@
                 {% endif %}
             </div>
 
-            <form method="POST">
+            <form method="POST" id="normalize-categories-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <input type="hidden" name="birth_conflict_resolutions" id="birth_conflict_resolutions" value=""/>
                 <div class="card">
                     <div class="card-header">
                         <h5><i class="fas fa-list"></i> Проверка и нормализация категорий</h5>
@@ -107,6 +108,44 @@
                     </div>
                 </div>
             </form>
+
+            <!-- Модальное окно: разные даты рождения при совпадении ФИО -->
+            <div class="modal fade" id="birthConflictModal" tabindex="-1" aria-labelledby="birthConflictModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="birthConflictModalLabel">
+                                <i class="fas fa-exclamation-triangle text-warning"></i> Совпадение ФИО, разная дата рождения
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p class="text-muted">Для каждого участника выберите верную дату: из файла XML или из существующего профиля. После импорта дубликат карточки не будет создан.</p>
+                            <div class="table-responsive">
+                                <table class="table table-sm align-middle" id="birthConflictTable">
+                                    <thead>
+                                        <tr>
+                                            <th>ФИО</th>
+                                            <th>PCT_ID</th>
+                                            <th>Профиль</th>
+                                            <th>Дата в XML</th>
+                                            <th>Дата в базе</th>
+                                            <th>Выбор</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="birthConflictModalBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                            <button type="button" class="btn btn-primary" id="birthConflictConfirmBtn">
+                                <i class="fas fa-check"></i> Продолжить импорт
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <!-- Справочная информация -->
             <div class="card mt-4">
@@ -198,18 +237,76 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Обработка удаления категорий
-    const deleteButtons = document.querySelectorAll('.delete-category-btn');
-    
-    deleteButtons.forEach(button => {
+    const form = document.getElementById('normalize-categories-form');
+    const submitBtn = document.getElementById('submit-btn');
+    let isSubmitting = false;
+    let birthConflictPassed = false;
+
+    function escapeAttr(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    }
+
+    function renderBirthConflictRows(conflicts) {
+        const tbody = document.getElementById('birthConflictModalBody');
+        tbody.innerHTML = conflicts.map(function(c, idx) {
+            return (
+                '<tr data-bc-index="' + idx + '" data-person-id="' + escapeAttr(c.person_id) + '" data-athlete-id="' + c.athlete_id + '">' +
+                '<td>' + escapeAttr(c.fio) + '</td>' +
+                '<td><code>' + escapeAttr(c.person_id) + '</code></td>' +
+                '<td><a href="' + escapeAttr(c.profile_url) + '" target="_blank" rel="noopener">#' + c.athlete_id + '</a></td>' +
+                '<td>' + escapeAttr(c.xml_birth) + '</td>' +
+                '<td>' + escapeAttr(c.db_birth) + '</td>' +
+                '<td>' +
+                '<div class="form-check">' +
+                '<input class="form-check-input" type="radio" name="bc_choice_' + idx + '" id="bc_xml_' + idx + '" value="xml" checked>' +
+                '<label class="form-check-label" for="bc_xml_' + idx + '">Из файла</label>' +
+                '</div>' +
+                '<div class="form-check">' +
+                '<input class="form-check-input" type="radio" name="bc_choice_' + idx + '" id="bc_db_' + idx + '" value="db">' +
+                '<label class="form-check-label" for="bc_db_' + idx + '">Из профиля</label>' +
+                '</div>' +
+                '</td></tr>'
+            );
+        }).join('');
+    }
+
+    function collectBirthConflictResolutions() {
+        const rows = document.querySelectorAll('#birthConflictTable tbody tr');
+        const resolutions = [];
+        rows.forEach(function(row) {
+            const idx = row.getAttribute('data-bc-index');
+            const sel = row.querySelector('input[name="bc_choice_' + idx + '"]:checked');
+            if (!sel) return;
+            resolutions.push({
+                person_id: row.getAttribute('data-person-id'),
+                athlete_id: parseInt(row.getAttribute('data-athlete-id'), 10),
+                use: sel.value
+            });
+        });
+        return resolutions;
+    }
+
+    const confirmBirthBtn = document.getElementById('birthConflictConfirmBtn');
+    if (confirmBirthBtn) {
+        confirmBirthBtn.addEventListener('click', function() {
+            const resolutions = collectBirthConflictResolutions();
+            document.getElementById('birth_conflict_resolutions').value = JSON.stringify(resolutions);
+            const modalEl = document.getElementById('birthConflictModal');
+            const modalInst = bootstrap.Modal.getInstance(modalEl);
+            if (modalInst) modalInst.hide();
+            birthConflictPassed = true;
+            form.requestSubmit();
+        });
+    }
+
+    document.querySelectorAll('.delete-category-btn').forEach(function(button) {
         button.addEventListener('click', function() {
             const categoryIndex = this.getAttribute('data-category-index');
             const categoryItem = this.closest('.category-item');
             const deleteFlag = categoryItem.querySelector('.category-delete-flag');
             const normalizeSelect = categoryItem.querySelector('.category-normalize-select');
-            
+
             if (categoryItem.classList.contains('deleted')) {
-                // Восстановление категории
                 categoryItem.classList.remove('deleted');
                 deleteFlag.value = '0';
                 if (normalizeSelect) {
@@ -219,7 +316,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 this.innerHTML = '<i class="fas fa-times"></i>';
                 this.title = 'Удалить категорию';
             } else {
-                // Удаление категории
                 if (confirm('Вы уверены, что хотите исключить эту категорию из импорта? Категория не будет добавлена в базу данных.')) {
                     categoryItem.classList.add('deleted');
                     deleteFlag.value = '1';
@@ -234,41 +330,73 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     });
-    
-    // Защита от двойного клика и предупреждение при отправке формы
-    const form = document.querySelector('form');
-    const submitBtn = document.getElementById('submit-btn');
-    let isSubmitting = false;
-    
+
     if (form && submitBtn) {
-        form.addEventListener('submit', function(e) {
-            // Предотвращаем повторную отправку
+        form.addEventListener('submit', async function(e) {
+            if (!birthConflictPassed) {
+                e.preventDefault();
+                const fd = new FormData(form);
+                try {
+                    const resp = await fetch('/check-import-birth-conflicts', {
+                        method: 'POST',
+                        body: fd,
+                        credentials: 'same-origin',
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    });
+                    const data = await resp.json();
+                    if (!data.success) {
+                        alert(data.error || 'Ошибка проверки конфликтов дат');
+                        return false;
+                    }
+                    if (data.conflicts && data.conflicts.length > 0) {
+                        renderBirthConflictRows(data.conflicts);
+                        const modal = new bootstrap.Modal(document.getElementById('birthConflictModal'));
+                        modal.show();
+                        return false;
+                    }
+                    birthConflictPassed = true;
+                    form.requestSubmit();
+                    return false;
+                } catch (err) {
+                    alert('Не удалось выполнить проверку: ' + err);
+                    return false;
+                }
+            }
+
             if (isSubmitting) {
                 e.preventDefault();
                 return false;
             }
-            
+
             const deletedCount = document.querySelectorAll('.category-item.deleted').length;
             if (deletedCount > 0) {
-                if (!confirm(`Вы собираетесь исключить ${deletedCount} категорий из импорта. Продолжить?`)) {
+                if (!confirm('Вы собираетесь исключить ' + deletedCount + ' категорий из импорта. Продолжить?')) {
                     e.preventDefault();
+                    birthConflictPassed = false;
+                    document.getElementById('birth_conflict_resolutions').value = '';
                     return false;
                 }
             }
-            
-            // Блокируем повторную отправку
+
             isSubmitting = true;
             submitBtn.disabled = true;
             submitBtn.classList.add('disabled');
-            
-            // Показываем индикатор загрузки
+
             const btnText = submitBtn.querySelector('.btn-text');
             const spinner = submitBtn.querySelector('.spinner-border');
             if (btnText) btnText.textContent = 'Обработка...';
             if (spinner) spinner.classList.remove('d-none');
-            
-            // Разрешаем отправку формы
+
             return true;
+        });
+    }
+
+    const birthModalEl = document.getElementById('birthConflictModal');
+    if (birthModalEl) {
+        birthModalEl.addEventListener('hidden.bs.modal', function() {
+            if (!birthConflictPassed) {
+                document.getElementById('birth_conflict_resolutions').value = '';
+            }
         });
     }
 });
