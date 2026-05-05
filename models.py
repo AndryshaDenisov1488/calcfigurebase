@@ -311,7 +311,9 @@ class JudgeHelperFreeAudit(db.Model):
     reader_logged_in = db.Column(db.Boolean, default=False, nullable=False, index=True)
     parsed_names_count = db.Column(db.Integer, nullable=False, default=0)
     input_char_len = db.Column(db.Integer, nullable=False, default=0)
-    input_preview = db.Column(db.Text)
+    input_preview = db.Column(db.Text)  # legacy; новые записи — в names_raw
+    names_raw = db.Column(db.Text)
+    input_truncated = db.Column(db.Boolean, default=False, nullable=False)
     result_has_free = db.Column(db.Integer, nullable=False, default=0)
     result_no_free = db.Column(db.Integer, nullable=False, default=0)
     result_fio_only = db.Column(db.Integer, nullable=False, default=0)
