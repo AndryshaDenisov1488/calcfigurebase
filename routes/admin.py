@@ -21,12 +21,13 @@ from services.import_birth_conflict import (
     apply_birth_conflict_resolutions_json,
     find_birth_date_conflicts,
 )
+from services.xml_archive import archive_imported_xml
 from collections import defaultdict
 
 from sqlalchemy import and_, case, func
 
 from event_rank_constants import EVENT_RANK_OPTIONS
-from models import Category, Event, Participant
+from models import Category, Event, Participant, JudgeHelperFreeAudit
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +99,7 @@ def check_import_birth_conflicts():
 
     conflicts_all = []
     try:
-        for parser, _fp in iter_ready_parsers(parser_data, ca_work, deleted_indices):
+        for parser, _fp, _fn in iter_ready_parsers(parser_data, ca_work, deleted_indices):
             conflicts_all.extend(find_birth_date_conflicts(parser))
     except Exception as e:
         logger.error('check_import_birth_conflicts: %s', e, exc_info=True)
@@ -446,6 +447,7 @@ def analyze_xml():
             categories_analysis = analyze_categories_from_xml(parser)
             session['parser_data'] = {
                 'filepath': filepath,
+                'upload_original_filename': file.filename,
                 'categories_analysis': categories_analysis,
                 'parser_summary': {
                     'events': len(parser.events),
@@ -509,14 +511,20 @@ def normalize_categories():
                 parsers_bundle = list(iter_ready_parsers(parser_data, categories_analysis, deleted_indices))
                 if parsers_bundle:
                     apply_birth_conflict_resolutions_json(
-                        resolutions, [p for p, _fp in parsers_bundle]
+                        resolutions, [p for p, _fp, _fn in parsers_bundle]
                     )
                     db.session.flush()
 
                 total_athletes = 0
-                for parser, filepath in parsers_bundle:
+                up_folder = current_app.config['UPLOAD_FOLDER']
+                for parser, filepath, original_filename in parsers_bundle:
                     save_to_database(parser)
                     total_athletes += len(parser.get_athletes_with_results())
+                    archive_imported_xml(
+                        filepath,
+                        original_filename or os.path.basename(filepath),
+                        up_folder,
+                    )
                     if os.path.exists(filepath):
                         try:
                             os.remove(filepath)
@@ -601,13 +609,14 @@ def normalize_categories():
                 parsers_bundle = list(iter_ready_parsers(parser_data, categories_analysis, deleted_indices))
                 if parsers_bundle:
                     apply_birth_conflict_resolutions_json(
-                        resolutions, [p for p, _fp in parsers_bundle]
+                        resolutions, [p for p, _fp, _fn in parsers_bundle]
                     )
                     db.session.flush()
 
                 deleted_count = len(deleted_indices)
+                up_folder = current_app.config['UPLOAD_FOLDER']
                 if parsers_bundle:
-                    parser, filepath = parsers_bundle[0]
+                    parser, filepath, original_filename = parsers_bundle[0]
                     save_to_database(parser)
                     if deleted_count > 0:
                         flash(f'Файл успешно загружен и обработан с нормализацией категорий! Исключено категорий: {deleted_count}', 'success')
@@ -617,7 +626,12 @@ def normalize_categories():
                     flash('Файл обработан, но все категории были исключены из импорта.', 'warning')
 
                 if parsers_bundle:
-                    _parser, fp_del = parsers_bundle[0]
+                    _parser, fp_del, orig_fn = parsers_bundle[0]
+                    archive_imported_xml(
+                        fp_del,
+                        orig_fn or os.path.basename(fp_del),
+                        up_folder,
+                    )
                     if os.path.exists(fp_del):
                         try:
                             os.remove(fp_del)
@@ -643,6 +657,18 @@ def normalize_categories():
             parser_summary=parser_data.get('parser_summary', {}),
             files_count=1
         )
+
+@admin_bp.route('/admin/judge-helper-audit')
+@admin_required
+def admin_judge_helper_audit():
+    """Журнал проверок страницы помощника судьям (бесплатные участия)."""
+    page = request.args.get('page', 1, type=int)
+    per_page = min(max(request.args.get('per_page', 50, type=int) or 50, 10), 200)
+    pagination = JudgeHelperFreeAudit.query.order_by(
+        JudgeHelperFreeAudit.created_at.desc()
+    ).paginate(page=page, per_page=per_page)
+    return render_template('admin_judge_helper_audit.html', pagination=pagination)
+
 
 @admin_bp.route('/upload-to-database', methods=['POST'])
 @admin_required
@@ -675,6 +701,11 @@ def upload_to_database():
                 save_to_database(parser)
                 athletes_count = len(parser.get_athletes_with_results())
                 total_athletes += athletes_count
+                archive_imported_xml(
+                    file_info['filepath'],
+                    file_info.get('filename') or os.path.basename(file_info['filepath']),
+                    current_app.config['UPLOAD_FOLDER'],
+                )
                 processed_files.append({
                     'filename': file_info['filename'],
                     'athletes': athletes_count
@@ -701,6 +732,11 @@ def upload_to_database():
                     category['normalized_name'] = categories_analysis[i]['normalized']
             save_to_database(parser)
             athletes_count = len(parser.get_athletes_with_results())
+            archive_imported_xml(
+                parser_data['filepath'],
+                parser_data.get('upload_original_filename') or os.path.basename(parser_data['filepath']),
+                current_app.config['UPLOAD_FOLDER'],
+            )
             os.remove(parser_data['filepath'])
             session.pop('parser_data', None)
             return jsonify({

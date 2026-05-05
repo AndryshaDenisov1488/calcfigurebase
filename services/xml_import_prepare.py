@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 
 def iter_ready_parsers(parser_data, categories_analysis, deleted_indices):
     """
-    Итерирует пары (parser, filepath) в том же виде, что при save_to_database.
-    filepath — для удаления после успешного импорта.
+    Итерирует (parser, filepath, original_filename) как перед save_to_database.
+    filepath — для удаления после успешного импорта; original_filename — исходное имя для архива.
     deleted_indices — множество индексов категорий (глобальных по categories_analysis).
     """
     if 'files' in parser_data:
@@ -48,7 +48,8 @@ def iter_ready_parsers(parser_data, categories_analysis, deleted_indices):
                 ]
 
             if parser.categories:
-                yield parser, filepath
+                original_name = file_info.get('filename') or os.path.basename(filepath)
+                yield parser, filepath, original_name
     else:
         filepath = parser_data.get('filepath')
         if not filepath or not os.path.exists(filepath):
@@ -78,4 +79,5 @@ def iter_ready_parsers(parser_data, categories_analysis, deleted_indices):
             ]
 
         if parser.categories:
-            yield parser, filepath
+            original_name = parser_data.get('upload_original_filename') or os.path.basename(filepath)
+            yield parser, filepath, original_name

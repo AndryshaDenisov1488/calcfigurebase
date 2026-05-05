@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Журнал помощника судьям (БЕСП){% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <h2 class="mb-3"><i class="fas fa-clipboard-list"></i> Журнал проверок «Помощник главным судьям»</h2>
+    <p class="text-muted">
+        Запись создаётся при каждой успешной проверке списка ФИО на странице
+        <a href="{{ url_for('analytics.judge_helper_free') }}">judge-helper-free</a>.
+        Без личного входа пользователей виден только IP и факт входа через «Доступ судьи».
+        Даты в таблице — UTC (как в базе).
+    </p>
+
+    {% if pagination.total == 0 %}
+    <div class="alert alert-info">Записей пока нет.</div>
+    {% else %}
+    <p class="small text-muted">Всего записей: {{ pagination.total }}. Страница {{ pagination.page }} из {{ pagination.pages }}.</p>
+    <div class="table-responsive">
+        <table class="table table-sm table-striped align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Когда (UTC)</th>
+                    <th>IP</th>
+                    <th>Доступ судьи</th>
+                    <th>Строк в списке</th>
+                    <th>Символов</th>
+                    <th>БЕСП / платно / ФИ / нет в базе</th>
+                    <th>Фрагмент списка</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in pagination.items %}
+                <tr>
+                    <td class="text-nowrap">{{ row.created_at.strftime('%d.%m.%Y %H:%M:%S') }}</td>
+                    <td><code>{{ row.remote_addr or '—' }}</code></td>
+                    <td>{% if row.reader_logged_in %}<span class="badge bg-success">да</span>{% else %}<span class="badge bg-secondary">нет</span>{% endif %}</td>
+                    <td>{{ row.parsed_names_count }}</td>
+                    <td>{{ row.input_char_len }}</td>
+                    <td class="text-nowrap small">
+                        {{ row.result_has_free }} / {{ row.result_no_free }} / {{ row.result_fio_only }} / {{ row.result_not_found }}
+                    </td>
+                    <td style="max-width: 28rem;">
+                        {% if row.input_preview %}
+                        <details class="small">
+                            <summary class="text-primary" style="cursor:pointer;">Показать</summary>
+                            <pre class="mt-2 mb-0 p-2 bg-light border rounded" style="white-space: pre-wrap; font-size: 0.75rem; max-height: 14rem; overflow: auto;">{{ row.input_preview }}</pre>
+                        </details>
+                        {% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if pagination.pages > 1 %}
+    <nav aria-label="Страницы">
+        <ul class="pagination pagination-sm flex-wrap">
+            <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for('admin.admin_judge_helper_audit', page=pagination.prev_num) if pagination.has_prev else '#' }}">Назад</a>
+            </li>
+            {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                {% if p %}
+                <li class="page-item {% if p == pagination.page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin.admin_judge_helper_audit', page=p) }}">{{ p }}</a>
+                </li>
+                {% else %}
+                <li class="page-item disabled"><span class="page-link">…</span></li>
+                {% endif %}
+            {% endfor %}
+            <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for('admin.admin_judge_helper_audit', page=pagination.next_num) if pagination.has_next else '#' }}">Вперёд</a>
+            </li>
+        </ul>
+    </nav>
+    {% endif %}
+    {% endif %}
+</div>
+{% endblock %}

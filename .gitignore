@@ -36,6 +36,7 @@ scripts/google_credentials.json
 # Uploads
 uploads/*.XML
 uploads/*.xml
+uploads/xml_archive/
 
 # Backups
 backups/*.db

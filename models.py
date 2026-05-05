@@ -298,3 +298,21 @@ class CoachAssignment(db.Model):
         db.Index('idx_coach_assignment_athlete_date', 'athlete_id', 'start_date'),
         db.Index('idx_coach_assignment_current', 'athlete_id', 'is_current'),
     )
+
+
+class JudgeHelperFreeAudit(db.Model):
+    """Журнал использования страницы помощника судьям (бесплатные участия)."""
+
+    __tablename__ = 'judge_helper_free_audit'
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    remote_addr = db.Column(db.String(45))
+    reader_logged_in = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    parsed_names_count = db.Column(db.Integer, nullable=False, default=0)
+    input_char_len = db.Column(db.Integer, nullable=False, default=0)
+    input_preview = db.Column(db.Text)
+    result_has_free = db.Column(db.Integer, nullable=False, default=0)
+    result_no_free = db.Column(db.Integer, nullable=False, default=0)
+    result_fio_only = db.Column(db.Integer, nullable=False, default=0)
+    result_not_found = db.Column(db.Integer, nullable=False, default=0)

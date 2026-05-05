@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Analytics HTML routes."""
-from datetime import date
 import io
+import logging
 import re
+from datetime import date
 
-from flask import Blueprint, render_template, request, send_file, url_for
+from flask import Blueprint, render_template, request, send_file, url_for, session
 
 from sqlalchemy import func
 from extensions import db
-from models import Athlete, Participant, Event, Category
+from models import Athlete, Participant, Event, Category, JudgeHelperFreeAudit
+from utils.access_control import SESSION_SITE_READER_KEY
 
 analytics_bp = Blueprint('analytics', __name__)
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_words(s):
@@ -351,6 +355,27 @@ def judge_helper_free():
         names = _parse_pasted_list(pasted)
         if names:
             has_free, no_free, fio_only_matches, not_found = _check_names_against_db_free(names)
+            try:
+                preview_max = 8000
+                preview = (pasted or '')[:preview_max]
+                if pasted and len(pasted) > preview_max:
+                    preview += '\n… [обрезано]'
+                row = JudgeHelperFreeAudit(
+                    remote_addr=(request.remote_addr or '')[:45],
+                    reader_logged_in=bool(session.get(SESSION_SITE_READER_KEY)),
+                    parsed_names_count=len(names),
+                    input_char_len=len(pasted or ''),
+                    input_preview=preview or None,
+                    result_has_free=len(has_free),
+                    result_no_free=len(no_free),
+                    result_fio_only=len(fio_only_matches),
+                    result_not_found=len(not_found),
+                )
+                db.session.add(row)
+                db.session.commit()
+            except Exception as exc:
+                db.session.rollback()
+                logger.warning('Judge helper free audit: %s', exc, exc_info=True)
     return render_template(
         'judge_helper_free.html',
         has_free=has_free,
