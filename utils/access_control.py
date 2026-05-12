@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Доступ к JSON API: сессия админа/судьи, API-ключ или отключение проверки (только dev)."""
 import os
-from flask import session, current_app
+from flask import session, current_app, request
 
 SESSION_SITE_READER_KEY = 'site_reader_ok'
 
