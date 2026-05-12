@@ -13,6 +13,7 @@ from sqlalchemy import func
 from extensions import db
 from models import Athlete, Participant, Event, Category, JudgeHelperFreeAudit
 from utils.access_control import SESSION_SITE_READER_KEY
+from utils.client_ip import get_client_ip
 
 analytics_bp = Blueprint('analytics', __name__)
 
@@ -371,7 +372,7 @@ def judge_helper_free():
 
         try:
             row = JudgeHelperFreeAudit(
-                remote_addr=(request.remote_addr or '')[:45],
+                remote_addr=(get_client_ip(request) or '')[:45],
                 reader_logged_in=bool(session.get(SESSION_SITE_READER_KEY)),
                 parsed_names_count=len(names),
                 input_char_len=len(raw_body),

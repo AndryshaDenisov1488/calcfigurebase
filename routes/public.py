@@ -7,10 +7,11 @@ import hmac
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, current_app
 
 from extensions import db
-from models import Event, Category, Athlete, Participant, Club, Coach, CoachAssignment
+from models import Event, Category, Athlete, Participant, Club, Coach, CoachAssignment, SiteReaderLoginLog
 from season_utils import get_all_seasons_from_events
 from services.rank_service import build_rank_groups, build_best_results
 from utils.access_control import SESSION_SITE_READER_KEY, safe_same_site_redirect_path
+from utils.client_ip import get_client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -554,11 +555,35 @@ def site_access():
         if hmac.compare_digest(candidate.encode('utf-8'), pwd_cfg.encode('utf-8')):
             session[SESSION_SITE_READER_KEY] = True
             session.permanent = True
+            try:
+                log = SiteReaderLoginLog(
+                    client_ip=(get_client_ip(request) or '')[:45] or None,
+                    user_agent=(request.headers.get('User-Agent') or '')[:512] or None,
+                )
+                db.session.add(log)
+                db.session.commit()
+            except Exception as exc:
+                db.session.rollback()
+                logger.warning('site_reader_login_log: %s', exc, exc_info=True)
             flash('Доступ для просмотра данных и страниц включён.', 'success')
             dest = safe_same_site_redirect_path(request.form.get('next') or '') or url_for('public.index')
             return redirect(dest)
         flash('Неверный пароль', 'error')
-    return render_template('site_access.html', next=next_clean)
+    reader_stats = None
+    if session.get('admin_logged_in'):
+        from sqlalchemy import func as sa_func
+
+        reader_stats = {
+            'total': SiteReaderLoginLog.query.count(),
+            'uniq_ip': (
+                db.session.query(sa_func.count(sa_func.distinct(SiteReaderLoginLog.client_ip)))
+                .filter(SiteReaderLoginLog.client_ip.isnot(None), SiteReaderLoginLog.client_ip != '')
+                .scalar()
+                or 0
+            ),
+            'recent': SiteReaderLoginLog.query.order_by(SiteReaderLoginLog.created_at.desc()).limit(10).all(),
+        }
+    return render_template('site_access.html', next=next_clean, reader_login_stats=reader_stats)
 
 
 @public_bp.route('/site-reader-logout')

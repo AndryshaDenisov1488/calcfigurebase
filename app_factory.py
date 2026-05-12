@@ -4,6 +4,7 @@
 import os
 from flask import Flask, session
 from dotenv import load_dotenv
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from config import get_config
 from extensions import db, migrate, limiter, csrf, init_cors
@@ -15,6 +16,8 @@ from utils.access_control import SESSION_SITE_READER_KEY
 def create_app():
     load_dotenv()
     app = Flask(__name__)
+    # За nginx с TLS: корректные request.is_secure, url_for(..., _external=True), cookies
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
     config = get_config()
     app.config.update(config)
 
@@ -63,7 +66,12 @@ def create_app():
             'или как администратор.',
             'warning',
         )
-        return redirect(url_for('public.site_access', next=request.full_path))
+        # Не использовать request.full_path: для «/» иногда получается «/?», в URL выглядит как next=/? и ломает редирект
+        if request.query_string:
+            next_arg = (request.path or '/') + '?' + request.query_string.decode('utf-8', errors='replace')
+        else:
+            next_arg = request.path or '/'
+        return redirect(url_for('public.site_access', next=next_arg))
 
     @app.after_request
     def _no_store_sensitive_html(response):

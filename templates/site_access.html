@@ -3,6 +3,42 @@
 {% block title %}Доступ для просмотра данных{% endblock %}
 
 {% block content %}
+{% if reader_login_stats %}
+<div class="row justify-content-center mt-3">
+    <div class="col-md-10 col-lg-8">
+        <div class="card border-info shadow-sm">
+            <div class="card-header bg-info text-white">
+                <i class="fas fa-chart-bar"></i> Входы «Доступ судьи» (только для администратора)
+            </div>
+            <div class="card-body small">
+                <p class="mb-2">
+                    Успешных входов по паролю: <strong>{{ reader_login_stats.total }}</strong>.
+                    Уникальных IP: <strong>{{ reader_login_stats.uniq_ip }}</strong>.
+                    <a href="{{ url_for('admin.admin_site_reader_login_log') }}">Полный журнал и топ IP</a>
+                </p>
+                {% if reader_login_stats.recent %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-0">
+                        <thead class="table-light"><tr><th>Время (UTC)</th><th>IP</th><th>User-Agent (начало)</th></tr></thead>
+                        <tbody>
+                            {% for r in reader_login_stats.recent %}
+                            <tr>
+                                <td class="text-nowrap">{{ r.created_at.strftime('%d.%m.%Y %H:%M:%S') }}</td>
+                                <td><code>{{ r.client_ip or '—' }}</code></td>
+                                <td class="text-break">{{ (r.user_agent or '—')[:160] }}{% if r.user_agent and r.user_agent|length > 160 %}…{% endif %}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">Записей пока нет.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 <div class="row justify-content-center mt-5">
     <div class="col-md-6 col-lg-5">
         <div class="card shadow">

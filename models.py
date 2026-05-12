@@ -300,6 +300,17 @@ class CoachAssignment(db.Model):
     )
 
 
+class SiteReaderLoginLog(db.Model):
+    """Успешные входы через /site-access (пароль «доступ судьи» / SITE_READ_PASSWORD)."""
+
+    __tablename__ = 'site_reader_login_log'
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    client_ip = db.Column(db.String(45), nullable=True, index=True)
+    user_agent = db.Column(db.String(512), nullable=True)
+
+
 class JudgeHelperFreeAudit(db.Model):
     """Журнал использования страницы помощника судьям (бесплатные участия)."""
 

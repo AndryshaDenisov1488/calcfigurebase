@@ -27,7 +27,7 @@ from collections import defaultdict
 from sqlalchemy import and_, case, func
 
 from event_rank_constants import EVENT_RANK_OPTIONS
-from models import Category, Event, Participant, JudgeHelperFreeAudit
+from models import Category, Event, Participant, JudgeHelperFreeAudit, SiteReaderLoginLog
 
 logger = logging.getLogger(__name__)
 
@@ -668,6 +668,39 @@ def admin_judge_helper_audit():
         JudgeHelperFreeAudit.created_at.desc()
     ).paginate(page=page, per_page=per_page)
     return render_template('admin_judge_helper_audit.html', pagination=pagination)
+
+
+@admin_bp.route('/admin/site-reader-login-log')
+@admin_required
+def admin_site_reader_login_log():
+    """Журнал успешных входов через «Доступ судьи» (/site-access, SITE_READ_PASSWORD)."""
+    page = request.args.get('page', 1, type=int)
+    per_page = min(max(request.args.get('per_page', 50, type=int) or 50, 10), 200)
+    pagination = SiteReaderLoginLog.query.order_by(
+        SiteReaderLoginLog.created_at.desc()
+    ).paginate(page=page, per_page=per_page)
+    total = SiteReaderLoginLog.query.count()
+    uniq_ip = (
+        db.session.query(func.count(func.distinct(SiteReaderLoginLog.client_ip)))
+        .filter(SiteReaderLoginLog.client_ip.isnot(None), SiteReaderLoginLog.client_ip != '')
+        .scalar()
+        or 0
+    )
+    by_ip = (
+        db.session.query(SiteReaderLoginLog.client_ip, func.count(SiteReaderLoginLog.id))
+        .filter(SiteReaderLoginLog.client_ip.isnot(None), SiteReaderLoginLog.client_ip != '')
+        .group_by(SiteReaderLoginLog.client_ip)
+        .order_by(func.count(SiteReaderLoginLog.id).desc())
+        .limit(30)
+        .all()
+    )
+    return render_template(
+        'admin_site_reader_login_log.html',
+        pagination=pagination,
+        total_logins=total,
+        unique_ip_count=uniq_ip,
+        by_ip=by_ip,
+    )
 
 
 @admin_bp.route('/upload-to-database', methods=['POST'])

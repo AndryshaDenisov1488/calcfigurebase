@@ -2,13 +2,14 @@
 # -*- coding: utf-8 -*-
 """Доступ к JSON API: сессия админа/судьи, API-ключ или отключение проверки (только dev)."""
 import os
-from flask import session, current_app
+from flask import session, current_app, request
 
 SESSION_SITE_READER_KEY = 'site_reader_ok'
 
 _HTML_GATE_SKIP_ENDPOINTS_PUBLIC = frozenset({
     'public.site_access',
     'public.site_reader_logout',
+    'public.index',  # главная открывается без редиректа на /site-access?next=/
 })
 
 

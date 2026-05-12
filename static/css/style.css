@@ -598,7 +598,7 @@ body {
         color: #495057;
     }
 
-    .navbar,
+    /* navbar не трогаем: иначе белый фон + белые ссылки .nav-link — «Вход» не виден и кажется «не нажимается» */
     .footer,
     footer {
         background-color: #ffffff;

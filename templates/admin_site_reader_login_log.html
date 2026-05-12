@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Журнал входов «Доступ судьи»{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <h2 class="mb-3"><i class="fas fa-key"></i> Успешные входы через /site-access</h2>
+    <p class="text-muted">
+        Запись добавляется при каждом верном пароле из формы «Доступ судьи» (переменная <code>SITE_READ_PASSWORD</code>).
+        IP берётся из заголовков прокси (<code>X-Forwarded-For</code> / <code>X-Real-IP</code>), как и в журнале помощника судьям.
+        Даты в таблице — UTC (как в базе).
+    </p>
+
+    <div class="row mb-3 g-3">
+        <div class="col-md-4">
+            <div class="card h-100"><div class="card-body">
+                <h5 class="card-title text-muted">Всего входов</h5>
+                <p class="display-6 mb-0">{{ total_logins }}</p>
+            </div></div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100"><div class="card-body">
+                <h5 class="card-title text-muted">Уникальных IP</h5>
+                <p class="display-6 mb-0">{{ unique_ip_count }}</p>
+            </div></div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100"><div class="card-body">
+                <h5 class="card-title text-muted">Топ IP</h5>
+                {% if by_ip %}
+                <ul class="list-unstyled small mb-0">
+                    {% for ip, cnt in by_ip %}
+                    <li><code>{{ ip }}</code> — <strong>{{ cnt }}</strong></li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted mb-0">—</p>
+                {% endif %}
+            </div></div>
+        </div>
+    </div>
+
+    {% if pagination.total == 0 %}
+    <div class="alert alert-info">Записей пока нет.</div>
+    {% else %}
+    <p class="small text-muted">Всего записей: {{ pagination.total }}. Страница {{ pagination.page }} из {{ pagination.pages }}.</p>
+    <div class="table-responsive">
+        <table class="table table-sm table-striped align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Когда (UTC)</th>
+                    <th>IP</th>
+                    <th>User-Agent</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in pagination.items %}
+                <tr>
+                    <td class="text-nowrap">{{ row.created_at.strftime('%d.%m.%Y %H:%M:%S') }}</td>
+                    <td><code>{{ row.client_ip or '—' }}</code></td>
+                    <td class="small text-break">{{ row.user_agent or '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if pagination.pages > 1 %}
+    <nav aria-label="Страницы">
+        <ul class="pagination pagination-sm flex-wrap">
+            <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for('admin.admin_site_reader_login_log', page=pagination.prev_num) if pagination.has_prev else '#' }}">Назад</a>
+            </li>
+            {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                {% if p %}
+                <li class="page-item {% if p == pagination.page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin.admin_site_reader_login_log', page=p) }}">{{ p }}</a>
+                </li>
+                {% else %}
+                <li class="page-item disabled"><span class="page-link">…</span></li>
+                {% endif %}
+            {% endfor %}
+            <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                <a class="page-link" href="{{ url_for('admin.admin_site_reader_login_log', page=pagination.next_num) if pagination.has_next else '#' }}">Вперёд</a>
+            </li>
+        </ul>
+    </nav>
+    {% endif %}
+    {% endif %}
+</div>
+{% endblock %}
