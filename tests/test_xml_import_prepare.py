@@ -4,8 +4,6 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from werkzeug.datastructures import MultiDict
-
 from routes.admin import _parse_normalize_category_form
 from services.xml_import_prepare import iter_ready_parsers
 
@@ -25,12 +23,12 @@ class FakeParser:
 
 class XmlImportPrepareTests(unittest.TestCase):
     def test_parse_normalize_form_collects_deleted_indices(self):
-        request = SimpleNamespace(form=MultiDict([
-            ('normalize_0', '1 Спортивный, Девочки'),
-            ('delete_0', '0'),
-            ('normalize_1', '2 Спортивный, Девочки'),
-            ('delete_1', '1'),
-        ]))
+        request = SimpleNamespace(form={
+            'normalize_0': '1 Спортивный, Девочки',
+            'delete_0': '0',
+            'normalize_1': '2 Спортивный, Девочки',
+            'delete_1': '1',
+        })
 
         normalizations, deleted_indices = _parse_normalize_category_form(request)
 
