@@ -15,14 +15,16 @@ _HTML_GATE_SKIP_ENDPOINTS_PUBLIC = frozenset({
 
 def public_html_gate_enabled():
     """
-    HTML-страницы с данными закрываются для гостей, если задан SITE_READ_PASSWORD.
+    HTML-страницы с данными закрываются для гостей, если настроен любой строгий доступ.
     Отключение: DISABLE_PUBLIC_HTML_GATE=1 (экстренный режим).
     """
     if os.environ.get('DISABLE_PUBLIC_HTML_GATE', '').lower() in ('1', 'true', 'yes'):
         return False
     if not current_app:
         return False
-    return bool((current_app.config.get('SITE_READ_PASSWORD') or '').strip())
+    has_reader_password = bool((current_app.config.get('SITE_READ_PASSWORD') or '').strip())
+    has_api_keys = bool(current_app.config.get('API_KEYS') or [])
+    return has_reader_password or has_api_keys
 
 
 def session_has_reader_or_admin():
