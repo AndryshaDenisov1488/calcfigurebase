@@ -64,7 +64,7 @@ def _coerce_xml_date(raw) -> date | None:
     return None
 
 
-def find_birth_date_conflicts(parser) -> list[dict]:
+def find_birth_date_conflicts(parser, source_key: str | None = None) -> list[dict]:
     """
     Ищет участников XML: то же отображаемое ФИО, что у спортсмена в БД,
     но дата рождения в файле и в профиле различаются (обе заданы).
@@ -104,7 +104,7 @@ def find_birth_date_conflicts(parser) -> list[dict]:
             if dedup in seen_pairs:
                 continue
             seen_pairs.add(dedup)
-            conflicts.append({
+            conflict = {
                 'person_id': str(person_id),
                 'fio': display,
                 'xml_birth': _format_dmycolon(xml_date),
@@ -113,14 +113,45 @@ def find_birth_date_conflicts(parser) -> list[dict]:
                 'db_birth': _format_dmycolon(adb),
                 'db_birth_iso': adb.isoformat(),
                 'profile_url': f'https://calc.figurebase.ru/athlete/{a.id}',
-            })
+            }
+            if source_key is not None:
+                conflict['source_key'] = str(source_key)
+            conflicts.append(conflict)
     return conflicts
+
+
+def _parser_items(parsers: list) -> list[tuple[str, object]]:
+    items = []
+    for idx, item in enumerate(parsers):
+        if isinstance(item, tuple) and len(item) >= 2:
+            items.append((str(item[0]), item[1]))
+        else:
+            items.append((str(idx), item))
+    return items
+
+
+def _find_person_data(parser_items: list[tuple[str, object]], resolution: dict) -> dict | None:
+    source_key = resolution.get('source_key')
+    if source_key is None and len(parser_items) != 1:
+        # XML person ids are local to a file; applying an unscoped multi-file
+        # resolution can update an athlete from the wrong XML.
+        return None
+
+    person_id = str(resolution['person_id'])
+    source_filter = str(source_key) if source_key is not None else None
+    for item_source, parser in parser_items:
+        if source_filter is not None and item_source != source_filter:
+            continue
+        person_data = next((p for p in parser.persons if str(p['id']) == person_id), None)
+        if person_data:
+            return person_data
+    return None
 
 
 def apply_birth_conflict_resolutions_json(resolutions: list[dict], parsers: list) -> None:
     """
     resolutions: [{ 'person_id': str, 'athlete_id': int, 'use': 'xml'|'db' }, ...]
-    parsers — список уже подготовленных парсеров (тот же порядок, что перед save_to_database).
+    parsers — список уже подготовленных парсеров или пар (source_key, parser).
     Сначала применяются выборы 'xml' (обновление профиля в БД), затем 'db' (правка даты в объектах parser.persons).
     """
     if not resolutions:
@@ -133,16 +164,12 @@ def apply_birth_conflict_resolutions_json(resolutions: list[dict], parsers: list
     db_rest = [r for r in resolutions if r.get('use') == 'db']
 
     registry = AthleteRegistry()
+    parser_items = _parser_items(parsers)
 
     for r in xml_first:
         aid = int(r['athlete_id'])
-        person_id = str(r['person_id'])
         athlete = Athlete.query.get(aid)
-        person_data = None
-        for parser in parsers:
-            person_data = next((p for p in parser.persons if str(p['id']) == person_id), None)
-            if person_data:
-                break
+        person_data = _find_person_data(parser_items, r)
         if not athlete or not person_data:
             continue
         xml_date = _coerce_xml_date(person_data.get('birth_date'))
@@ -158,13 +185,10 @@ def apply_birth_conflict_resolutions_json(resolutions: list[dict], parsers: list
     db.session.flush()
 
     for r in db_rest:
-        person_id = str(r['person_id'])
         aid = int(r['athlete_id'])
         athlete = Athlete.query.get(aid)
         if not athlete or not athlete.birth_date:
             continue
-        db_d = athlete.birth_date
-        for parser in parsers:
-            person_data = next((p for p in parser.persons if str(p['id']) == person_id), None)
-            if person_data:
-                person_data['birth_date'] = db_d
+        person_data = _find_person_data(parser_items, r)
+        if person_data:
+            person_data['birth_date'] = athlete.birth_date
