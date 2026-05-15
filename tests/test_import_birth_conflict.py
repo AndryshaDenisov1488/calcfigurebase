@@ -60,7 +60,7 @@ class ImportBirthConflictTest(unittest.TestCase):
                 'id': 'P1',
                 'full_name': 'Two Beta',
                 'last_name': 'Two',
-                'birth_date': '2002-02-02',
+                'birth_date': '20020202',
             },
         ])
 
@@ -86,7 +86,7 @@ class ImportBirthConflictTest(unittest.TestCase):
                 'id': 'P1',
                 'full_name': 'One Alpha',
                 'last_name': 'One',
-                'birth_date': '1990-01-01',
+                'birth_date': '19900101',
             },
         ])
         second_file = FakeParser([
@@ -94,7 +94,7 @@ class ImportBirthConflictTest(unittest.TestCase):
                 'id': 'P1',
                 'full_name': 'Two Beta',
                 'last_name': 'Two',
-                'birth_date': '2002-02-02',
+                'birth_date': '20020202',
             },
         ])
 
@@ -127,7 +127,7 @@ class ImportBirthConflictTest(unittest.TestCase):
                 'id': 'P1',
                 'full_name': 'One Alpha',
                 'last_name': 'One',
-                'birth_date': '1990-01-01',
+                'birth_date': '19900101',
             },
         ])
         second_file = FakeParser([
@@ -135,7 +135,7 @@ class ImportBirthConflictTest(unittest.TestCase):
                 'id': 'P1',
                 'full_name': 'Two Beta',
                 'last_name': 'Two',
-                'birth_date': '2002-02-02',
+                'birth_date': '20020202',
             },
         ])
 
