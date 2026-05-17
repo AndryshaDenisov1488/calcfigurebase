@@ -38,13 +38,13 @@ class MultiFileNormalizeTests(unittest.TestCase):
             data={'delete_1': '1', 'normalize_0': 'Rank A', 'normalize_1': 'Rank B'},
         ):
             self._seed_admin_session()
-            with patch.object(admin_routes, 'iter_ready_parsers', return_value=[]):
+            with patch.object(admin_routes, 'iter_ready_parsers', return_value=[]) as iter_ready_parsers:
                 with patch.object(admin_routes, 'find_birth_date_conflicts', return_value=[]):
                     response = admin_routes.check_import_birth_conflicts()
 
             self.assertEqual(response.status_code, 200)
-            admin_routes.iter_ready_parsers.assert_called_once()
-            self.assertEqual(admin_routes.iter_ready_parsers.call_args.args[2], {1})
+            iter_ready_parsers.assert_called_once()
+            self.assertEqual(iter_ready_parsers.call_args.args[2], {1})
 
     def test_multi_file_normalize_uses_submitted_deletes_and_single_batch_commit(self):
         parser = Mock()
@@ -62,7 +62,7 @@ class MultiFileNormalizeTests(unittest.TestCase):
             },
         ):
             self._seed_admin_session()
-            with patch.object(admin_routes, 'iter_ready_parsers', return_value=parser_bundle):
+            with patch.object(admin_routes, 'iter_ready_parsers', return_value=parser_bundle) as iter_ready_parsers:
                 with patch.object(admin_routes, 'apply_birth_conflict_resolutions_json'):
                     with patch.object(admin_routes, 'save_to_database') as save_to_database:
                         with patch.object(admin_routes, 'archive_imported_xml'):
@@ -72,8 +72,8 @@ class MultiFileNormalizeTests(unittest.TestCase):
                                         response = admin_routes.normalize_categories()
 
             self.assertEqual(response.status_code, 302)
-            admin_routes.iter_ready_parsers.assert_called_once()
-            self.assertEqual(admin_routes.iter_ready_parsers.call_args.args[2], {1})
+            iter_ready_parsers.assert_called_once()
+            self.assertEqual(iter_ready_parsers.call_args.args[2], {1})
             save_to_database.assert_called_once_with(parser, commit=False)
             commit.assert_called_once()
             self.assertNotIn('parser_data', session)
@@ -118,7 +118,7 @@ class RankFreeParticipationTests(unittest.TestCase):
         )
         db.session.commit()
 
-        rank = next(group for group in build_rank_groups() if group['rank'] == 'Rank A')
+        rank = next(group for group in build_rank_groups() if group['display_name'] == 'Rank A')
 
         self.assertEqual(rank['total_free_participations'], 0)
         self.assertFalse(rank['athletes'][0]['has_free_participation'])
