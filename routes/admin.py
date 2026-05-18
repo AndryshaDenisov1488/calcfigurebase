@@ -46,6 +46,20 @@ def _parse_normalize_category_form(request):
     return normalizations, deleted_indices
 
 
+def _apply_category_form_to_analysis(categories_analysis, normalizations, deleted_indices):
+    """Применяет нормализации и отметки исключенных категорий к analysis из сессии."""
+    for index, normalized_name in normalizations.items():
+        if index not in deleted_indices and index < len(categories_analysis):
+            categories_analysis[index]['normalized'] = normalized_name
+            categories_analysis[index]['needs_manual'] = False
+
+    for index in deleted_indices:
+        if index < len(categories_analysis):
+            categories_analysis[index]['deleted'] = True
+
+    return categories_analysis
+
+
 def _safe_parse_birth_conflict_resolutions(raw: str) -> list:
     if not raw or not str(raw).strip():
         return []
@@ -87,15 +101,8 @@ def check_import_birth_conflicts():
     normalizations, deleted_indices_form = _parse_normalize_category_form(request)
     ca_work = [dict(c) for c in categories_analysis]
 
-    for index, normalized_name in normalizations.items():
-        if index < len(ca_work):
-            ca_work[index]['normalized'] = normalized_name
-            ca_work[index]['needs_manual'] = False
-
-    if 'files' in parser_data:
-        deleted_indices = set(parser_data.get('deleted_category_indices', []))
-    else:
-        deleted_indices = deleted_indices_form
+    deleted_indices = deleted_indices_form
+    _apply_category_form_to_analysis(ca_work, normalizations, deleted_indices)
 
     conflicts_all = []
     try:
@@ -490,20 +497,14 @@ def normalize_categories():
         parser_summaries = parser_data['parser_summaries']
         
         if request.method == 'POST':
-            normalizations = {}
-            for key, value in request.form.items():
-                if key.startswith('normalize_'):
-                    category_index = int(key.replace('normalize_', ''))
-                    normalizations[category_index] = value
-            for index, normalized_name in normalizations.items():
-                if index < len(categories_analysis):
-                    categories_analysis[index]['normalized'] = normalized_name
-                    categories_analysis[index]['needs_manual'] = False
+            normalizations, deleted_indices = _parse_normalize_category_form(request)
+            _apply_category_form_to_analysis(categories_analysis, normalizations, deleted_indices)
             session['parser_data']['categories_analysis'] = categories_analysis
+            session['parser_data']['deleted_category_indices'] = list(deleted_indices)
+            session.modified = True
             
             # Сохраняем все файлы последовательно
             try:
-                deleted_indices = set(parser_data.get('deleted_category_indices', []))
                 resolutions = _safe_parse_birth_conflict_resolutions(
                     request.form.get('birth_conflict_resolutions', '')
                 )
@@ -517,32 +518,39 @@ def normalize_categories():
 
                 total_athletes = 0
                 up_folder = current_app.config['UPLOAD_FOLDER']
-                for parser, filepath, original_filename in parsers_bundle:
-                    save_to_database(parser)
-                    total_athletes += len(parser.get_athletes_with_results())
-                    archive_imported_xml(
-                        filepath,
-                        original_filename or os.path.basename(filepath),
-                        up_folder,
-                    )
-                    if os.path.exists(filepath):
-                        try:
-                            os.remove(filepath)
-                        except OSError as e:
-                            logger.warning(f"Не удалось удалить файл {filepath}: {str(e)}")
-                    else:
-                        logger.warning(f"Файл уже не существует при попытке удаления: {filepath}")
+                if parsers_bundle:
+                    for parser, _filepath, _original_filename in parsers_bundle:
+                        save_to_database(parser, commit=False)
+                        total_athletes += len(parser.get_athletes_with_results())
+                    db.session.commit()
+
+                    for _parser, filepath, original_filename in parsers_bundle:
+                        archive_imported_xml(
+                            filepath,
+                            original_filename or os.path.basename(filepath),
+                            up_folder,
+                        )
+                        if os.path.exists(filepath):
+                            try:
+                                os.remove(filepath)
+                            except OSError as e:
+                                logger.warning(f"Не удалось удалить файл {filepath}: {str(e)}")
+                        else:
+                            logger.warning(f"Файл уже не существует при попытке удаления: {filepath}")
 
                 # Очищаем сессию
                 session.pop('parser_data', None)
                 session.pop('uploaded_files', None)
                 deleted_count = len(deleted_indices)
-                if deleted_count > 0:
+                if not parsers_bundle:
+                    flash('Файлы обработаны, но все категории были исключены из импорта.', 'warning')
+                elif deleted_count > 0:
                     flash(f'Успешно загружено файлов: {len(parser_data["files"])}. Добавлено спортсменов: {total_athletes}. Исключено категорий: {deleted_count}', 'success')
                 else:
                     flash(f'Успешно загружено файлов: {len(parser_data["files"])}. Добавлено спортсменов: {total_athletes}', 'success')
                 return redirect(url_for('public.index'))
             except Exception as e:
+                db.session.rollback()
                 logger.error(f"Ошибка при сохранении нормализованных данных: {str(e)}")
                 flash(f'Ошибка при сохранении данных: {str(e)}', 'error')
         
@@ -563,32 +571,12 @@ def normalize_categories():
         # Один файл (старая логика)
         categories_analysis = parser_data['categories_analysis']
         if request.method == 'POST':
-            normalizations = {}
-            deleted_indices = set()
-            
-            # Собираем нормализации и удаленные категории
-            for key, value in request.form.items():
-                if key.startswith('normalize_'):
-                    category_index = int(key.replace('normalize_', ''))
-                    normalizations[category_index] = value
-                elif key.startswith('delete_'):
-                    category_index = int(key.replace('delete_', ''))
-                    if value == '1':  # Категория помечена как удаленная
-                        deleted_indices.add(category_index)
-            
-            # Применяем нормализации (только для не удаленных категорий)
-            for index, normalized_name in normalizations.items():
-                if index not in deleted_indices and index < len(categories_analysis):
-                    categories_analysis[index]['normalized'] = normalized_name
-                    categories_analysis[index]['needs_manual'] = False
-            
-            # Помечаем удаленные категории
-            for index in deleted_indices:
-                if index < len(categories_analysis):
-                    categories_analysis[index]['deleted'] = True
+            normalizations, deleted_indices = _parse_normalize_category_form(request)
+            _apply_category_form_to_analysis(categories_analysis, normalizations, deleted_indices)
             
             session['parser_data']['categories_analysis'] = categories_analysis
             session['parser_data']['deleted_category_indices'] = list(deleted_indices)
+            session.modified = True
             
             try:
                 filepath = parser_data.get('filepath')
