@@ -21,8 +21,11 @@ def iter_ready_parsers(parser_data, categories_analysis, deleted_indices):
         for file_info in parser_data['files']:
             filepath = file_info.get('filepath')
             if not filepath or not os.path.exists(filepath):
-                logger.warning('Пропуск файла без пути или файл отсутствует: %s', file_info.get('filename'))
-                continue
+                filename = file_info.get('filename') or filepath or 'неизвестный файл'
+                logger.error('Файл импорта отсутствует: %s', filename)
+                raise FileNotFoundError(
+                    f'Файл "{filename}" не найден на сервере. Загрузите XML заново.'
+                )
             parser = ISUCalcFSParser(filepath)
             parser.parse()
 
