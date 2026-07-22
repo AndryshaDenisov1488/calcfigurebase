@@ -27,9 +27,18 @@ logs/
 # Environment
 .env
 .env.local
+*.env
+!.env.example
 
-# Google Credentials (ВАЖНО!)
+# Google / cloud credentials (never commit)
 google_credentials.json
+**/google_credentials.json
+*-credentials.json
+*credentials*.json
+!*credentials*example*.json
+service-account*.json
+*-service-account*.json
+**/serviceAccount*.json
 
 # Uploads
 uploads/*.XML
@@ -53,15 +62,3 @@ Thumbs.db
 *.tmp
 *.bak
 *.old
-
-
-
-
-
-
-
-
-
-
-
-

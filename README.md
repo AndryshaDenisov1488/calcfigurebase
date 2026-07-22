@@ -256,7 +256,7 @@ SQLite instance/, опционально PostgreSQL
 ```bash
 git clone <repo>
 cd calc.figurebase.ru
-cp env.example .env   # настроить
+cp .env.example .env   # настроить (плейсхолдеры только)
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 # или: cd backend && pip install -r requirements.txt
@@ -320,11 +320,36 @@ curl -s http://127.0.0.1:<port>/health
 
 ## Конфигурация (.env)
 
-Переменные — в `env.example`. **Никогда не коммитить `.env`.**
+Переменные — в `.env.example` (только плейсхолдеры). **Никогда не коммитить `.env` и JSON ключей сервисного аккаунта.**
 
 На production: `chmod 600 .env`
 
-Полный список: [reference.md Часть VI](.cursor/skills/calc-figurebase/reference.md)
+### Google Sheets credentials
+
+Экспорт/синхронизация читает путь к SA JSON из окружения:
+
+| Переменная | Назначение |
+|------------|------------|
+| `GOOGLE_CREDENTIALS_PATH` | Абсолютный путь к файлу ключа **вне** git working tree / mount secret store |
+
+Пример (плейсхолдер):
+
+```bash
+# Linux/macOS
+export GOOGLE_CREDENTIALS_PATH=/secure/path/outside/repo/sa.json
+
+# Windows PowerShell
+$env:GOOGLE_CREDENTIALS_PATH="D:\secrets\calc\figurebase-sa.json"
+```
+
+Правила:
+
+- Не класть `google_credentials.json` (и аналоги `*-credentials.json` / `service-account*.json`) в корень репозитория или `scripts/`.
+- Не коммитить и не печатать содержимое SA JSON.
+- Если `GOOGLE_CREDENTIALS_PATH` не задан, код исторически ищет `google_credentials.json` рядом с модулем — это **legacy fallback** для локального ops; предпочтителен только env/path вне дерева.
+- Проверка отсутствия файла в дереве: `python -m unittest test_no_google_credentials.py`
+
+Полный список прочих переменных: [reference.md Часть VI](.cursor/skills/calc-figurebase/reference.md)
 
 ---
 
@@ -355,13 +380,15 @@ Prometheus exporters на сервере: node_exporter, nginx_exporter, postgre
 - UFW + Fail2ban на сервере
 - `.env` права 600
 - nginx блокирует `/.env`, `/.git`
+- Google SA JSON: только через `GOOGLE_CREDENTIALS_PATH` вне репозитория; шаблоны в `.gitignore` (`google_credentials.json`, `*-credentials.json`, `service-account*.json`)
 - Аудит: `/root/server_audit_report_2026-06-10.docx`
 
 ---
 
 ## Интеграции
 
-figurebase.ru (отдельный продукт)
+- figurebase.ru (отдельный продукт)
+- Google Sheets: credentials только env/path (`GOOGLE_CREDENTIALS_PATH`); см. [Конфигурация (.env)](#конфигурация-env)
 
 ---
 
@@ -550,12 +577,12 @@ ROUTE /favicon.ico
 | Строк | 48 |
 | Размер | 2,786 байт |
 
-### Файл: `google_credentials.json`
+### Файл: `google_credentials.json` (не в репозитории)
 
 | Свойство | Значение |
 |----------|----------|
-| Строк | 14 |
-| Размер | 2,357 байт |
+| Статус | Запрещён в working tree (SEC-SEC-011); путь только через `GOOGLE_CREDENTIALS_PATH` |
+| Примечание | Содержимое ключа не документируется и не коммитится |
 
 ### Файл: `google_sheets_sync.py`
 
