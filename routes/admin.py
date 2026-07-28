@@ -64,11 +64,14 @@ def _safe_parse_birth_conflict_resolutions(raw: str) -> list:
         if use not in ('xml', 'db'):
             continue
         try:
-            out.append({
+            parsed = {
                 'person_id': str(item['person_id']),
                 'athlete_id': int(item['athlete_id']),
                 'use': use,
-            })
+            }
+            if 'source_key' in item and item['source_key'] is not None and str(item['source_key']) != '':
+                parsed['source_key'] = str(item['source_key'])
+            out.append(parsed)
         except (KeyError, TypeError, ValueError):
             continue
     return out
@@ -93,14 +96,15 @@ def check_import_birth_conflicts():
             ca_work[index]['needs_manual'] = False
 
     if 'files' in parser_data:
-        deleted_indices = set(parser_data.get('deleted_category_indices', []))
+        # Сессия может быть пустой: delete_* приходят только из текущей формы.
+        deleted_indices = set(parser_data.get('deleted_category_indices', [])) | deleted_indices_form
     else:
         deleted_indices = deleted_indices_form
 
     conflicts_all = []
     try:
-        for parser, _fp, _fn in iter_ready_parsers(parser_data, ca_work, deleted_indices):
-            conflicts_all.extend(find_birth_date_conflicts(parser))
+        for source_idx, (parser, _fp, _fn) in enumerate(iter_ready_parsers(parser_data, ca_work, deleted_indices)):
+            conflicts_all.extend(find_birth_date_conflicts(parser, source_key=str(source_idx)))
     except Exception as e:
         logger.error('check_import_birth_conflicts: %s', e, exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -108,7 +112,7 @@ def check_import_birth_conflicts():
     seen = set()
     uniq = []
     for c in conflicts_all:
-        k = (c['person_id'], c['athlete_id'])
+        k = (c.get('source_key'), c['person_id'], c['athlete_id'])
         if k in seen:
             continue
         seen.add(k)
@@ -490,34 +494,32 @@ def normalize_categories():
         parser_summaries = parser_data['parser_summaries']
         
         if request.method == 'POST':
-            normalizations = {}
-            for key, value in request.form.items():
-                if key.startswith('normalize_'):
-                    category_index = int(key.replace('normalize_', ''))
-                    normalizations[category_index] = value
+            normalizations, deleted_indices = _parse_normalize_category_form(request)
             for index, normalized_name in normalizations.items():
-                if index < len(categories_analysis):
+                if index not in deleted_indices and index < len(categories_analysis):
                     categories_analysis[index]['normalized'] = normalized_name
                     categories_analysis[index]['needs_manual'] = False
+            for index in deleted_indices:
+                if index < len(categories_analysis):
+                    categories_analysis[index]['deleted'] = True
             session['parser_data']['categories_analysis'] = categories_analysis
-            
+            session['parser_data']['deleted_category_indices'] = list(deleted_indices)
+
             # Сохраняем все файлы последовательно
             try:
-                deleted_indices = set(parser_data.get('deleted_category_indices', []))
                 resolutions = _safe_parse_birth_conflict_resolutions(
                     request.form.get('birth_conflict_resolutions', '')
                 )
 
                 parsers_bundle = list(iter_ready_parsers(parser_data, categories_analysis, deleted_indices))
-                if parsers_bundle:
-                    apply_birth_conflict_resolutions_json(
-                        resolutions, [p for p, _fp, _fn in parsers_bundle]
-                    )
-                    db.session.flush()
 
                 total_athletes = 0
                 up_folder = current_app.config['UPLOAD_FOLDER']
-                for parser, filepath, original_filename in parsers_bundle:
+                for source_idx, (parser, filepath, original_filename) in enumerate(parsers_bundle):
+                    # person_id локален для каждого XML — применяем разрешения
+                    # только к текущему файлу перед save_to_database.
+                    apply_birth_conflict_resolutions_json(resolutions, [(str(source_idx), parser)])
+                    db.session.flush()
                     save_to_database(parser)
                     total_athletes += len(parser.get_athletes_with_results())
                     archive_imported_xml(
@@ -607,16 +609,13 @@ def normalize_categories():
                 )
 
                 parsers_bundle = list(iter_ready_parsers(parser_data, categories_analysis, deleted_indices))
-                if parsers_bundle:
-                    apply_birth_conflict_resolutions_json(
-                        resolutions, [p for p, _fp, _fn in parsers_bundle]
-                    )
-                    db.session.flush()
 
                 deleted_count = len(deleted_indices)
                 up_folder = current_app.config['UPLOAD_FOLDER']
                 if parsers_bundle:
                     parser, filepath, original_filename = parsers_bundle[0]
+                    apply_birth_conflict_resolutions_json(resolutions, [('0', parser)])
+                    db.session.flush()
                     save_to_database(parser)
                     if deleted_count > 0:
                         flash(f'Файл успешно загружен и обработан с нормализацией категорий! Исключено категорий: {deleted_count}', 'success')
