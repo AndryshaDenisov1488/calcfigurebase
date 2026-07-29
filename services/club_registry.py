@@ -170,43 +170,45 @@ class ClubRegistry:
                 keep_club, remove_clubs = self._merge_club_group(similar_clubs)
                 
                 for remove_club in remove_clubs:
+                    remove_name = remove_club.name
+                    keep_name = keep_club.name
                     try:
-                        # Подсчитываем спортсменов
-                        remove_athletes = Athlete.query.filter_by(club_id=remove_club.id).count()
-                        
-                        # Переносим спортсменов
-                        Athlete.query.filter_by(club_id=remove_club.id).update({
-                            'club_id': keep_club.id
-                        })
-                        
-                        # Обновляем данные клуба, если нужно
-                        if not keep_club.country and remove_club.country:
-                            keep_club.country = remove_club.country
-                        if not keep_club.city and remove_club.city:
-                            keep_club.city = remove_club.city
-                        if not keep_club.short_name and remove_club.short_name:
-                            keep_club.short_name = remove_club.short_name
-                        
-                        # Обновляем кеш, если удаляемый клуб был в кеше
-                        for cached_name, cached_club in list(self._cache_by_name.items()):
-                            if cached_club.id == remove_club.id:
-                                self._cache_by_name[cached_name] = keep_club
-                        
-                        # Удаляем дубликат
-                        db.session.delete(remove_club)
-                        db.session.flush()
-                        
+                        # Savepoint: полный session.rollback() здесь откатывал бы
+                        # незакоммиченный Event/клубы текущего импорта, после чего
+                        # save_to_database продолжал бы писать сиротские Category
+                        # с несуществующим event_id (SQLite без FK это принимает).
+                        with db.session.begin_nested():
+                            remove_athletes = Athlete.query.filter_by(club_id=remove_club.id).count()
+
+                            Athlete.query.filter_by(club_id=remove_club.id).update({
+                                'club_id': keep_club.id
+                            })
+
+                            if not keep_club.country and remove_club.country:
+                                keep_club.country = remove_club.country
+                            if not keep_club.city and remove_club.city:
+                                keep_club.city = remove_club.city
+                            if not keep_club.short_name and remove_club.short_name:
+                                keep_club.short_name = remove_club.short_name
+
+                            for cached_name, cached_club in list(self._cache_by_name.items()):
+                                if cached_club.id == remove_club.id:
+                                    self._cache_by_name[cached_name] = keep_club
+
+                            db.session.delete(remove_club)
+                            db.session.flush()
+
                         merged_count += 1
-                        
                         logger.info(
                             f"Автоматическое объединение дубликатов клубов: "
-                            f"'{remove_club.name}' объединен с '{keep_club.name}' "
+                            f"'{remove_name}' объединен с '{keep_name}' "
                             f"(перенесено спортсменов: {remove_athletes})"
                         )
-                        
+
                     except Exception as e:
-                        logger.error(f"Ошибка при объединении клубов '{remove_club.name}' и '{keep_club.name}': {e}")
-                        db.session.rollback()
+                        logger.error(
+                            f"Ошибка при объединении клубов '{remove_name}' и '{keep_name}': {e}"
+                        )
                         continue
                 
                 processed_clubs.add(club1.id)
