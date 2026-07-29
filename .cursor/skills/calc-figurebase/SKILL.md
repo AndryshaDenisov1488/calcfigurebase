@@ -1,9 +1,9 @@
 ---
 name: calc-figurebase
 description: >-
-  ULTRA-документация Турнирный калькулятор Figurebase (calc.figurebase.ru). Путь: /var/www/calc.figurebase.ru.
+  ULTRA-документация Турнирный калькулятор Figurebase (calc.ffkm.ru). Путь: /var/www/calc.figurebase.ru.
   reference.md содержит ПОЛНЫЙ исходный код всех файлов, API, модели, схемы БД.
-  При ЛЮБОЙ задаче — читать reference.md ПЕРВЫМ. Не сканировать проект. Сервер: ffkm-server.
+  При ЛЮБОЙ задаче — читать reference.md ПЕРВЫМ. Не сканировать проект. При изменении кода — синхронизировать SKILL.md и reference.md. После каждого изменения — commit и push. Сервер: 46.173.17.188 (ffkm).
 ---
 
 # Турнирный калькулятор Figurebase — Ultra Skill
@@ -25,9 +25,11 @@ description: >-
 | | |
 |--|--|
 | Путь | `/var/www/calc.figurebase.ru` |
-| URL | https://calc.figurebase.ru |
+| URL | https://calc.ffkm.ru |
+| Старый URL | https://calc.figurebase.ru → 301 на calc.ffkm.ru |
+| Сервер | `46.173.17.188` (SSH `:2222`) |
 | Порт | 7000 (Gunicorn) |
-| БД | SQLite instance/, опционально PostgreSQL |
+| БД | SQLite `instance/figure_skating.db` |
 | Systemd | `calc-figurebase` |
 
 ## Команды
@@ -54,3 +56,36 @@ journalctl -u calc-figurebase -f
 | XII | Пофайловый анализ |
 | **XIII** | **Полный исходный код** |
 | XIV | README, ТЗ, приложения |
+
+## Синхронизация skill-документации
+
+**При любом изменении кода, API, БД, env, systemd, nginx, деплоя или архитектуры** агент обязан обновить соответствующие разделы skill-файлов — иначе после pull контекст устареет.
+
+| Что изменилось | Где обновить |
+|----------------|--------------|
+| API, модели, схема БД, env, systemd, nginx | [reference.md](reference.md) — части IV, V, VI, VII, VIII–IX |
+| Новый/удалённый файл, существенная логика | [reference.md](reference.md) — части XII и XIII |
+| URL, порты, systemd, команды, обзор продукта | этот `SKILL.md` (карточка, команды) и [README.md](../../README.md) |
+| Краткие правила workflow | этот `SKILL.md` |
+
+Правила:
+- Обновлять **только затронутые разделы**, не переписывать весь `reference.md` без необходимости.
+- Skill-файлы включать **в тот же коммит**, что и код (до push).
+- Мелкий fix — достаточно поправить код в части XIII и связанный абзац в XII.
+
+## Обязательный Git workflow
+
+**После успешного внесения изменений** (новые свойства, фичи, фиксы, правки конфигурации):
+
+1. `git status` — убедиться, что в коммит не попадают `.env`, секреты, `venv/`, `node_modules/`, локальные БД.
+2. `git add` — только релевантные файлы задачи.
+3. `git commit` — сообщение **на русском языке**, формат:
+   ```
+   тип(область): краткое описание
+
+   - деталь (если нужно)
+   ```
+   Типы: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`.
+4. **`git push`** — **обязательно сразу после коммита**, без откладывания.
+
+Если пользователь явно просит не пушить — только тогда пропустить push.
