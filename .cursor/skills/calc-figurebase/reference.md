@@ -13,18 +13,18 @@
 
 **Турнирный калькулятор Figurebase** — Импорт, хранение, аналитика и визуализация данных соревнований по фигурному катанию в формате ISUCalcFS 3.7.6.
 
-Система является частью экосистемы **Figurebase** и развёрнута на production-сервере:
+Система является частью экосистемы **Figurebase** / **FFKM** и развёрнута на production-сервере:
 
 | | |
 |--|--|
-| Сервер | xkvlorcrjx (45.12.237.105, Beget VPS) |
-| ОС | Ubuntu 22.04.5 LTS |
-| URL | https://calc.figurebase.ru |
+| Сервер | wtgbplphcv (`46.173.17.188`, Beget VPS, Ubuntu 24.04) |
+| URL | https://calc.ffkm.ru |
+| Старый URL | https://calc.figurebase.ru → 301 на calc.ffkm.ru (архив `45.12.237.105`) |
 | Backend | 127.0.0.1:7000 (Gunicorn) |
-| БД | SQLite instance/, опционально PostgreSQL |
+| БД | SQLite `instance/figure_skating.db` |
 | Systemd | calc-figurebase |
 | Unix user | www-data |
-| Интеграции | figurebase.ru (отдельный продукт) |
+| Интеграции | figurebase.ru (отдельный продукт), Google Sheets |
 
 ## 1.2 Статистика кодовой базы
 
