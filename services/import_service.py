@@ -5,10 +5,10 @@ import json
 import logging
 
 from extensions import db
-from models import Event, Category, Segment, Club, Athlete, Participant, Performance, Element, ComponentScore, Judge, JudgePanel, Coach, CoachAssignment
+from models import Event, Category, Segment, Athlete, Participant, Performance, Element, ComponentScore, Judge, JudgePanel
 from services.club_registry import ClubRegistry
 from services.athlete_registry import AthleteRegistry
-from services.coach_registry import CoachRegistry
+from services.coach_registry import CoachRegistry, record_assignment_on_import
 from services.rank_service import normalize_category_name
 from utils.date_parsing import parse_date, parse_time, parse_datetime
 from utils.normalizers import remove_duplication
@@ -238,56 +238,15 @@ def save_to_database(parser):
             coach = coach_registry.get_or_create(coach_name)
             if coach:
                 db.session.flush()
-                
-                # Получаем дату события для отслеживания переходов
                 event_date = event.begin_date or event.end_date
                 if event_date:
-                    # Проверяем, есть ли уже назначение для этого спортсмена с этим тренером на эту дату
-                    existing_assignment = CoachAssignment.query.filter_by(
+                    record_assignment_on_import(
                         athlete_id=athlete.id,
                         coach_id=coach.id,
-                        event_id=event.id
-                    ).first()
-                    
-                    if not existing_assignment:
-                        # Проверяем, есть ли текущий тренер у спортсмена
-                        current_assignment = CoachAssignment.query.filter_by(
-                            athlete_id=athlete.id,
-                            is_current=True
-                        ).first()
-                        
-                        if current_assignment:
-                            # Если текущий тренер отличается от нового - это переход
-                            if current_assignment.coach_id != coach.id:
-                                # Закрываем предыдущее назначение
-                                current_assignment.end_date = event_date
-                                current_assignment.is_current = False
-                                
-                                # Создаем новое назначение
-                                new_assignment = CoachAssignment(
-                                    coach_id=coach.id,
-                                    athlete_id=athlete.id,
-                                    participant_id=participant.id,
-                                    event_id=event.id,
-                                    start_date=event_date,
-                                    is_current=True
-                                )
-                                db.session.add(new_assignment)
-                                logger.info(
-                                    f"Переход спортсмена {athlete.id} от тренера {current_assignment.coach_id} "
-                                    f"к тренеру {coach.id} на дату {event_date}"
-                                )
-                        else:
-                            # Первое назначение тренера
-                            new_assignment = CoachAssignment(
-                                coach_id=coach.id,
-                                athlete_id=athlete.id,
-                                participant_id=participant.id,
-                                event_id=event.id,
-                                start_date=event_date,
-                                is_current=True
-                            )
-                            db.session.add(new_assignment)
+                        participant_id=participant.id,
+                        event_id=event.id,
+                        event_date=event_date,
+                    )
 
         for performance_data in parser.performances:
             if performance_data.get('participant_id') == participant_data['id']:
