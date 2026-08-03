@@ -1,11 +1,26 @@
 """Club registry with overwrite protection."""
 
 import logging
+import re
 from difflib import SequenceMatcher
 from models import db, Club, Athlete
 from utils.normalizers import normalize_string, fix_latin_to_cyrillic
 
 logger = logging.getLogger(__name__)
+
+# Цифровые маркеры в названии (№1 / №2, СШОР 10 / СШОР 11) — разные школы, даже при
+# SequenceMatcher ≥ 0.85. Без этого импорт молча склеивает клубы и переносит спортсменов.
+_DIGIT_TOKEN_RE = re.compile(r'\d+')
+
+# Типы спортивных школ как целые слова (длинные формы первыми).
+# «СДЮСШОР» и «СДЮШОР» — варианты одной аббревиатуры; «СШОР» vs «СДЮШОР» — разные типы.
+_ORG_TYPE_RE = re.compile(
+    r'(?<![а-яё])(сдюсшор|сдюшор|сдющи|сшор|уор|дюсш|сш)(?![а-яё])',
+    re.IGNORECASE,
+)
+_ORG_TYPE_ALIASES = {
+    'сдюсшор': 'сдюшор',
+}
 
 
 class ClubRegistry:
@@ -21,11 +36,30 @@ class ClubRegistry:
             return True
         return len(str(new_value)) > len(str(old_value))
 
+    @staticmethod
+    def _digit_tokens(normalized_name: str) -> tuple:
+        """Кортеж числовых токенов в порядке появления (после нормализации имени)."""
+        if not normalized_name:
+            return ()
+        return tuple(_DIGIT_TOKEN_RE.findall(normalized_name))
+
+    @staticmethod
+    def _org_type_tokens(normalized_name: str) -> frozenset:
+        """Множество типов школы в названии (сш / сшор / сдюшор / уор …)."""
+        if not normalized_name:
+            return frozenset()
+        tokens = []
+        for raw in _ORG_TYPE_RE.findall(normalized_name.lower()):
+            tokens.append(_ORG_TYPE_ALIASES.get(raw, raw))
+        return frozenset(tokens)
+
     def _calculate_similarity(self, name1, name2):
         """Вычисляет схожесть двух названий клубов (0.0 - 1.0)
         
         Учитывает:
         - Точное совпадение (после нормализации)
+        - Различие цифровых маркеров (№1 vs №2 → не объединять)
+        - Различие типа школы (СШОР vs СДЮШОР/СДЮСШОР → не объединять)
         - Вхождение одного названия в другое
         - Схожесть по SequenceMatcher
         """
@@ -39,6 +73,16 @@ class ClubRegistry:
         # Точное совпадение
         if norm1 == norm2:
             return 1.0
+
+        # Разные номера в названии → разные клубы (СШОР №1 Москва / СШОР №2 Москва ≈ 0.93)
+        if self._digit_tokens(norm1) != self._digit_tokens(norm2):
+            return 0.0
+
+        # Разный тип школы → разные организации (ГБУ ДО СШОР / ГБУ ДО СДЮСШОР ≈ 0.88)
+        types1 = self._org_type_tokens(norm1)
+        types2 = self._org_type_tokens(norm2)
+        if types1 and types2 and types1 != types2:
+            return 0.0
         
         # Проверка на вхождение одного названия в другое
         # Если короткое название содержится в длинном и составляет ≥90% длины, это очень похоже
