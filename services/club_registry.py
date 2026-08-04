@@ -1,11 +1,39 @@
 """Club registry with overwrite protection."""
 
 import logging
+import re
 from difflib import SequenceMatcher
 from models import db, Club, Athlete
 from utils.normalizers import normalize_string, fix_latin_to_cyrillic
 
 logger = logging.getLogger(__name__)
+
+# Цифровые маркеры в названии (№1 / №2, СШОР 10 / СШОР 11) — разные школы, даже при
+# SequenceMatcher ≥ 0.85. Без этого импорт молча склеивает клубы и переносит спортсменов.
+_DIGIT_TOKEN_RE = re.compile(r'\d+')
+
+# Типы спортивных школ как целые слова (длинные формы первыми).
+# «СДЮСШОР» и «СДЮШОР» — варианты одной аббревиатуры; «СШОР» vs «СДЮШОР» — разные типы.
+_ORG_TYPE_RE = re.compile(
+    r'(?<![а-яё])(сдюсшор|сдюшор|сдющи|сшор|уор|дюсш|сш)(?![а-яё])',
+    re.IGNORECASE,
+)
+_ORG_TYPE_ALIASES = {
+    'сдюсшор': 'сдюшор',
+}
+
+# Кавычки/ёлочки из XML часто ломают prefix-remainder guard («Москвич» vs «Москвичка»).
+_QUOTE_CHARS_RE = re.compile(r'[«»""„‟‹›\'`]+')
+
+# Юридические/родовые слова — не отличительный бренд школы.
+_STOP_TOKENS = frozenset({
+    'гбу', 'мбу', 'маоу', 'мбоу', 'гаоу', 'гбоу', 'фгбу',
+    'ооо', 'ано', 'ип', 'до', 'фсо', 'ффкк', 'ск', 'кфк',
+    'клуб', 'школа', 'по', 'им', 'имени', 'г', 'гор', 'город',
+    'мо', 'области', 'областной',
+})
+
+_TOKEN_RE = re.compile(r'[а-яёa-z0-9]+', re.IGNORECASE)
 
 
 class ClubRegistry:
@@ -21,24 +49,94 @@ class ClubRegistry:
             return True
         return len(str(new_value)) > len(str(old_value))
 
+    @staticmethod
+    def _normalize_for_similarity(name: str) -> str:
+        """Нормализация имени для сравнения: латиница→кириллица, кавычки, ё→е."""
+        if not name:
+            return ''
+        text = normalize_string(fix_latin_to_cyrillic(name)).lower()
+        text = _QUOTE_CHARS_RE.sub(' ', text)
+        text = text.replace('ё', 'е')
+        text = re.sub(r'\s+', ' ', text).strip()
+        return text
+
+    @staticmethod
+    def _digit_tokens(normalized_name: str) -> tuple:
+        """Кортеж числовых токенов в порядке появления (после нормализации имени)."""
+        if not normalized_name:
+            return ()
+        return tuple(_DIGIT_TOKEN_RE.findall(normalized_name))
+
+    @staticmethod
+    def _org_type_tokens(normalized_name: str) -> frozenset:
+        """Множество типов школы в названии (сш / сшор / сдюшор / уор …)."""
+        if not normalized_name:
+            return frozenset()
+        tokens = []
+        for raw in _ORG_TYPE_RE.findall(normalized_name.lower()):
+            tokens.append(_ORG_TYPE_ALIASES.get(raw, raw))
+        return frozenset(tokens)
+
+    @classmethod
+    def _core_name_tokens(cls, normalized_name: str) -> frozenset:
+        """Отличительные токены бренда (без юр.формы и типа школы)."""
+        if not normalized_name:
+            return frozenset()
+        org_types = cls._org_type_tokens(normalized_name)
+        core = set()
+        for raw in _TOKEN_RE.findall(normalized_name.lower()):
+            token = raw.replace('ё', 'е')
+            if token.isdigit():
+                continue
+            if token in _STOP_TOKENS:
+                continue
+            if token in org_types or _ORG_TYPE_ALIASES.get(token, token) in org_types:
+                continue
+            if token in _ORG_TYPE_ALIASES or token in {
+                'сдюсшор', 'сдюшор', 'сдющи', 'сшор', 'уор', 'дюсш', 'сш',
+            }:
+                continue
+            core.add(token)
+        return frozenset(core)
+
     def _calculate_similarity(self, name1, name2):
         """Вычисляет схожесть двух названий клубов (0.0 - 1.0)
         
         Учитывает:
         - Точное совпадение (после нормализации)
+        - Различие цифровых маркеров (№1 vs №2 → не объединять)
+        - Различие типа школы (СШОР vs СДЮШОР/СДЮСШОР → не объединять)
+        - Различие брендовых токенов («Москвич» vs «Москвичка» → не объединять)
         - Вхождение одного названия в другое
         - Схожесть по SequenceMatcher
         """
         if not name1 or not name2:
             return 0.0
         
-        # Нормализуем оба названия
-        norm1 = normalize_string(fix_latin_to_cyrillic(name1)).lower()
-        norm2 = normalize_string(fix_latin_to_cyrillic(name2)).lower()
+        # Нормализуем оба названия (кавычки снимаем — иначе prefix-guard не срабатывает)
+        norm1 = self._normalize_for_similarity(name1)
+        norm2 = self._normalize_for_similarity(name2)
         
         # Точное совпадение
         if norm1 == norm2:
             return 1.0
+
+        # Разные номера в названии → разные клубы (СШОР №1 Москва / СШОР №2 Москва ≈ 0.93)
+        if self._digit_tokens(norm1) != self._digit_tokens(norm2):
+            return 0.0
+
+        # Разный тип школы → разные организации (ГБУ ДО СШОР / ГБУ ДО СДЮСШОР ≈ 0.88)
+        types1 = self._org_type_tokens(norm1)
+        types2 = self._org_type_tokens(norm2)
+        if types1 and types2 and types1 != types2:
+            return 0.0
+
+        # Разный бренд/имя школы → разные клубы
+        # («Москвич»/«Москвичка» ≈ 0.93; «Айс»/«Аист» ≈ 0.86; «Звезда»/«Звездочка» ≈ 0.90)
+        core1 = self._core_name_tokens(norm1)
+        core2 = self._core_name_tokens(norm2)
+        if core1 and core2 and core1 != core2:
+            return 0.0
         
         # Проверка на вхождение одного названия в другое
         # Если короткое название содержится в длинном и составляет ≥90% длины, это очень похоже
