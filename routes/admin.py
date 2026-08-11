@@ -93,7 +93,7 @@ def check_import_birth_conflicts():
             ca_work[index]['needs_manual'] = False
 
     if 'files' in parser_data:
-        deleted_indices = set(parser_data.get('deleted_category_indices', []))
+        deleted_indices = set(parser_data.get('deleted_category_indices', [])) | deleted_indices_form
     else:
         deleted_indices = deleted_indices_form
 
@@ -490,20 +490,19 @@ def normalize_categories():
         parser_summaries = parser_data['parser_summaries']
         
         if request.method == 'POST':
-            normalizations = {}
-            for key, value in request.form.items():
-                if key.startswith('normalize_'):
-                    category_index = int(key.replace('normalize_', ''))
-                    normalizations[category_index] = value
+            normalizations, deleted_indices = _parse_normalize_category_form(request)
             for index, normalized_name in normalizations.items():
-                if index < len(categories_analysis):
+                if index not in deleted_indices and index < len(categories_analysis):
                     categories_analysis[index]['normalized'] = normalized_name
                     categories_analysis[index]['needs_manual'] = False
+            for index in deleted_indices:
+                if index < len(categories_analysis):
+                    categories_analysis[index]['deleted'] = True
             session['parser_data']['categories_analysis'] = categories_analysis
+            session['parser_data']['deleted_category_indices'] = list(deleted_indices)
             
             # Сохраняем все файлы последовательно
             try:
-                deleted_indices = set(parser_data.get('deleted_category_indices', []))
                 resolutions = _safe_parse_birth_conflict_resolutions(
                     request.form.get('birth_conflict_resolutions', '')
                 )
