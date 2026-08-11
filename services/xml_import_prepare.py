@@ -21,13 +21,34 @@ def iter_ready_parsers(parser_data, categories_analysis, deleted_indices):
         for file_info in parser_data['files']:
             filepath = file_info.get('filepath')
             if not filepath or not os.path.exists(filepath):
-                logger.warning('Пропуск файла без пути или файл отсутствует: %s', file_info.get('filename'))
+                # categories_analysis — общий плоский список по всем файлам.
+                # Если пропустить файл без сдвига индекса, следующие файлы
+                # получат чужие normalized_name (типичный кейс: повтор после
+                # частичного импорта, когда первый XML уже удалён с диска).
+                skip_n = file_info.get('categories_count')
+                logger.warning(
+                    'Пропуск файла без пути или файл отсутствует: %s (сдвиг индекса категорий на %s)',
+                    file_info.get('filename'),
+                    skip_n,
+                )
+                if skip_n is None:
+                    raise FileNotFoundError(
+                        'Файл импорта отсутствует, а categories_count не задан — '
+                        f'нельзя безопасно выровнять индекс категорий: {file_info.get("filename")}'
+                    )
+                try:
+                    category_index += int(skip_n)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        f'Некорректный categories_count для файла {file_info.get("filename")}: {skip_n!r}'
+                    ) from exc
                 continue
             parser = ISUCalcFSParser(filepath)
             parser.parse()
 
             categories_to_save = []
             deleted_category_ids = set()
+            start_index = category_index
 
             for _i, category in enumerate(parser.categories):
                 if category_index < len(categories_analysis):
@@ -39,6 +60,22 @@ def iter_ready_parsers(parser_data, categories_analysis, deleted_indices):
                     category_index += 1
                 else:
                     categories_to_save.append(category)
+
+            expected = file_info.get('categories_count')
+            if expected is not None:
+                try:
+                    expected_n = int(expected)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        f'Некорректный categories_count для файла {file_info.get("filename")}: {expected!r}'
+                    ) from exc
+                consumed = category_index - start_index
+                if consumed != expected_n:
+                    raise ValueError(
+                        f'Файл {file_info.get("filename")}: в XML {consumed} категорий, '
+                        f'в анализе {expected_n}. Импорт остановлен, чтобы не сдвинуть '
+                        f'нормализацию следующих файлов.'
+                    )
 
             parser.categories = categories_to_save
             if deleted_category_ids:
