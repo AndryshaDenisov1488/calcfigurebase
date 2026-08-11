@@ -146,6 +146,19 @@ def analyze_categories_from_xml(parser):
         })
     return categories_analysis
 
+def _rank_keyword_matches():
+    """Keywords longest-first so 'кмс' wins over substring 'мс', and pair/dance phrases win over singles."""
+    matches = []
+    for rank_data in RANK_DICTIONARY.values():
+        for keyword in rank_data['keywords']:
+            matches.append((keyword, rank_data))
+    matches.sort(key=lambda item: len(item[0]), reverse=True)
+    return matches
+
+
+_RANK_KEYWORD_MATCHES = _rank_keyword_matches()
+
+
 def normalize_category_name(category_name, gender=None):
     """Нормализует название категории для группировки по разрядам с учетом пола."""
     if not category_name:
@@ -161,12 +174,13 @@ def normalize_category_name(category_name, gender=None):
     name_lower = name_lower.replace('девочки', 'девочки')
     name_lower = name_lower.replace('спортивный', 'спортивный')
 
-    for rank_data in RANK_DICTIONARY.values():
-        for keyword in rank_data['keywords']:
-            if keyword in name_lower:
-                if gender and gender.upper() in rank_data['genders']:
-                    return rank_data['genders'][gender.upper()]
-                return rank_data['name']
+    # Match longest keywords first: otherwise 'мс' is a substring of 'кмс' and
+    # singles 'мс'/'кмс' steal pair/dance category names that contain those tokens.
+    for keyword, rank_data in _RANK_KEYWORD_MATCHES:
+        if keyword in name_lower:
+            if gender and gender.upper() in rank_data['genders']:
+                return rank_data['genders'][gender.upper()]
+            return rank_data['name']
 
     gender_suffix = ""
     if gender:
