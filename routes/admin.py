@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Admin routes."""
+import fcntl
 import logging
 import os
 import threading
@@ -125,17 +126,55 @@ def _export_state_path(app_obj):
     return os.path.join(app_obj.instance_path, 'google_export_state.json')
 
 
+def _export_lock_path(app_obj):
+    """Путь к file-lock экспорта (общий для всех воркеров Gunicorn)."""
+    os.makedirs(app_obj.instance_path, exist_ok=True)
+    return os.path.join(app_obj.instance_path, 'google_export.lock')
+
+
+def _try_acquire_export_lock(app_obj):
+    """Неблокирующий exclusive flock. Возвращает open file или None, если занято.
+
+    threading.Lock() защищает только один процесс; при Gunicorn -w N два воркера
+    могли одновременно пройти check-then-set по state-файлу и оба очистить Sheets.
+    """
+    lock_path = _export_lock_path(app_obj)
+    lock_file = open(lock_path, 'a+', encoding='utf-8')
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return lock_file
+    except BlockingIOError:
+        lock_file.close()
+        return None
+    except Exception:
+        lock_file.close()
+        raise
+
+
+def _release_export_lock(lock_file):
+    if not lock_file:
+        return
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    finally:
+        lock_file.close()
+
+
+def _default_export_state():
+    return {
+        'running': False,
+        'started_at': None,
+        'finished_at': None,
+        'success': None,
+        'message': None,
+        'url': None,
+    }
+
+
 def _read_export_state(app_obj):
     path = _export_state_path(app_obj)
     if not os.path.exists(path):
-        return {
-            'running': False,
-            'started_at': None,
-            'finished_at': None,
-            'success': None,
-            'message': None,
-            'url': None,
-        }
+        return _default_export_state()
     try:
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
@@ -148,14 +187,7 @@ def _read_export_state(app_obj):
                 'url': data.get('url'),
             }
     except Exception:
-        return {
-            'running': False,
-            'started_at': None,
-            'finished_at': None,
-            'success': None,
-            'message': None,
-            'url': None,
-        }
+        return _default_export_state()
 
 
 def _write_export_state(app_obj, state):
@@ -166,37 +198,9 @@ def _write_export_state(app_obj, state):
     os.replace(tmp_path, path)
 
 
-def _start_google_export_background(app_obj):
-    """Запускает экспорт в отдельном потоке и обновляет состояние задачи."""
-    from google_sheets_sync import export_to_google_sheets
-
-    def _worker():
-        with app_obj.app_context():
-            try:
-                result = export_to_google_sheets()
-                with _export_job_lock:
-                    state = _read_export_state(app_obj)
-                    state['running'] = False
-                    state['finished_at'] = int(time.time())
-                    state['success'] = bool(result.get('success'))
-                    state['message'] = result.get('message', 'Экспорт завершён')
-                    state['url'] = result.get('url')
-                    _write_export_state(app_obj, state)
-            except Exception as e:
-                logger.error(f"Ошибка фонового экспорта в Google Sheets: {e}", exc_info=True)
-                with _export_job_lock:
-                    state = _read_export_state(app_obj)
-                    state['running'] = False
-                    state['finished_at'] = int(time.time())
-                    state['success'] = False
-                    state['message'] = f'Ошибка экспорта: {str(e)}'
-                    state['url'] = None
-                    _write_export_state(app_obj, state)
-
+def _set_export_state_running(app_obj):
     with _export_job_lock:
         state = _read_export_state(app_obj)
-        if state.get('running'):
-            return False
         state['running'] = True
         state['started_at'] = int(time.time())
         state['finished_at'] = None
@@ -205,9 +209,129 @@ def _start_google_export_background(app_obj):
         state['url'] = None
         _write_export_state(app_obj, state)
 
+
+def _set_export_state_finished(app_obj, *, success, message, url=None):
+    with _export_job_lock:
+        state = _read_export_state(app_obj)
+        state['running'] = False
+        state['finished_at'] = int(time.time())
+        state['success'] = bool(success)
+        state['message'] = message
+        state['url'] = url
+        _write_export_state(app_obj, state)
+
+
+def _reconcile_export_state(app_obj):
+    """Если state.running=True, но flock свободен — воркер умер, сбрасываем флаг."""
+    with _export_job_lock:
+        state = _read_export_state(app_obj)
+        if not state.get('running'):
+            return state
+
+    probe = _try_acquire_export_lock(app_obj)
+    if probe is None:
+        return state
+
+    try:
+        with _export_job_lock:
+            state = _read_export_state(app_obj)
+            if state.get('running'):
+                state['running'] = False
+                state['finished_at'] = state.get('finished_at') or int(time.time())
+                if state.get('success') is None:
+                    state['success'] = False
+                    state['message'] = (
+                        'Экспорт прерван (процесс завершился до обновления статуса)'
+                    )
+                _write_export_state(app_obj, state)
+        return state
+    finally:
+        _release_export_lock(probe)
+
+
+def _start_google_export_background(app_obj):
+    """Запускает экспорт в отдельном потоке и обновляет состояние задачи.
+
+    Авторитетная блокировка — flock на instance/google_export.lock (cross-process).
+    State-файл нужен только для UI/polling; running в нём не считается mutex.
+    """
+    lock_file = _try_acquire_export_lock(app_obj)
+    if lock_file is None:
+        return False
+
+    def _worker():
+        try:
+            from google_sheets_sync import export_to_google_sheets
+
+            with app_obj.app_context():
+                try:
+                    result = export_to_google_sheets()
+                    _set_export_state_finished(
+                        app_obj,
+                        success=bool(result.get('success')),
+                        message=result.get('message', 'Экспорт завершён'),
+                        url=result.get('url'),
+                    )
+                except Exception as e:
+                    logger.error(f"Ошибка фонового экспорта в Google Sheets: {e}", exc_info=True)
+                    _set_export_state_finished(
+                        app_obj,
+                        success=False,
+                        message=f'Ошибка экспорта: {str(e)}',
+                        url=None,
+                    )
+        finally:
+            _release_export_lock(lock_file)
+
+    _set_export_state_running(app_obj)
     thread = threading.Thread(target=_worker, daemon=True)
     thread.start()
     return True
+
+
+def _run_google_export_foreground(app_obj):
+    """Синхронный экспорт под тем же cross-process lock, что и фоновый."""
+    lock_file = _try_acquire_export_lock(app_obj)
+    if lock_file is None:
+        return {
+            'started': False,
+            'success': False,
+            'message': 'Экспорт уже выполняется. Дождитесь завершения.',
+        }
+
+    _set_export_state_running(app_obj)
+    try:
+        from google_sheets_sync import export_to_google_sheets
+
+        with app_obj.app_context():
+            result = export_to_google_sheets()
+        _set_export_state_finished(
+            app_obj,
+            success=bool(result.get('success')),
+            message=result.get('message', 'Экспорт завершён'),
+            url=result.get('url'),
+        )
+        return {
+            'started': True,
+            'success': bool(result.get('success')),
+            'message': result.get('message', 'Экспорт завершён'),
+            'url': result.get('url'),
+        }
+    except Exception as e:
+        logger.error(f"Ошибка экспорта в Google Sheets: {e}", exc_info=True)
+        _set_export_state_finished(
+            app_obj,
+            success=False,
+            message=f'Ошибка экспорта: {str(e)}',
+            url=None,
+        )
+        return {
+            'started': True,
+            'success': False,
+            'message': f'Ошибка экспорта: {str(e)}',
+        }
+    finally:
+        _release_export_lock(lock_file)
 
 @admin_bp.route('/upload', methods=['GET', 'POST'])
 @admin_required
@@ -814,7 +938,7 @@ def admin_logout():
 @admin_required
 def admin_export_google_sheets():
     """Экспорт данных в Google Sheets и подготовка ссылок PDF по ключевым таблицам."""
-    from google_sheets_sync import export_to_google_sheets, DEFAULT_SPREADSHEET_ID
+    from google_sheets_sync import DEFAULT_SPREADSHEET_ID
     
     # Проверяем наличие файла credentials (используем тот же способ, что и в google_sheets_sync.py)
     import os
@@ -861,25 +985,22 @@ def admin_export_google_sheets():
                     'running': True,
                     'message': 'Экспорт запущен. Это может занять несколько минут...'
                 })
-            with _export_job_lock:
-                state = _read_export_state(current_app._get_current_object())
-                return jsonify({
-                    'success': True,
-                    'started': False,
-                    'running': bool(state.get('running')),
-                    'message': state.get('message') or 'Экспорт уже выполняется'
-                })
+            state = _reconcile_export_state(current_app._get_current_object())
+            return jsonify({
+                'success': True,
+                'started': False,
+                'running': bool(state.get('running')),
+                'message': state.get('message') or 'Экспорт уже выполняется'
+            })
 
-        # Для обычного POST оставляем синхронное поведение
-        try:
-            result = export_to_google_sheets()
-            if result.get('success'):
-                flash('Данные успешно экспортированы в Google Sheets!', 'success')
-            else:
-                flash(f'Ошибка экспорта: {result.get("message", "Неизвестная ошибка")}', 'error')
-        except Exception as e:
-            logger.error(f"Ошибка экспорта в Google Sheets: {e}", exc_info=True)
-            flash(f'Ошибка экспорта: {str(e)}', 'error')
+        # Для обычного POST — тот же cross-process lock, что и у фонового экспорта
+        result = _run_google_export_foreground(current_app._get_current_object())
+        if not result.get('started'):
+            flash(result.get('message') or 'Экспорт уже выполняется', 'warning')
+        elif result.get('success'):
+            flash('Данные успешно экспортированы в Google Sheets!', 'success')
+        else:
+            flash(f'Ошибка экспорта: {result.get("message", "Неизвестная ошибка")}', 'error')
     
     # GET-запрос: просто показываем страницу с текущим статусом
     return render_template(
@@ -894,16 +1015,15 @@ def admin_export_google_sheets():
 @admin_required
 def admin_export_google_sheets_status():
     """Статус фонового экспорта в Google Sheets для polling из UI."""
-    with _export_job_lock:
-        state = _read_export_state(current_app._get_current_object())
-        return jsonify({
-            'running': bool(state.get('running')),
-            'success': state.get('success'),
-            'message': state.get('message'),
-            'url': state.get('url'),
-            'started_at': state.get('started_at'),
-            'finished_at': state.get('finished_at'),
-        })
+    state = _reconcile_export_state(current_app._get_current_object())
+    return jsonify({
+        'running': bool(state.get('running')),
+        'success': state.get('success'),
+        'message': state.get('message'),
+        'url': state.get('url'),
+        'started_at': state.get('started_at'),
+        'finished_at': state.get('finished_at'),
+    })
 
 
 @admin_bp.route('/admin/event-rank-update', methods=['POST'])
