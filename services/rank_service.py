@@ -295,6 +295,11 @@ def compute_rank_unique_participation_stats(excluded_normalized_ranks):
 
 def build_rank_groups(event_id=None, only_free_participation=False, excluded_normalized_ranks=None):
     rank_catalog = get_rank_catalog()
+    free_report_cond = db.and_(
+        Participant.pct_ppname == 'БЕСП',
+        db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
+        db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
+    )
     participants_query = db.session.query(
         Athlete.id.label('athlete_id'),
         Athlete.first_name,
@@ -310,18 +315,12 @@ def build_rank_groups(event_id=None, only_free_participation=False, excluded_nor
         db.func.max(Event.begin_date).label('last_event_date'),
         db.func.sum(
             db.case((
-                db.and_(
-                    Participant.pct_ppname == 'БЕСП',
-                    db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
-                ), 1
+                free_report_cond, 1
             ), else_=0)
         ).label('free_participations'),
         db.func.max(
             db.case((
-                db.and_(
-                    Participant.pct_ppname == 'БЕСП',
-                    db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
-                ), 1
+                free_report_cond, 1
             ), else_=0)
         ).label('has_free_participation')
     ).join(Participant, Athlete.id == Participant.athlete_id).join(
@@ -331,9 +330,7 @@ def build_rank_groups(event_id=None, only_free_participation=False, excluded_nor
         participants_query = participants_query.filter(Event.id == event_id)
     if only_free_participation:
         participants_query = participants_query.filter(
-            Participant.pct_ppname == 'БЕСП',
-            db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
-            db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
+            free_report_cond,
         )
     if excluded_normalized_ranks:
         participants_query = participants_query.filter(
