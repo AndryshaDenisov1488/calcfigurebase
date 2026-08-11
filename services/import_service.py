@@ -63,9 +63,11 @@ def save_to_database(parser):
             db.session.flush()
             club_mapping[club_data['id']] = club.id
     
-    # После регистрации всех клубов автоматически объединяем дубликаты
-    merged_count = club_registry.merge_all_duplicates()
+    # После регистрации всех клубов автоматически объединяем дубликаты.
+    # Remap xml→db ids: merge may delete the club that register() just mapped.
+    merged_count, club_id_remap = club_registry.merge_all_duplicates()
     if merged_count > 0:
+        ClubRegistry.apply_club_id_remap(club_mapping, club_id_remap)
         logger.info(f"Автоматически объединено {merged_count} дубликатов клубов при импорте")
 
     # Инициализируем реестр тренеров
