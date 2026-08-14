@@ -20,6 +20,7 @@ from services.rank_service import (
 )
 from utils.search_utils import normalize_search_term, create_multi_field_search_filter
 from utils.normalizers import normalize_string
+from utils.score_display import judge_mark_raw, points_for_protocol_display
 
 logger = logging.getLogger(__name__)
 api_bp = Blueprint('api', __name__, url_prefix='/api')
@@ -1132,10 +1133,7 @@ def api_participant_performance_details(participant_id):
                 if found_judges:
                     max_judge = max(found_judges)
                     for j in range(1, max_judge + 1):
-                        # Пробуем оба формата ключа
-                        key1 = f'J{j:02d}'
-                        key2 = f'J{j}'
-                        score = judge_scores.get(key1) or judge_scores.get(key2)
+                        score = judge_mark_raw(judge_scores, j)
                         
                         if score is not None:
                             # Декодируем оценку судьи из кода XML в значение GOE
@@ -1264,9 +1262,7 @@ def api_participant_performance_details(participant_id):
                 if found_judges:
                     max_judge = max(found_judges)
                     for j in range(1, max_judge + 1):
-                        key1 = f'J{j:02d}'
-                        key2 = f'J{j}'
-                        score = judge_scores.get(key1) or judge_scores.get(key2)
+                        score = judge_mark_raw(judge_scores, j)
                         
                         if score is not None:
                             try:
@@ -1372,26 +1368,8 @@ def api_participant_performance_details(participant_id):
                     # Значение в формате ×100 (например, 100 = 1.00, 0 = 0.00)
                     deductions = abs(perf.deductions) / 100.0
             
-            # Нормализуем points (сумма за сегмент)
-            # В БД points уже нормализован через _parse_score (делится на 100 при сохранении)
-            # _parse_score нормализует значения, поэтому points в БД уже в правильном формате (106.21, а не 10621)
-            # НО могут быть старые данные в формате ×100, поэтому проверяем
-            segment_points = None
-            if perf.points is not None:
-                # _parse_score нормализует значения при сохранении, поэтому новые данные уже нормализованы
-                # Старые данные могут быть в формате ×100
-                # Проверяем: если значение > 1000, значит точно в формате ×100 (например, 10621 = 106.21)
-                # Если значение <= 1000, но > 100 и целое число, тоже может быть ×100
-                # Но если есть дробная часть и значение разумное (например, 106.21), то уже нормализовано
-                if abs(perf.points) > 1000:
-                    # Значение точно в формате ×100 (например, 10621 = 106.21)
-                    segment_points = perf.points / 100.0
-                elif abs(perf.points) > 100 and perf.points == int(perf.points):
-                    # Целое число > 100, вероятно старые данные в формате ×100 (например, 10621)
-                    segment_points = perf.points / 100.0
-                else:
-                    # Значение уже нормализовано (может быть 106.21 или меньше 100)
-                    segment_points = perf.points
+            # points уже /100 при импорте (_parse_score). Не делить целые 101.00 как ×100.
+            segment_points = points_for_protocol_display(perf.points)
             
             performances_data.append({
                 'id': perf.id,
@@ -1406,26 +1384,8 @@ def api_participant_performance_details(participant_id):
                 'components': components_data
             })
         
-        # Формируем итоговые данные
-        # participant.total_points уже нормализован при сохранении через _parse_score
-        # _parse_score нормализует значения, поэтому total_points в БД уже в правильном формате (170.40, а не 17040)
-        # НО могут быть старые данные в формате ×100, поэтому проверяем
-        total_points_normalized = None
-        if participant.total_points is not None:
-            # _parse_score нормализует значения при сохранении, поэтому новые данные уже нормализованы
-            # Старые данные могут быть в формате ×100
-            # Проверяем: если значение > 1000, значит точно в формате ×100 (например, 17040 = 170.40)
-            # Если значение <= 1000, но > 100 и целое число, тоже может быть ×100
-            # Но если есть дробная часть и значение разумное (например, 170.40), то уже нормализовано
-            if abs(participant.total_points) > 1000:
-                # Значение точно в формате ×100 (например, 17040 = 170.40)
-                total_points_normalized = participant.total_points / 100.0
-            elif abs(participant.total_points) > 100 and participant.total_points == int(participant.total_points):
-                # Целое число > 100, вероятно старые данные в формате ×100 (например, 17040)
-                total_points_normalized = participant.total_points / 100.0
-            else:
-                # Значение уже нормализовано (может быть 170.40 или меньше 100)
-                total_points_normalized = participant.total_points
+        # total_points уже /100 при импорте. Целое 150.00 нельзя снова делить на 100.
+        total_points_normalized = points_for_protocol_display(participant.total_points)
         
         result = {
             'participant': {
