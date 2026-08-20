@@ -23,6 +23,14 @@ def _parse_score(raw_value):
     except (ValueError, TypeError):
         return None
 
+
+def _optional_int(raw_value):
+    """Parse XML integer fields, keeping 0 (GOE/result of 0 is valid)."""
+    if raw_value is None or raw_value == '':
+        return None
+    return int(raw_value)
+
+
 def save_to_database(parser):
     """Сохраняет данные из парсера в базу данных."""
     event_data = parser.events[0] if parser.events else {}
@@ -361,10 +369,10 @@ def save_to_database(parser):
                         planned_code=elem.get('planned_code'),
                         executed_code=elem.get('executed_code'),
                         info_code=elem.get('info_code'),
-                        base_value=int(elem['base_value']) if elem.get('base_value') else None,
-                        goe_result=int(elem['goe_result']) if elem.get('goe_result') else None,
-                        penalty=int(elem['penalty']) if elem.get('penalty') else None,
-                        result=int(elem['result']) if elem.get('result') else None,
+                        base_value=_optional_int(elem.get('base_value')),
+                        goe_result=_optional_int(elem.get('goe_result')),
+                        penalty=_optional_int(elem.get('penalty')),
+                        result=_optional_int(elem.get('result')),
                         judge_scores=judge_scores,
                     )
                     db.session.add(element)
@@ -375,8 +383,8 @@ def save_to_database(parser):
                         component_type=comp.get('component_type'),
                         factor=comp.get('factor'),
                         judge_scores=comp.get('judge_scores'),
-                        penalty=int(comp['penalty']) if comp.get('penalty') else None,
-                        result=int(comp['result']) if comp.get('result') else None,
+                        penalty=_optional_int(comp.get('penalty')),
+                        result=_optional_int(comp.get('result')),
                     )
                     db.session.add(component)
 
