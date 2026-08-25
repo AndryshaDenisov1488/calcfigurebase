@@ -108,6 +108,53 @@ class SeasonScopingTestCase(unittest.TestCase):
         athletes = self.client.get('/api/athletes').get_json()
         self.assertEqual(athletes['athletes'][0]['full_name'], 'Спортсмен Старый')
 
+    def test_global_kms_switch_changes_only_profile_statistics(self):
+        self._authorize()
+        current_event = Event.query.filter_by(name='Новый сезон').one()
+        club = Club.query.filter_by(name='Тестовая школа').one()
+
+        for first_name, normalized_name in (
+            ('Кандидат', 'КМС, Девушки'),
+            ('Мастер', 'МС, Женщины'),
+            ('Дебютант', 'Дебют, Девочки'),
+        ):
+            athlete = Athlete(first_name=first_name, last_name='Проверка', club=club)
+            category = Category(name=normalized_name, normalized_name=normalized_name, event=current_event)
+            db.session.add(Participant(event=current_event, category=category, athlete=athlete))
+        db.session.commit()
+
+        default_stats = self.client.get('/api/statistics').get_json()
+        self.assertEqual(default_stats['all']['total_athletes'], 4)
+        self.assertEqual(default_stats['all']['total_participations'], 4)
+        self.assertEqual(default_stats['scope']['total_athletes'], 1)
+        self.assertEqual(default_stats['scope_label'], '3 юн. — 1 сп.')
+        default_clubs = self.client.get('/api/clubs').get_json()
+        self.assertEqual(default_clubs[0]['athlete_count'], 1)
+        self.assertIn('Всего участий: 1', self.client.get('/first-timers-detail').get_data(as_text=True))
+
+        with_kms = self.client.get('/api/statistics?include_kms=1').get_json()
+        self.assertEqual(with_kms['all']['total_athletes'], 4)
+        self.assertEqual(with_kms['scope']['total_athletes'], 2)
+        self.assertEqual(with_kms['scope']['total_participations'], 2)
+        self.assertEqual(with_kms['scope_label'], '3 юн. — 1 сп. + КМС')
+        clubs_with_kms = self.client.get('/api/clubs').get_json()
+        self.assertEqual(clubs_with_kms[0]['athlete_count'], 2)
+        self.assertIn('Всего участий: 2', self.client.get('/first-timers-detail').get_data(as_text=True))
+
+        persisted = self.client.get('/api/statistics').get_json()
+        self.assertTrue(persisted['include_kms'])
+        self.assertEqual(persisted['scope']['total_athletes'], 2)
+
+        response = self.client.post('/rank-scope', data={'next': '/'}, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn('Быстрые действия', response.get_data(as_text=True))
+        self.assertNotIn('Количество спортсменов в школе', response.get_data(as_text=True))
+        self.assertIn('Все из базы', response.get_data(as_text=True))
+        self.assertIn('3 юн. — 1 сп.', response.get_data(as_text=True))
+        without_kms_again = self.client.get('/api/statistics').get_json()
+        self.assertFalse(without_kms_again['include_kms'])
+        self.assertEqual(without_kms_again['scope']['total_athletes'], 1)
+
     def test_season_scoped_pages_and_reports_render(self):
         self._authorize()
         urls = (

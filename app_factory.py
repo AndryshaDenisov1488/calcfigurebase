@@ -91,8 +91,10 @@ def create_app():
             get_current_season,
             get_season_display_name,
         )
+        from rank_scope import get_include_kms, get_rank_scope_label
 
         active_season = get_active_season()
+        include_kms = get_include_kms()
         event_dates = db.session.query(Event.begin_date).filter(Event.begin_date.isnot(None)).all()
         available_seasons = get_all_seasons_from_events(
             [{'begin_date': row.begin_date} for row in event_dates]
@@ -107,6 +109,8 @@ def create_app():
             'active_season': active_season,
             'available_seasons': available_seasons,
             'season_display_name': get_season_display_name,
+            'include_kms': include_kms,
+            'rank_scope_label': get_rank_scope_label(include_kms),
         }
 
     # Убираем 404 в логах от запросов браузера к /favicon.ico

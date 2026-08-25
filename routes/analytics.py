@@ -12,6 +12,7 @@ from flask import Blueprint, render_template, request, send_file, url_for, sessi
 from sqlalchemy import func
 from extensions import db
 from models import Athlete, Participant, Event, Category, JudgeHelperFreeAudit
+from rank_scope import category_scope_clause
 from season_utils import event_in_season
 from utils.access_control import SESSION_SITE_READER_KEY
 from utils.client_ip import get_client_ip
@@ -185,6 +186,7 @@ def _enrich_matches(raw_matches):
         .filter(
             Participant.athlete_id.in_(athlete_ids),
             *event_in_season(Event.begin_date),
+            category_scope_clause(),
         )
         .order_by(Participant.athlete_id, Event.begin_date.desc(), Participant.id.desc())
         .all()
@@ -214,20 +216,23 @@ def _get_participation_counts():
     """Возвращает (total_by_athlete, free_by_athlete) — словари athlete_id -> count."""
     free_counts = (
         db.session.query(Participant.athlete_id, func.count(Participant.id).label('cnt'))
+        .join(Category, Participant.category_id == Category.id)
         .join(Event, Participant.event_id == Event.id)
         .filter(
             Participant.pct_ppname == 'БЕСП',
             db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
             db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
             *event_in_season(Event.begin_date),
+            category_scope_clause(),
         )
         .group_by(Participant.athlete_id)
     )
     free_by_athlete = {row.athlete_id: row.cnt for row in free_counts}
     total_counts = (
         db.session.query(Participant.athlete_id, func.count(Participant.id).label('cnt'))
+        .join(Category, Participant.category_id == Category.id)
         .join(Event, Participant.event_id == Event.id)
-        .filter(*event_in_season(Event.begin_date))
+        .filter(*event_in_season(Event.begin_date), category_scope_clause())
         .group_by(Participant.athlete_id)
     )
     total_by_athlete = {row.athlete_id: row.cnt for row in total_counts}

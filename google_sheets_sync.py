@@ -17,6 +17,7 @@ from event_rank_constants import (
     UNASSIGNED_EVENT_RANK,
 )
 from models import Athlete, Club, Category, Participant, Event
+from rank_scope import category_scope_clause, rank_label_in_scope
 from season_utils import event_in_season
 
 logger = logging.getLogger(__name__)
@@ -205,7 +206,7 @@ def _is_ms_kms_normalized_category(normalized_name) -> bool:
 def get_event_rank_statistics_data():
     """Статистика по рангам турниров (для админки и Google Sheets).
 
-    Возвращает два набора строк: без разрядов МС/КМС (как в аналитике) и со всеми разрядами.
+    Возвращает два набора строк: текущий профильный диапазон и все разряды.
     """
     with app.app_context():
         events = db.session.query(Event.id, Event.event_rank).filter(
@@ -269,7 +270,7 @@ def get_event_rank_statistics_data():
                     row_full['_free_unique_set'].add(athlete_id)
                     athletes_free_all.add(athlete_id)
 
-            if _is_ms_kms_normalized_category(category_normalized):
+            if not rank_label_in_scope(category_normalized):
                 continue
 
             row_f = stats_filtered[rank]
@@ -1127,18 +1128,6 @@ def get_events_first_timers_report_data(rank_contains: str | None = None, free_o
 
     rank_contains_norm = (rank_contains or '').strip().lower()
     
-    # Разряды, которые нужно исключить из отчета
-    excluded_ranks = {
-        'МС, Женщины',
-        'МС, Мужчины',
-        'МС, Пары',
-        'МС, Танцы',
-        'КМС, Девушки',
-        'КМС, Юноши',
-        'КМС, Пары',
-        'КМС, Танцы'
-    }
-    
     # Порядок разрядов для вывода внутри турнира
     rank_order = [
         'МС, Женщины', 'МС, Мужчины', 'МС, Пары', 'МС, Танцы',
@@ -1173,10 +1162,7 @@ def get_events_first_timers_report_data(rank_contains: str | None = None, free_o
             Event, Participant.event_id == Event.id
         ).filter(
             *event_in_season(Event.begin_date),
-            db.or_(
-                Category.normalized_name.is_(None),
-                Category.normalized_name.notin_(excluded_ranks)
-            )
+            category_scope_clause(),
         ).all()
         
         # Множество для отслеживания уникальных спортсменов (идентично get_general_statistics_data)
@@ -1206,10 +1192,7 @@ def get_events_first_timers_report_data(rank_contains: str | None = None, free_o
             Event, Participant.event_id == Event.id
         ).filter(
             *event_in_season(Event.begin_date),
-            db.or_(
-                Category.normalized_name.is_(None),
-                Category.normalized_name.notin_(excluded_ranks)
-            )
+            category_scope_clause(),
         ).all()
         
         # Получаем данные о событиях отдельно

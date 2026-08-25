@@ -74,101 +74,66 @@
     </div>
     
     <div class="col-lg-4">
-        <!-- Статистика -->
+        <!-- Вся база -->
         <div class="card mb-4">
             <div class="card-header">
-                <h5><i class="fas fa-chart-bar"></i> Статистика</h5>
+                <h5><i class="fas fa-database"></i> Все из базы</h5>
             </div>
             <div class="card-body">
                 <div class="row text-center">
                     <div class="col-4">
-                        <div class="stat-item">
-                            <h3 class="text-primary" id="total-athletes">-</h3>
-                            <small class="text-muted">Спортсменов</small>
+                        <div class="stat-item px-0">
+                            <h3 class="text-primary" id="all-total-athletes">-</h3>
+                            <small class="text-muted text-nowrap d-block" style="font-size: .75rem;">Спортсменов</small>
                         </div>
                     </div>
                     <div class="col-4">
-                        <div class="stat-item">
-                            <h3 class="text-success" id="total-events">-</h3>
-                            <small class="text-muted">Турниров</small>
+                        <div class="stat-item px-0">
+                            <h3 class="text-success" id="all-total-events">-</h3>
+                            <small class="text-muted text-nowrap d-block" style="font-size: .75rem;">Турниров</small>
                         </div>
                     </div>
                     <div class="col-4">
-                        <div class="stat-item">
-                            <h3 class="text-info" id="total-participations">-</h3>
-                            <small class="text-muted">Участий</small>
+                        <div class="stat-item px-0">
+                            <h3 class="text-info" id="all-total-participations">-</h3>
+                            <small class="text-muted text-nowrap d-block" style="font-size: .75rem;">Участий</small>
                         </div>
                     </div>
                 </div>
                 <div class="mt-2">
-                    <small class="text-muted"><i class="fas fa-info-circle"></i> Подсчеты без МС и КМС (с 1 сп до 3 юношеского)</small>
+                    <small class="text-muted"><i class="fas fa-info-circle"></i> Все разряды и категории выбранного сезона</small>
                 </div>
             </div>
         </div>
-        
-        <!-- Топ клубов -->
+
+        <!-- Профильный диапазон -->
         <div class="card">
             <div class="card-header">
-                <h5><i class="fas fa-medal"></i> Количество спортсменов в школе</h5>
+                <h5><i class="fas fa-chart-bar"></i> <span id="scope-card-title">{{ rank_scope_label }}</span></h5>
             </div>
             <div class="card-body">
-                <div id="top-clubs">
-                    <div class="text-center">
-                        <div class="spinner-border spinner-border-sm" role="status">
-                            <span class="visually-hidden">Загрузка...</span>
+                <div class="row text-center">
+                    <div class="col-4">
+                        <div class="stat-item px-0">
+                            <h3 class="text-primary" id="scope-total-athletes">-</h3>
+                            <small class="text-muted text-nowrap d-block" style="font-size: .75rem;">Спортсменов</small>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="stat-item px-0">
+                            <h3 class="text-success" id="scope-total-events">-</h3>
+                            <small class="text-muted text-nowrap d-block" style="font-size: .75rem;">Турниров</small>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="stat-item px-0">
+                            <h3 class="text-info" id="scope-total-participations">-</h3>
+                            <small class="text-muted text-nowrap d-block" style="font-size: .75rem;">Участий</small>
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Быстрые действия -->
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header">
-                <h5><i class="fas fa-bolt"></i> Быстрые действия</h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-3 mb-3">
-                        <a href="{{ url_for('admin.upload_file') }}" class="btn btn-primary w-100">
-                            <i class="fas fa-upload"></i><br>
-                            Загрузить турнир
-                        </a>
-                    </div>
-                    <div class="col-md-3 mb-3">
-                        <a href="{{ url_for('public.athletes') }}" class="btn btn-success w-100">
-                            <i class="fas fa-users"></i><br>
-                            Все спортсмены
-                        </a>
-                    </div>
-                    <div class="col-md-3 mb-3">
-                        <a href="{{ url_for('public.categories') }}" class="btn btn-warning w-100">
-                            <i class="fas fa-layer-group"></i><br>
-                            Разряды
-                        </a>
-                    </div>
-                    <div class="col-md-3 mb-3">
-                        <a href="{{ url_for('public.events') }}" class="btn btn-info w-100">
-                            <i class="fas fa-trophy"></i><br>
-                            Все турниры
-                        </a>
-                    </div>
-                    <div class="col-md-3 mb-3">
-                        <a href="{{ url_for('public.clubs') }}" class="btn btn-secondary w-100">
-                            <i class="fas fa-school"></i><br>
-                            Школы
-                        </a>
-                    </div>
-                    <div class="col-md-3 mb-3">
-                        <a href="{{ url_for('analytics.analytics') }}?v=1" class="btn btn-warning w-100">
-                            <i class="fas fa-chart-line"></i><br>
-                            Аналитика
-                        </a>
-                    </div>
+                <div class="mt-2">
+                    <small class="text-muted"><i class="fas fa-sliders-h"></i> Переключатель «С КМС» находится в верхнем меню</small>
                 </div>
             </div>
         </div>
@@ -187,29 +152,13 @@ function loadStatistics() {
     fetch('/api/statistics', { credentials: 'same-origin' })
         .then(response => response.json())
         .then(data => {
-            document.getElementById('total-athletes').textContent = data.total_athletes;
-            document.getElementById('total-events').textContent = data.total_events;
-            document.getElementById('total-participations').textContent = data.total_participations;
-            
-            // Отображаем топ клубов
-            const topClubsDiv = document.getElementById('top-clubs');
-            if (data.top_clubs && data.top_clubs.length > 0) {
-                let html = '';
-                data.top_clubs.forEach((club, index) => {
-                    html += `
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <div>
-                                <span class="badge bg-primary me-2">${index + 1}</span>
-                                <span>${club.name}</span>
-                            </div>
-                            <span class="badge bg-secondary">${club.count}</span>
-                        </div>
-                    `;
-                });
-                topClubsDiv.innerHTML = html;
-            } else {
-                topClubsDiv.innerHTML = '<p class="text-muted text-center">Нет данных</p>';
-            }
+            document.getElementById('all-total-athletes').textContent = data.all.total_athletes;
+            document.getElementById('all-total-events').textContent = data.all.total_events;
+            document.getElementById('all-total-participations').textContent = data.all.total_participations;
+            document.getElementById('scope-total-athletes').textContent = data.scope.total_athletes;
+            document.getElementById('scope-total-events').textContent = data.scope.total_events;
+            document.getElementById('scope-total-participations').textContent = data.scope.total_participations;
+            document.getElementById('scope-card-title').textContent = data.scope_label;
         })
         .catch(error => {
             console.error('Ошибка загрузки статистики:', error);

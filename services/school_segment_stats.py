@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Статистика участий МАФКК / ЦСКА (Жук) / коммерческие школы (только разряды 3–1 юн. и 3–1 сп., без МС/КМС)."""
+"""Статистика участий МАФКК / ЦСКА (Жук) / коммерческих школ в общем диапазоне разрядов."""
 
 from collections import defaultdict
 from datetime import date
@@ -8,44 +8,17 @@ from datetime import date
 from sqlalchemy import case, func, literal
 
 from models import Athlete, Category, Club, Event, Participant
+from rank_scope import category_scope_clause, get_include_kms, get_rank_scope_label
 from season_utils import event_in_season, get_active_season
 
 CLUB_NAME_MAFKK = 'ГБУ ДО Московская академия фигурного катания на коньках'
 CLUB_NAME_CSKA = 'СШОР ЦСКА им.С.А.Жука по фигурному катанию на коньках'
 
-# Учитываем только 3–1 юношеский и 3–1 спортивный; МС и КМС не входят.
-ALLOWED_CATEGORY_RANK_PREFIXES = (
-    '1 Спортивный',
-    '2 Спортивный',
-    '3 Спортивный',
-    '1 Юношеский',
-    '2 Юношеский',
-    '3 Юношеский',
-)
-
-MS_KMS_NORMALIZED_NAMES = frozenset({
-    'МС, Женщины',
-    'МС, Мужчины',
-    'МС, Пары',
-    'МС, Танцы',
-    'КМС, Девушки',
-    'КМС, Юноши',
-    'КМС, Пары',
-    'КМС, Танцы',
-})
-
-RANK_FILTER_NOTE = (
-    'Учитываются только участия в разрядах с «3 юношеский» по «1 юношеский» '
-    'и с «3 спортивный» по «1 спортивный»; разряды МС и КМС не включаются.'
-)
-
-
-def _effective_category_label_raw():
-    """Подпись разряда для фильтрации."""
-    return func.coalesce(
-        func.nullif(func.trim(Category.normalized_name), ''),
-        Category.name,
-        '',
+def _rank_filter_note():
+    suffix = ' КМС включён.' if get_include_kms() else ' КМС не включён.'
+    return (
+        'Учитываются только участия в разрядах с «3 юношеский» по «1 юношеский» '
+        'и с «3 спортивный» по «1 спортивный».' + suffix
     )
 
 
@@ -58,11 +31,7 @@ def _category_label_display():
 
 
 def _allowed_category_rank_clause():
-    from sqlalchemy import and_, or_
-
-    eff = _effective_category_label_raw()
-    prefix_ok = or_(*[eff.like(pref + '%') for pref in ALLOWED_CATEGORY_RANK_PREFIXES])
-    return and_(prefix_ok, eff.notin_(MS_KMS_NORMALIZED_NAMES))
+    return category_scope_clause()
 
 
 def count_distinct_athletes_filtered(session):
@@ -173,7 +142,9 @@ def _report_meta(session, mafk_id, cska_id):
         'club_name_cska': CLUB_NAME_CSKA,
         'generated_date': date.today().isoformat(),
         'season': get_active_season(),
-        'rank_filter_note': RANK_FILTER_NOTE,
+        'rank_filter_note': _rank_filter_note(),
+        'rank_scope_label': get_rank_scope_label(),
+        'include_kms': get_include_kms(),
     }
 
 

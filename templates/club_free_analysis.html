@@ -143,7 +143,10 @@
     <div class="row">
         <div class="col-12">
             <div class="d-flex justify-content-between align-items-center mb-4">
-                <h2><i class="fas fa-school text-primary"></i> Анализ бесплатного участия по школам</h2>
+                <div>
+                    <h2 class="mb-0"><i class="fas fa-school text-primary"></i> Анализ бесплатного участия по школам</h2>
+                    <small class="text-muted">Диапазон: {{ rank_scope_label }}</small>
+                </div>
                 <a href="{{ url_for('analytics.analytics') }}" class="btn btn-outline-secondary">
                     <i class="fas fa-arrow-left"></i> Назад к аналитике
                 </a>

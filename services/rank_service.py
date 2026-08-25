@@ -6,6 +6,7 @@ import base64
 from extensions import db
 from models import Athlete, Category, Participant, Event, Club
 from season_utils import event_in_season
+from rank_scope import category_scope_clause
 
 
 def _athletes_by_id_bulk(athlete_ids):
@@ -230,7 +231,7 @@ def athlete_display_name(first_name, last_name, full_name_xml):
     return s if s else '—'
 
 
-def compute_rank_unique_participation_stats(excluded_normalized_ranks, season=None):
+def compute_rank_unique_participation_stats(excluded_normalized_ranks, season=None, rank_scope=False):
     """
     Уникальные спортсмены по разряду и доля с бесплатным участием.
     Агрегация до пары (athlete_id, category_id), а не все строки participant.
@@ -244,7 +245,7 @@ def compute_rank_unique_participation_stats(excluded_normalized_ranks, season=No
         db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
         db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
     )
-    rows = db.session.query(
+    query = db.session.query(
         Participant.athlete_id,
         Category.id.label('category_id'),
         db.func.max(Category.normalized_name).label('normalized_name'),
@@ -261,7 +262,10 @@ def compute_rank_unique_participation_stats(excluded_normalized_ranks, season=No
             Category.normalized_name.is_(None),
             Category.normalized_name.notin_(excl),
         )
-    ).group_by(
+    )
+    if rank_scope:
+        query = query.filter(category_scope_clause())
+    rows = query.group_by(
         Participant.athlete_id,
         Category.id,
     ).all()
@@ -295,7 +299,13 @@ def compute_rank_unique_participation_stats(excluded_normalized_ranks, season=No
     return rank_unique_stats
 
 
-def build_rank_groups(event_id=None, only_free_participation=False, excluded_normalized_ranks=None, season=None):
+def build_rank_groups(
+    event_id=None,
+    only_free_participation=False,
+    excluded_normalized_ranks=None,
+    season=None,
+    rank_scope=False,
+):
     rank_catalog = get_rank_catalog()
     participants_query = db.session.query(
         Athlete.id.label('athlete_id'),
@@ -330,6 +340,8 @@ def build_rank_groups(event_id=None, only_free_participation=False, excluded_nor
         Category, Participant.category_id == Category.id
     ).join(Event, Category.event_id == Event.id)
     participants_query = participants_query.filter(*event_in_season(Event.begin_date, season))
+    if rank_scope:
+        participants_query = participants_query.filter(category_scope_clause())
     if event_id:
         participants_query = participants_query.filter(Event.id == event_id)
     if only_free_participation:
@@ -399,7 +411,7 @@ def build_rank_groups(event_id=None, only_free_participation=False, excluded_nor
     rank_groups = sorted(rank_catalog.values(), key=lambda item: (item['weight'], item['display_name'].lower()))
     return rank_groups
 
-def build_best_results(rank_name=None, season=None):
+def build_best_results(rank_name=None, season=None, rank_scope=False):
     rank_catalog = get_rank_catalog()
     best_results_query = db.session.query(
         Athlete.id.label('athlete_id'),
@@ -427,6 +439,8 @@ def build_best_results(rank_name=None, season=None):
         Participant.total_place.isnot(None),
         *event_in_season(Event.begin_date, season),
     )
+    if rank_scope:
+        best_results_query = best_results_query.filter(category_scope_clause())
     if rank_name:
         best_results_query = best_results_query.filter(Category.normalized_name == rank_name)
     results = best_results_query.all()
@@ -434,13 +448,18 @@ def build_best_results(rank_name=None, season=None):
     athletes_by_id = _athletes_by_id_bulk(athlete_ids)
     participations_counts = {}
     if athlete_ids:
-        counts = db.session.query(
+        counts_query = db.session.query(
             Participant.athlete_id,
             db.func.count(Participant.id).label('cnt')
-        ).join(Event, Participant.event_id == Event.id).filter(
+        ).join(Category, Participant.category_id == Category.id).join(
+            Event, Participant.event_id == Event.id
+        ).filter(
             Participant.athlete_id.in_(athlete_ids),
             *event_in_season(Event.begin_date, season),
-        ).group_by(Participant.athlete_id).all()
+        )
+        if rank_scope:
+            counts_query = counts_query.filter(category_scope_clause())
+        counts = counts_query.group_by(Participant.athlete_id).all()
         participations_counts = {row.athlete_id: row.cnt for row in counts}
     rank_athletes = {}
     for row in results:

@@ -69,6 +69,16 @@
                             <div class="small text-muted mt-2">Турниры и расчёты других сезонов сохранены и доступны здесь.</div>
                         </div>
                     </li>
+                    <li class="nav-item d-flex align-items-center px-xl-2 py-2 py-xl-0">
+                        <form method="post" action="{{ url_for('public.set_rank_scope') }}" class="m-0" title="Добавить категории КМС во все сравнительные отчёты">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="next" value="{{ request.full_path }}">
+                            <div class="form-check form-switch text-white mb-0">
+                                <input class="form-check-input" type="checkbox" role="switch" id="globalIncludeKms" name="include_kms" value="1" onchange="this.form.submit()" {% if include_kms %}checked{% endif %}>
+                                <label class="form-check-label text-nowrap" for="globalIncludeKms">С КМС</label>
+                            </div>
+                        </form>
+                    </li>
                     {% if session.admin_logged_in %}
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="navbarAdmin" role="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">

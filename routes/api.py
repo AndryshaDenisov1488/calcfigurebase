@@ -10,6 +10,7 @@ from utils.access_control import request_has_api_access
 from event_rank_constants import CATEGORY_RANKS_MS_KMS
 from models import Event, Category, Athlete, Participant, Club, Segment, Performance, Coach, CoachAssignment, Element, ComponentScore
 from season_utils import event_in_season, get_active_season, get_season_from_date
+from rank_scope import category_scope_clause, get_include_kms, get_rank_scope_label
 from services.rank_service import (
     normalize_category_name,
     get_rank_weight,
@@ -134,70 +135,45 @@ def export_event_results(event_id):
 
 @api_bp.route('/statistics')
 def api_statistics():
-    """API для получения статистики
-    ВАЖНО: Исключает МС и КМС из подсчета. Считаются только разряды с 1 сп до 3 юношеского.
-    """
-    from models import Category
-    
-    # Разряды, которые нужно исключить из отчета (МС и КМС)
-    excluded_ranks = {
-        'МС, Женщины',
-        'МС, Мужчины',
-        'МС, Пары',
-        'МС, Танцы',
-        'КМС, Девушки',
-        'КМС, Юноши',
-        'КМС, Пары',
-        'КМС, Танцы'
+    """Полная статистика сезона и профильный диапазон 3 юн.–1 сп. (+ КМС по переключателю)."""
+    include_kms = get_include_kms()
+    season_clause = event_in_season(Event.begin_date)
+
+    all_stats = {
+        'total_athletes': db.session.query(
+            db.func.count(db.distinct(Participant.athlete_id))
+        ).join(Event, Participant.event_id == Event.id).filter(*season_clause).scalar() or 0,
+        'total_events': Event.query.filter(*season_clause).count(),
+        'total_participations': db.session.query(Participant).join(
+            Event, Participant.event_id == Event.id
+        ).filter(*season_clause).count(),
     }
-    
-    # Подсчет спортсменов, которые участвовали в разрядах без МС и КМС
-    total_athletes = db.session.query(db.func.count(db.distinct(Participant.athlete_id))).join(
+
+    scoped_base = db.session.query(Participant).join(
         Category, Participant.category_id == Category.id
-    ).join(
-        Event, Participant.event_id == Event.id
-    ).filter(
-        *event_in_season(Event.begin_date),
-        db.or_(
-            Category.normalized_name.is_(None),
-            Category.normalized_name.notin_(excluded_ranks)
-        )
-    ).scalar()
-    
-    total_events = Event.query.filter(*event_in_season(Event.begin_date)).count()
-    
-    # Подсчет участий без МС и КМС
-    total_participations = db.session.query(Participant).join(
-        Category, Participant.category_id == Category.id
-    ).join(
-        Event, Participant.event_id == Event.id
-    ).filter(
-        *event_in_season(Event.begin_date),
-        db.or_(
-            Category.normalized_name.is_(None),
-            Category.normalized_name.notin_(excluded_ranks)
-        )
-    ).count()
-    
-    club_stats = db.session.query(
-        Club.name,
-        db.func.count(db.distinct(Athlete.id)).label('athlete_count')
-    ).join(
-        Athlete, Club.id == Athlete.club_id
-    ).join(
-        Participant, Athlete.id == Participant.athlete_id
-    ).join(
-        Event, Participant.event_id == Event.id
-    ).filter(
-        *event_in_season(Event.begin_date)
-    ).group_by(Club.id).order_by(
-        db.func.count(db.distinct(Athlete.id)).desc()
-    ).limit(10).all()
+    ).join(Event, Participant.event_id == Event.id).filter(
+        *season_clause,
+        category_scope_clause(include_kms),
+    )
+    scoped_stats = {
+        'total_athletes': scoped_base.with_entities(
+            db.func.count(db.distinct(Participant.athlete_id))
+        ).scalar() or 0,
+        'total_events': scoped_base.with_entities(
+            db.func.count(db.distinct(Participant.event_id))
+        ).scalar() or 0,
+        'total_participations': scoped_base.count(),
+    }
+
     return jsonify({
-        'total_athletes': total_athletes,
-        'total_events': total_events,
-        'total_participations': total_participations,
-        'top_clubs': [{'name': name, 'count': count} for name, count in club_stats]
+        'all': all_stats,
+        'scope': scoped_stats,
+        'include_kms': include_kms,
+        'scope_label': get_rank_scope_label(include_kms),
+        # Совместимость существующей страницы аналитики.
+        'total_athletes': scoped_stats['total_athletes'],
+        'total_events': scoped_stats['total_events'],
+        'total_participations': scoped_stats['total_participations'],
     })
 
 @api_bp.route('/analytics/top-athletes')
@@ -220,7 +196,8 @@ def api_top_athletes():
         ).join(Category, Participant.category_id == Category.id).join(
             Event, Participant.event_id == Event.id
         ).filter(
-            *event_in_season(Event.begin_date)
+            *event_in_season(Event.begin_date),
+            category_scope_clause(),
         ).group_by(
             Athlete.id, Category.name, Category.gender, Category.normalized_name
         ).all()
@@ -282,10 +259,13 @@ def api_top_athletes():
             # Находим лучшее место для этого спортсмена
             best_place_row = db.session.query(
                 db.func.min(Participant.total_place)
-            ).join(Event, Participant.event_id == Event.id).filter(
+            ).join(Category, Participant.category_id == Category.id).join(
+                Event, Participant.event_id == Event.id
+            ).filter(
                 Participant.athlete_id == athlete['id'],
                 Participant.total_place.isnot(None),
                 *event_in_season(Event.begin_date),
+                category_scope_clause(),
             ).scalar()
             
             by_participations.append({
@@ -315,8 +295,11 @@ def api_club_statistics():
         db.func.count(db.distinct(Athlete.id)).label('athlete_count')
     ).join(Athlete, Club.id == Athlete.club_id).join(
         Participant, Athlete.id == Participant.athlete_id
+    ).join(
+        Category, Participant.category_id == Category.id
     ).join(Event, Participant.event_id == Event.id).filter(
-        *event_in_season(Event.begin_date)
+        *event_in_season(Event.begin_date),
+        category_scope_clause(),
     ).group_by(
         Club.id, Club.name
     ).all()
@@ -326,8 +309,11 @@ def api_club_statistics():
         db.func.min(Participant.total_place).label('best_place')
     ).join(Athlete, Club.id == Athlete.club_id).outerjoin(
         Participant, Athlete.id == Participant.athlete_id
+    ).join(
+        Category, Participant.category_id == Category.id
     ).join(Event, Participant.event_id == Event.id).filter(
-        *event_in_season(Event.begin_date)
+        *event_in_season(Event.begin_date),
+        category_scope_clause(),
     ).group_by(Club.id).all()
     participation_dict = {c.id: {'count': c.participation_count, 'best': c.best_place} for c in club_participation_stats}
     result = []
@@ -354,7 +340,8 @@ def api_category_statistics():
         db.func.count(Participant.id).label('participant_count'),
         db.func.avg(Participant.total_points).label('avg_points')
     ).join(Participant).join(Event, Participant.event_id == Event.id).filter(
-        *event_in_season(Event.begin_date)
+        *event_in_season(Event.begin_date),
+        category_scope_clause(),
     ).group_by(
         Category.name, Category.gender, Category.category_type, Category.normalized_name
     ).order_by(db.func.count(Participant.id).desc()).all()
@@ -390,15 +377,15 @@ def api_category_statistics():
     result = sorted(rank_stats.values(), key=lambda x: x['total_participants'], reverse=True)
     return jsonify(result)
 
-# Разряды МС и КМС — исключаются из подсчёта на странице бесплатного участия (как и везде: только 3 юн–1 сп)
+# МС всегда вне профильного диапазона; КМС управляется общим переключателем.
 FREE_PARTICIPATION_EXCLUDED_RANKS = CATEGORY_RANKS_MS_KMS
 
 
 @api_bp.route('/analytics/free-participation')
 def api_free_participation():
-    """API для получения спортсменов с бесплатным участием (без МС и КМС, только 3 юн–1 сп)."""
+    """API бесплатных участий в общем диапазоне разрядов с опциональным КМС."""
     try:
-        # Получаем данные о бесплатных участиях только по разрядам без МС/КМС
+        # Получаем данные только в выбранном глобальном диапазоне разрядов.
         free_participants = db.session.query(
             Athlete.id,
             Athlete.first_name,
@@ -423,11 +410,9 @@ def api_free_participation():
             db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
             db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
             *event_in_season(Event.begin_date),
+            category_scope_clause(),
         ).filter(
-            db.or_(
-                Category.normalized_name.is_(None),
-                Category.normalized_name.notin_(FREE_PARTICIPATION_EXCLUDED_RANKS)
-            )
+            Category.normalized_name.isnot(None),
         ).order_by(
             Event.begin_date.desc(), Athlete.last_name, Athlete.first_name
         ).all()
@@ -481,14 +466,19 @@ def api_free_participation():
 
         athletes_list = sorted(athletes_data.values(), key=lambda x: x['free_participations'], reverse=True)
 
-        # Только бесплатные старты и без МС/КМС — без полного прохода по всем участиям
+        # Только бесплатные старты в выбранном диапазоне — без полного прохода по всем участиям.
+        excluded_ranks = {
+            rank for rank in FREE_PARTICIPATION_EXCLUDED_RANKS
+            if not (get_include_kms() and rank.startswith('КМС'))
+        }
         rank_groups_data = build_rank_groups(
             event_id=None,
             only_free_participation=True,
-            excluded_normalized_ranks=FREE_PARTICIPATION_EXCLUDED_RANKS,
+            excluded_normalized_ranks=excluded_ranks,
             season=get_active_season(),
+            rank_scope=True,
         )
-        rank_groups_data = [g for g in rank_groups_data if g.get('display_name') not in FREE_PARTICIPATION_EXCLUDED_RANKS]
+        rank_groups_data = [g for g in rank_groups_data if g.get('display_name') not in excluded_ranks]
         filtered_rank_groups = []
         for group in rank_groups_data:
             free_athletes = [a for a in group.get('athletes', []) if a.get('has_free_participation', False)]
@@ -527,8 +517,9 @@ def api_free_participation():
         }
 
         rank_unique_stats = compute_rank_unique_participation_stats(
-            FREE_PARTICIPATION_EXCLUDED_RANKS,
+            excluded_ranks,
             season=get_active_season(),
+            rank_scope=True,
         )
 
         total_athletes = len(athletes_list)
@@ -581,10 +572,13 @@ def api_club_free_participation():
             Athlete, Club.id == Athlete.club_id
         ).outerjoin(
             Participant, Athlete.id == Participant.athlete_id
+        ).join(
+            Category, Participant.category_id == Category.id
         ).outerjoin(
             Event, Participant.event_id == Event.id
         ).filter(
-            *event_in_season(Event.begin_date)
+            *event_in_season(Event.begin_date),
+            category_scope_clause(),
         ).group_by(
             Club.id, Club.name, Club.short_name, Club.country, Club.city
         ).having(
@@ -896,8 +890,11 @@ def api_clubs():
         db.func.count(Participant.id).label('participation_count')
     ).outerjoin(Athlete, Club.id == Athlete.club_id).outerjoin(
         Participant, Athlete.id == Participant.athlete_id
+    ).join(
+        Category, Participant.category_id == Category.id
     ).join(Event, Participant.event_id == Event.id).filter(
-        *event_in_season(Event.begin_date)
+        *event_in_season(Event.begin_date),
+        category_scope_clause(),
     ).group_by(Club.id, Club.name, Club.country, Club.city).having(
         db.func.count(db.distinct(Athlete.id)) > 0
     ).order_by(
@@ -955,6 +952,7 @@ def api_free_participation_analysis():
             db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
         )
         query = query.filter(*event_in_season(Event.begin_date, season_filter))
+        query = query.filter(category_scope_clause())
         free_participants = query.order_by(
             Event.begin_date.desc(), Athlete.last_name, Athlete.first_name
         ).all()

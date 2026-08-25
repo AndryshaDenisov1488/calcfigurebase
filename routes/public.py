@@ -9,6 +9,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from extensions import db
 from models import Event, Category, Athlete, Participant, Club, Coach, CoachAssignment, SiteReaderLoginLog
 from season_utils import event_in_season, get_active_season, normalize_season
+from rank_scope import category_scope_clause, get_include_kms
 from services.rank_service import build_rank_groups, build_best_results
 from utils.access_control import SESSION_SITE_READER_KEY, safe_same_site_redirect_path
 from utils.client_ip import get_client_ip
@@ -25,6 +26,16 @@ def set_season():
     if season:
         get_active_season(season)
         flash(f'Выбран сезон {season}. Все показатели пересчитаны в его рамках.', 'info')
+    next_url = safe_same_site_redirect_path(request.form.get('next')) or url_for('public.index')
+    return redirect(next_url)
+
+
+@public_bp.route('/rank-scope', methods=['POST'])
+def set_rank_scope():
+    """Меняет общий режим сравнительных отчётов: базовый диапазон или плюс КМС."""
+    include_kms = get_include_kms(request.form.get('include_kms', '0'))
+    state = 'учитывается' if include_kms else 'не учитывается'
+    flash(f'КМС {state} в сравнительной статистике.', 'info')
     next_url = safe_same_site_redirect_path(request.form.get('next')) or url_for('public.index')
     return redirect(next_url)
 
@@ -139,11 +150,45 @@ def events():
             events_list = query.order_by(sort_field.desc().nullslast(), Event.id.desc()).all()
     else:
         events_list = query.order_by(Event.begin_date.desc(), Event.id.desc()).all()
+
+    event_ids = [event.id for event in events_list]
+    scoped_counts = {}
+    if event_ids:
+        rows = db.session.query(
+            Category.event_id,
+            db.func.count(db.distinct(Category.id)).label('categories_count'),
+            db.func.count(Participant.id).label('participants_count'),
+            db.func.sum(db.case((
+                db.and_(
+                    Participant.pct_ppname == 'БЕСП',
+                    db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
+                    db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
+                ), 1
+            ), else_=0)).label('free_count'),
+        ).select_from(Category).join(
+            Event, Category.event_id == Event.id
+        ).outerjoin(
+            Participant, Participant.category_id == Category.id
+        ).filter(
+            Category.event_id.in_(event_ids),
+            category_scope_clause(),
+        ).group_by(Category.event_id).all()
+        scoped_counts = {
+            row.event_id: (row.categories_count or 0, row.participants_count or 0, row.free_count or 0)
+            for row in rows
+        }
+    for event in events_list:
+        counts = scoped_counts.get(event.id, (0, 0, 0))
+        event.scoped_categories_count = counts[0]
+        event.scoped_participants_count = counts[1]
+        event.scoped_free_count = counts[2]
+
+    if sort_by not in sql_sort_fields:
         reverse = sort_order == 'desc'
         if sort_by == 'categories_count':
-            events_list = sorted(events_list, key=lambda event: len(event.categories or []), reverse=reverse)
+            events_list = sorted(events_list, key=lambda event: event.scoped_categories_count, reverse=reverse)
         elif sort_by == 'participants_count':
-            events_list = sorted(events_list, key=lambda event: len(event.participants or []), reverse=reverse)
+            events_list = sorted(events_list, key=lambda event: event.scoped_participants_count, reverse=reverse)
 
     if search:
         normalized_terms = [_normalize_search_text(term) for term in search.split() if term.strip()]
@@ -165,6 +210,7 @@ def events():
         Category.normalized_name != '',
         ~Category.normalized_name.like('Другой%'),
         *event_in_season(Event.begin_date),
+        category_scope_clause(),
     ).order_by(Category.normalized_name.asc()).all()
     available_ranks = [rank[0] for rank in all_ranks]
     all_events_with_dates = Event.query.filter(
@@ -182,7 +228,7 @@ def events():
         if event_ids:
             total_participants = db.session.query(Participant.id).join(
                 Category, Participant.category_id == Category.id
-            ).filter(Category.event_id.in_(event_ids)).count()
+            ).filter(Category.event_id.in_(event_ids), category_scope_clause()).count()
     return render_template(
         'events.html',
         events=events_list,
@@ -201,7 +247,7 @@ def categories():
     """Страница с группировкой по разрядам и спортсменам"""
     event_id = request.args.get('event', type=int)
     events_list = Event.query.filter(*event_in_season(Event.begin_date)).order_by(Event.begin_date.desc()).all()
-    rank_groups = build_rank_groups(event_id=event_id, season=get_active_season())
+    rank_groups = build_rank_groups(event_id=event_id, season=get_active_season(), rank_scope=True)
     selected_event_obj = next((event for event in events_list if event.id == event_id), None)
     unique_athlete_ids = set()
     for group in rank_groups:
@@ -230,7 +276,7 @@ def categories():
 def best_results():
     """Страница лучших результатов по разрядам"""
     rank_name = request.args.get('rank', '').strip()
-    rank_groups = build_best_results(rank_name=rank_name or None, season=get_active_season())
+    rank_groups = build_best_results(rank_name=rank_name or None, season=get_active_season(), rank_scope=True)
     selected_rank_obj = next((rank for rank in rank_groups if rank['display_name'] == rank_name), None)
     rank_summary = {
         'total_ranks': len(rank_groups),
@@ -541,9 +587,12 @@ def clubs():
     ).join(
         Participant, Athlete.id == Participant.athlete_id
     ).join(
+        Category, Participant.category_id == Category.id
+    ).join(
         Event, Participant.event_id == Event.id
     ).filter(
-        *event_in_season(Event.begin_date)
+        *event_in_season(Event.begin_date),
+        category_scope_clause(),
     ).distinct().order_by(Club.name.asc()).all()
     return render_template('clubs.html', clubs=clubs_list)
 
@@ -558,6 +607,7 @@ def club_detail(club_id):
     ).join(Event, Category.event_id == Event.id).filter(
         Athlete.club_id == club_id,
         *event_in_season(Event.begin_date),
+        category_scope_clause(),
     ).order_by(Event.begin_date.desc(), Athlete.last_name, Athlete.first_name).all()
     athletes_data = {}
     for athlete, event, category, participant in athletes_with_participations:

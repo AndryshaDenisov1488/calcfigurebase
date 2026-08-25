@@ -9,7 +9,7 @@
             <i class="fas fa-trophy me-2"></i>Лучшие результаты
         </h2>
         <p class="text-muted mb-0 small">
-            Всего разрядов: {{ rank_summary.total_ranks }} · Спортсменов: {{ rank_summary.total_athletes }}
+            Диапазон: <strong>{{ rank_scope_label }}</strong> · Всего разрядов: {{ rank_summary.total_ranks }} · Спортсменов: {{ rank_summary.total_athletes }}
             {% if selected_rank_obj %}
                 <span class="d-block mt-1">
                     Выбран разряд: <strong>{{ selected_rank_obj.display_name }}</strong>
@@ -440,4 +440,3 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 {% endblock %}
-

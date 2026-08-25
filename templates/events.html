@@ -116,7 +116,10 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="fas fa-trophy"></i> Турниры</h2>
+    <div>
+        <h2 class="mb-0"><i class="fas fa-trophy"></i> Турниры</h2>
+        <small class="text-muted">Числа в таблице: {{ rank_scope_label }}</small>
+    </div>
     <div class="d-flex gap-2">
         <div class="position-relative" style="width: 360px;">
             <input
@@ -283,29 +286,22 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <span class="badge bg-primary">{{ event.categories|length }}</span>
-                                {% if event.categories %}
+                                <span class="badge bg-primary">{{ event.scoped_categories_count }}</span>
+                                {% if event.scoped_categories_count %}
                                     <br><small class="text-muted">
-                                        {% for category in event.categories[:2] %}
+                                        {% set scoped_categories = event.categories|selectattr('normalized_name', 'in', available_ranks)|list %}
+                                        {% for category in scoped_categories[:2] %}
                                             {{ category.name }}{% if not loop.last %}, {% endif %}
                                         {% endfor %}
-                                        {% if event.categories|length > 2 %}
-                                            и еще {{ event.categories|length - 2 }}
+                                        {% if event.scoped_categories_count > 2 %}
+                                            и еще {{ event.scoped_categories_count - 2 }}
                                         {% endif %}
                                     </small>
                                 {% endif %}
                             </td>
                             <td>
-                                {% set participants_count = event.participants|length %}
-                                {% if event.exclude_free_from_reports %}
-                                    {% set free_count = 0 %}
-                                {% else %}
-                                    {% set free_count = event.participants
-                                        |selectattr('pct_ppname', 'equalto', 'БЕСП')
-                    |rejectattr('exclude_free_from_reports')
-                                        |list
-                                        |length %}
-                                {% endif %}
+                                {% set participants_count = event.scoped_participants_count %}
+                                {% set free_count = event.scoped_free_count %}
                                 {% if participants_count > 0 %}
                                     <span class="badge bg-success me-1">{{ participants_count }}</span>
                                 {% else %}
