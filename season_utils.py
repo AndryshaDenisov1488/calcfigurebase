@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import contextvars
 import re
+from contextlib import contextmanager
 from datetime import datetime, date
-from typing import List, Optional, Tuple
+from typing import Iterator, List, Optional, Tuple
 
 from flask import has_request_context, request, session
 
 
 SEASON_SESSION_KEY = 'active_season'
 _SEASON_RE = re.compile(r'^(\d{4})/(\d{2})$')
+_forced_season: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    'forced_active_season', default=None
+)
 
 def get_season_from_date(event_date: date) -> str:
     """
@@ -94,8 +99,26 @@ def get_season_date_range(season: Optional[str]) -> Tuple[date, date]:
     return date(start_year, 7, 1), date(start_year + 1, 7, 1)
 
 
+@contextmanager
+def override_active_season(season: Optional[str]) -> Iterator[Optional[str]]:
+    """Задаёт сезон для фонового потока без Flask request context."""
+    normalized = normalize_season(season)
+    if not normalized:
+        yield None
+        return
+    token = _forced_season.set(normalized)
+    try:
+        yield normalized
+    finally:
+        _forced_season.reset(token)
+
+
 def get_active_season(explicit_season: Optional[str] = None) -> str:
     """Возвращает сезон запроса и запоминает корректный явный выбор в сессии."""
+    if explicit_season is None:
+        forced = _forced_season.get()
+        if forced:
+            return forced
     if not has_request_context():
         return normalize_season(explicit_season) or get_current_season()
 

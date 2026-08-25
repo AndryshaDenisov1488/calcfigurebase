@@ -18,7 +18,7 @@ from event_rank_constants import (
 )
 from models import Athlete, Club, Category, Participant, Event
 from rank_scope import category_scope_clause, rank_label_in_scope
-from season_utils import event_in_season
+from season_utils import event_in_season, get_active_season, get_season_date_range
 
 logger = logging.getLogger(__name__)
 
@@ -1147,38 +1147,12 @@ def get_events_first_timers_report_data(rank_contains: str | None = None, free_o
     
     with app.app_context():
         from models import Event, Category
-        
-        # Получаем все участия с информацией о турнире, спортсмене и разряде
-        # ВАЖНО: используем ТОЧНО ТАКОЙ ЖЕ запрос как в get_general_statistics_data для идентичности
-        # Это критически важно для правильного подсчета уникальных спортсменов!
-        participants_query = db.session.query(
-            Participant.athlete_id,
-            Participant.pct_ppname,
-            Event.exclude_free_from_reports,
-            Category.normalized_name.label('rank')
-        ).join(
-            Category, Participant.category_id == Category.id
-        ).join(
-            Event, Participant.event_id == Event.id
-        ).filter(
-            *event_in_season(Event.begin_date),
-            category_scope_clause(),
-        ).all()
-        
-        # Множество для отслеживания уникальных спортсменов (идентично get_general_statistics_data)
-        unique_athletes = set()
-        
-        # Сначала обрабатываем запрос для подсчета уникальных спортсменов (идентично get_general_statistics_data)
-        for row in participants_query:
-            athlete_id = row.athlete_id
-            rank_name = (row.rank or 'Без разряда').strip()
-            if rank_contains_norm and rank_contains_norm not in rank_name.lower():
-                continue
-            # Добавляем спортсмена в множество уникальных (для унификации с листом "Статистика")
-            unique_athletes.add(athlete_id)
-        
-        # Теперь получаем детальную информацию о событиях для формирования таблицы
-        # Используем тот же фильтр, но добавляем event_id для сортировки
+
+        # Новичок = первое выступление в разряде за всю карьеру. Сезон ограничивает
+        # только состав турниров в отчёте, иначе старт нового сезона делает
+        # всех прошлогодних спортсменов «новичками».
+        season_start, season_end = get_season_date_range(get_active_season())
+
         participants_query_detailed = db.session.query(
             Participant.athlete_id,
             Participant.pct_ppname,
@@ -1191,7 +1165,7 @@ def get_events_first_timers_report_data(rank_contains: str | None = None, free_o
         ).join(
             Event, Participant.event_id == Event.id
         ).filter(
-            *event_in_season(Event.begin_date),
+            Event.begin_date.isnot(None),
             category_scope_clause(),
         ).all()
         
@@ -1220,8 +1194,9 @@ def get_events_first_timers_report_data(rank_contains: str | None = None, free_o
                 r for r in participants_sorted
                 if _is_free_for_reports(getattr(r, 'pct_ppname', None), getattr(r, 'exclude_free_from_reports', False))
             ]
-            unique_athletes = set(r.athlete_id for r in participants_sorted)
-        
+
+        unique_athletes = set()
+
         # Все выступления по (athlete_id, rank): [(event_id, event_date), ...] в хронологическом порядке — для детализации «все предыдущие» и «очередной раз»
         appearances_by_athlete_rank = {}
         
@@ -1245,7 +1220,17 @@ def get_events_first_timers_report_data(rank_contains: str | None = None, free_o
             event = events_dict.get(event_id) if event_id else None
             event_name = event.name if event else 'Неизвестное событие'
             event_date = event.begin_date if event else None
-            
+
+            key = (athlete_id, rank_name)
+            previous_list = appearances_by_athlete_rank.get(key, [])
+            is_first_in_rank = not previous_list
+            appearances_by_athlete_rank[key] = previous_list + [(event_id, event_date)]
+
+            if event_date is None or not (season_start <= event_date < season_end):
+                continue
+
+            unique_athletes.add(athlete_id)
+
             if event_id not in events_map:
                 events_map[event_id] = {
                     'event_name': event_name,
@@ -1269,28 +1254,21 @@ def get_events_first_timers_report_data(rank_contains: str | None = None, free_o
             
             rank_entry = event_entry['rank_stats'][rank_name]
             rank_entry['participations_count'] += 1
-            
-            key = (athlete_id, rank_name)
-            previous_list = appearances_by_athlete_rank.get(key, [])
-            
-            if not previous_list:
-                # Первое выступление в этом разряде — новичок
+
+            if is_first_in_rank:
                 rank_entry['first_timers_count'] += 1
                 unique_first_timers.add(athlete_id)
-                appearances_by_athlete_rank[key] = [(event_id, event_date)]
             else:
-                # Повторяющийся: уже выступал — сохраняем все предыдущие выступления и номер текущего (2-й раз, 3-й раз…)
-                rank_entry['repeaters_count'] += 1
                 total_previous = len(previous_list)
-                appearance_number = total_previous + 1  # текущее выступление по счёту
+                appearance_number = total_previous + 1
+                rank_entry['repeaters_count'] += 1
                 rank_entry['repeaters_detail'].append({
                     'athlete_id': athlete_id,
-                    'previous_appearances': list(previous_list),  # все предыдущие (event_id, event_date)
+                    'previous_appearances': list(previous_list),
                     'total_previous_count': total_previous,
                     'appearance_number': appearance_number,
                 })
-                appearances_by_athlete_rank[key] = previous_list + [(event_id, event_date)]
-            
+
             if _is_free_for_reports(row.pct_ppname, row.exclude_free_from_reports):
                 event_entry['free_participations_count'] += 1
                 rank_entry['free_participations_count'] += 1

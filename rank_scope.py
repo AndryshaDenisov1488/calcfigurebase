@@ -1,6 +1,8 @@
 """Единый диапазон разрядов для сравнительной статистики сайта."""
 
-from typing import Optional
+import contextvars
+from contextlib import contextmanager
+from typing import Iterator, Optional
 
 from flask import has_request_context, request, session
 from sqlalchemy import func, or_
@@ -9,6 +11,9 @@ from models import Category
 
 
 INCLUDE_KMS_SESSION_KEY = 'include_kms_in_reports'
+_forced_include_kms: contextvars.ContextVar[Optional[bool]] = contextvars.ContextVar(
+    'forced_include_kms', default=None
+)
 
 CORE_RANK_PREFIXES = (
     '1 Спортивный',
@@ -35,8 +40,23 @@ def _parse_bool(value) -> Optional[bool]:
     return None
 
 
+@contextmanager
+def override_include_kms(value: bool) -> Iterator[bool]:
+    """Задаёт режим КМС для фонового потока без Flask request context."""
+    forced = bool(value)
+    token = _forced_include_kms.set(forced)
+    try:
+        yield forced
+    finally:
+        _forced_include_kms.reset(token)
+
+
 def get_include_kms(explicit_value=None) -> bool:
     """Возвращает и при явном параметре сохраняет общий режим учёта КМС."""
+    if explicit_value is None:
+        forced = _forced_include_kms.get()
+        if forced is not None:
+            return forced
     if not has_request_context():
         return bool(_parse_bool(explicit_value))
 

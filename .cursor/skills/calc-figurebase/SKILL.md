@@ -39,6 +39,8 @@ systemctl restart calc-figurebase
 journalctl -u calc-figurebase -f
 ```
 
+Фоновый экспорт в Google Sheets не имеет request/session: перед стартом потока снимают `get_active_season()` и `get_include_kms()`, в воркере — `override_active_season` / `override_include_kms`. Отчёт «новички и повторяющиеся» классифицирует старты по всей карьере, сезон фильтрует только состав турниров.
+
 ## Навигация по reference.md
 
 | Часть | Содержание |

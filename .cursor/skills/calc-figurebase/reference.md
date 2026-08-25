@@ -1132,7 +1132,7 @@ ROUTE /favicon.ico
 - `get_participations_statistics_data()` L728
 - `get_summary_statistics_data()` L822
 - `get_weekly_unique_athletes_growth()` L999
-- `get_events_first_timers_report_data(rank_contains, free_only)` L1094
+- `get_events_first_timers_report_data(rank_contains, free_only)` L1094 — новичок считается по всей карьере; сезон фильтрует только турниры в выдаче
 - `get_free_participation_exceedance_data()` L1425
 - `export_to_google_sheets(spreadsheet_id)` L1487
 
@@ -1308,7 +1308,7 @@ ROUTE /favicon.ico
 - `_export_state_path(app_obj)` L122
 - `_read_export_state(app_obj)` L128
 - `_write_export_state(app_obj, state)` L161
-- `_start_google_export_background(app_obj)` L169
+- `_start_google_export_background(app_obj)` L169 — снимает сезон и флаг КМС из запроса и передаёт в поток через override_*
 - `upload_file()` L215
 - `analyze_xml()` L343
 - `normalize_categories()` L479
@@ -2736,17 +2736,22 @@ ROUTE /admin/free-participation
 
 | Свойство | Значение |
 |----------|----------|
-| Строк | 81 |
-| Размер | 3,120 байт |
-| Функции | 5 |
+| Строк | 169 |
+| Размер | 5,800 байт |
+| Функции | 10 |
 
 **Функции верхнего уровня:**
 
-- `get_season_from_date(event_date)` L7
-- `get_all_seasons_from_events(events)` L18
-- `get_current_season()` L55
-- `get_season_display_name(season)` L61
-- `parse_xml_date_to_season(date_str)` L71
+- `get_season_from_date(event_date)` L19
+- `get_all_seasons_from_events(events)` L30
+- `get_current_season()` L67
+- `normalize_season(season)` L74
+- `get_season_date_range(season)` L95
+- `override_active_season(season)` L102 — для фонового экспорта без request context
+- `get_active_season(explicit_season)` L116
+- `event_in_season(column, season)` L142
+- `get_season_display_name(season)` L147
+- `parse_xml_date_to_season(date_str)` L158
 
 ### Файл: `services/__init__.py`
 
@@ -14698,11 +14703,17 @@ def _write_export_state(app_obj, state):
 def _start_google_export_background(app_obj):
     """Запускает экспорт в отдельном потоке и обновляет состояние задачи."""
     from google_sheets_sync import export_to_google_sheets
+    from rank_scope import get_include_kms, override_include_kms
+    from season_utils import get_active_season, override_active_season
+
+    export_season = get_active_season()
+    export_include_kms = get_include_kms()
 
     def _worker():
         with app_obj.app_context():
             try:
-                result = export_to_google_sheets()
+                with override_active_season(export_season), override_include_kms(export_include_kms):
+                    result = export_to_google_sheets()
                 with _export_job_lock:
                     state = _read_export_state(app_obj)
                     state['running'] = False
@@ -39842,14 +39853,26 @@ PYTHONPATH=/var/www/calc.figurebase.ru:$PYTHONPATH python scripts/check_athletes
 
 ## Исходный код: `season_utils.py`
 
-> 81 строк, 3,120 байт
+> 169 строк
 
 ```py
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import contextvars
+import re
+from contextlib import contextmanager
 from datetime import datetime, date
-from typing import List, Optional
+from typing import Iterator, List, Optional, Tuple
+
+from flask import has_request_context, request, session
+
+
+SEASON_SESSION_KEY = 'active_season'
+_SEASON_RE = re.compile(r'^(\d{4})/(\d{2})$')
+_forced_season: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    'forced_active_season', default=None
+)
 
 def get_season_from_date(event_date: date) -> str:
     """
@@ -39863,62 +39886,99 @@ def get_season_from_date(event_date: date) -> str:
         return f"{event_date.year - 1}/{str(event_date.year)[-2:]}"
 
 def get_all_seasons_from_events(events) -> List[str]:
-    """
-    Получает все уникальные сезоны из списка событий.
-    
-    Args:
-        events: Список объектов Event или словарей с полем begin_date
-        
-    Returns:
-        List[str]: Отсортированный список сезонов в формате "2023/24"
-    """
     seasons = set()
-    
     for event in events:
         if hasattr(event, 'begin_date') and event.begin_date:
-            # Объект Event из базы данных
-            season = get_season_from_date(event.begin_date)
-            seasons.add(season)
+            seasons.add(get_season_from_date(event.begin_date))
         elif isinstance(event, dict) and event.get('begin_date'):
             try:
-                # Парсим дату из строки
                 if isinstance(event['begin_date'], str):
-                    # Проверяем формат даты
                     if len(event['begin_date']) == 8 and event['begin_date'].isdigit():
-                        # Формат YYYYMMDD
                         event_date = datetime.strptime(event['begin_date'], '%Y%m%d').date()
                     else:
-                        # Формат YYYY-MM-DD
                         event_date = datetime.strptime(event['begin_date'], '%Y-%m-%d').date()
                 else:
                     event_date = event['begin_date']
-                season = get_season_from_date(event_date)
-                seasons.add(season)
+                seasons.add(get_season_from_date(event_date))
             except (ValueError, TypeError):
                 continue
-    
     return sorted(seasons, reverse=True)
 
 def get_current_season() -> str:
-    """
-    Возвращает текущий сезон.
-    """
     return get_season_from_date(date.today())
 
+
+def normalize_season(season: Optional[str]) -> Optional[str]:
+    value = (season or '').strip().replace('-', '/')
+    if value == 'current':
+        return get_current_season()
+    short_match = re.fullmatch(r'(\d{2})/(\d{2})', value)
+    if short_match:
+        value = f"20{short_match.group(1)}/{short_match.group(2)}"
+    match = _SEASON_RE.fullmatch(value)
+    if not match:
+        return None
+    start_year = int(match.group(1))
+    end_year_short = int(match.group(2))
+    if (start_year + 1) % 100 != end_year_short:
+        return None
+    return f"{start_year}/{end_year_short:02d}"
+
+
+def get_season_date_range(season: Optional[str]) -> Tuple[date, date]:
+    normalized = normalize_season(season) or get_current_season()
+    start_year = int(normalized.split('/')[0])
+    return date(start_year, 7, 1), date(start_year + 1, 7, 1)
+
+
+@contextmanager
+def override_active_season(season: Optional[str]) -> Iterator[Optional[str]]:
+    """Задаёт сезон для фонового потока без Flask request context."""
+    normalized = normalize_season(season)
+    if not normalized:
+        yield None
+        return
+    token = _forced_season.set(normalized)
+    try:
+        yield normalized
+    finally:
+        _forced_season.reset(token)
+
+
+def get_active_season(explicit_season: Optional[str] = None) -> str:
+    if explicit_season is None:
+        forced = _forced_season.get()
+        if forced:
+            return forced
+    if not has_request_context():
+        return normalize_season(explicit_season) or get_current_season()
+    requested = explicit_season
+    if requested is None:
+        requested = request.args.get('season')
+    normalized = normalize_season(requested)
+    if normalized:
+        session[SEASON_SESSION_KEY] = normalized
+        return normalized
+    stored = normalize_season(session.get(SEASON_SESSION_KEY))
+    if stored:
+        return stored
+    current = get_current_season()
+    session[SEASON_SESSION_KEY] = current
+    return current
+
+
+def event_in_season(column, season: Optional[str] = None):
+    start_date, end_date = get_season_date_range(season or get_active_season())
+    return column >= start_date, column < end_date
+
 def get_season_display_name(season: str) -> str:
-    """
-    Возвращает отображаемое название сезона.
-    Например: "2023/24" -> "2023-2024"
-    """
-    if '/' in season:
-        year1, year2 = season.split('/')
-        return f"20{year1}-20{year2}"
+    normalized = normalize_season(season)
+    if normalized:
+        year1, year2 = normalized.split('/')
+        return f"{year1}–{year1[:2]}{year2}"
     return season
 
 def parse_xml_date_to_season(date_str: str) -> str:
-    """
-    Парсит дату из XML формата (YYYYMMDD) и возвращает сезон.
-    """
     if not date_str:
         return None
     try:
