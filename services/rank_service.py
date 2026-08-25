@@ -5,6 +5,7 @@ import base64
 
 from extensions import db
 from models import Athlete, Category, Participant, Event, Club
+from season_utils import event_in_season
 
 
 def _athletes_by_id_bulk(athlete_ids):
@@ -229,7 +230,7 @@ def athlete_display_name(first_name, last_name, full_name_xml):
     return s if s else '—'
 
 
-def compute_rank_unique_participation_stats(excluded_normalized_ranks):
+def compute_rank_unique_participation_stats(excluded_normalized_ranks, season=None):
     """
     Уникальные спортсмены по разряду и доля с бесплатным участием.
     Агрегация до пары (athlete_id, category_id), а не все строки participant.
@@ -255,6 +256,7 @@ def compute_rank_unique_participation_stats(excluded_normalized_ranks):
     ).join(
         Event, Participant.event_id == Event.id
     ).filter(
+        *event_in_season(Event.begin_date, season),
         db.or_(
             Category.normalized_name.is_(None),
             Category.normalized_name.notin_(excl),
@@ -293,7 +295,7 @@ def compute_rank_unique_participation_stats(excluded_normalized_ranks):
     return rank_unique_stats
 
 
-def build_rank_groups(event_id=None, only_free_participation=False, excluded_normalized_ranks=None):
+def build_rank_groups(event_id=None, only_free_participation=False, excluded_normalized_ranks=None, season=None):
     rank_catalog = get_rank_catalog()
     participants_query = db.session.query(
         Athlete.id.label('athlete_id'),
@@ -327,6 +329,7 @@ def build_rank_groups(event_id=None, only_free_participation=False, excluded_nor
     ).join(Participant, Athlete.id == Participant.athlete_id).join(
         Category, Participant.category_id == Category.id
     ).join(Event, Category.event_id == Event.id)
+    participants_query = participants_query.filter(*event_in_season(Event.begin_date, season))
     if event_id:
         participants_query = participants_query.filter(Event.id == event_id)
     if only_free_participation:
@@ -396,7 +399,7 @@ def build_rank_groups(event_id=None, only_free_participation=False, excluded_nor
     rank_groups = sorted(rank_catalog.values(), key=lambda item: (item['weight'], item['display_name'].lower()))
     return rank_groups
 
-def build_best_results(rank_name=None):
+def build_best_results(rank_name=None, season=None):
     rank_catalog = get_rank_catalog()
     best_results_query = db.session.query(
         Athlete.id.label('athlete_id'),
@@ -419,7 +422,11 @@ def build_best_results(rank_name=None):
         Event, Category.event_id == Event.id
     ).outerjoin(
         Club, Athlete.club_id == Club.id
-    ).filter(Category.normalized_name.isnot(None), Participant.total_place.isnot(None))
+    ).filter(
+        Category.normalized_name.isnot(None),
+        Participant.total_place.isnot(None),
+        *event_in_season(Event.begin_date, season),
+    )
     if rank_name:
         best_results_query = best_results_query.filter(Category.normalized_name == rank_name)
     results = best_results_query.all()
@@ -430,8 +437,9 @@ def build_best_results(rank_name=None):
         counts = db.session.query(
             Participant.athlete_id,
             db.func.count(Participant.id).label('cnt')
-        ).filter(
-            Participant.athlete_id.in_(athlete_ids)
+        ).join(Event, Participant.event_id == Event.id).filter(
+            Participant.athlete_id.in_(athlete_ids),
+            *event_in_season(Event.begin_date, season),
         ).group_by(Participant.athlete_id).all()
         participations_counts = {row.athlete_id: row.cnt for row in counts}
     rank_athletes = {}

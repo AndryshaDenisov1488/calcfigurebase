@@ -84,9 +84,29 @@ def create_app():
 
     @app.context_processor
     def inject_reader_nav():
+        from models import Event
+        from season_utils import (
+            get_active_season,
+            get_all_seasons_from_events,
+            get_current_season,
+            get_season_display_name,
+        )
+
+        active_season = get_active_season()
+        event_dates = db.session.query(Event.begin_date).filter(Event.begin_date.isnot(None)).all()
+        available_seasons = get_all_seasons_from_events(
+            [{'begin_date': row.begin_date} for row in event_dates]
+        )
+        for season in (get_current_season(), active_season):
+            if season not in available_seasons:
+                available_seasons.append(season)
+        available_seasons.sort(reverse=True)
         return {
             'site_reader_gate_enabled': bool(app.config.get('SITE_READ_PASSWORD')),
             'site_reader_ok': session.get(SESSION_SITE_READER_KEY),
+            'active_season': active_season,
+            'available_seasons': available_seasons,
+            'season_display_name': get_season_display_name,
         }
 
     # Убираем 404 в логах от запросов браузера к /favicon.ico

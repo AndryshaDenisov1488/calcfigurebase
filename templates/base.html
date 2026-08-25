@@ -49,6 +49,26 @@
                             <li><a class="dropdown-item" href="{{ url_for('public.coaches') }}"><i class="fas fa-user-tie fa-fw text-primary"></i> Тренеры</a></li>
                         </ul>
                     </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="navbarSeason" role="button" data-bs-toggle="dropdown" aria-expanded="false" title="Все данные и показатели считаются только за выбранный сезон">
+                            <i class="fas fa-calendar-alt"></i> {{ active_season }}
+                        </a>
+                        <div class="dropdown-menu p-3 shadow" aria-labelledby="navbarSeason" style="min-width: 17rem;">
+                            <div class="small text-muted mb-2">Активный сезон для всех разделов</div>
+                            <form method="post" action="{{ url_for('public.set_season') }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="next" value="{{ request.full_path }}">
+                                <select class="form-select form-select-sm" name="season" onchange="this.form.submit()" aria-label="Выбрать сезон">
+                                    {% for season in available_seasons %}
+                                    <option value="{{ season }}" {% if season == active_season %}selected{% endif %}>
+                                        {{ season_display_name(season) }}{% if season == active_season %} — выбран{% endif %}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </form>
+                            <div class="small text-muted mt-2">Турниры и расчёты других сезонов сохранены и доступны здесь.</div>
+                        </div>
+                    </li>
                     {% if session.admin_logged_in %}
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle" href="#" id="navbarAdmin" role="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">

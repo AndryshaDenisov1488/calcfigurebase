@@ -28,6 +28,7 @@ from sqlalchemy import and_, case, func
 
 from event_rank_constants import EVENT_RANK_OPTIONS
 from models import Category, Event, Participant, JudgeHelperFreeAudit, SiteReaderLoginLog
+from season_utils import event_in_season
 
 logger = logging.getLogger(__name__)
 
@@ -1035,7 +1036,9 @@ def admin_event_ranks():
             logger.error(f'Error updating event rank for event_id={event_id}: {e}')
         return redirect(url_for('admin.admin_event_ranks'))
 
-    events = Event.query.order_by(Event.begin_date.desc(), Event.id.desc()).all()
+    events = Event.query.filter(*event_in_season(Event.begin_date)).order_by(
+        Event.begin_date.desc(), Event.id.desc()
+    ).all()
     rank_stats_bundle = get_event_rank_statistics_data()
     event_ids = [e.id for e in events]
     event_list_details = _event_ranks_list_details_by_id(event_ids)
@@ -1129,7 +1132,7 @@ def admin_free_participation():
         return redirect(url_for('admin.admin_free_participation'))
     
     # GET запрос - показываем форму
-    events = Event.query.order_by(Event.begin_date.desc()).all()
+    events = Event.query.filter(*event_in_season(Event.begin_date)).order_by(Event.begin_date.desc()).all()
     
     # Добавляем статистику для каждого события
     events_data = []

@@ -3,14 +3,13 @@
 """API routes."""
 import json
 import logging
-from datetime import datetime
 from flask import Blueprint, jsonify, request, Response, abort
 
 from extensions import db
 from utils.access_control import request_has_api_access
 from event_rank_constants import CATEGORY_RANKS_MS_KMS
 from models import Event, Category, Athlete, Participant, Club, Segment, Performance, Coach, CoachAssignment, Element, ComponentScore
-from season_utils import get_season_from_date
+from season_utils import event_in_season, get_active_season, get_season_from_date
 from services.rank_service import (
     normalize_category_name,
     get_rank_weight,
@@ -49,7 +48,8 @@ def api_athlete_results_chart(athlete_id):
     ).join(
         Event, Category.event_id == Event.id
     ).filter(
-        Participant.athlete_id == athlete_id
+        Participant.athlete_id == athlete_id,
+        *event_in_season(Event.begin_date),
     ).order_by(Event.begin_date.asc()).all()
     chart_data = {
         'labels': [],
@@ -73,7 +73,7 @@ def api_athlete_results_chart(athlete_id):
 @api_bp.route('/events', methods=['GET'])
 def api_events():
     """Возвращает список турниров для интеграций"""
-    events = Event.query.order_by(Event.begin_date.desc()).all()
+    events = Event.query.filter(*event_in_season(Event.begin_date)).order_by(Event.begin_date.desc()).all()
     def serialize_date(value):
         return value.isoformat() if value else None
     events_payload = [
@@ -154,19 +154,25 @@ def api_statistics():
     # Подсчет спортсменов, которые участвовали в разрядах без МС и КМС
     total_athletes = db.session.query(db.func.count(db.distinct(Participant.athlete_id))).join(
         Category, Participant.category_id == Category.id
+    ).join(
+        Event, Participant.event_id == Event.id
     ).filter(
+        *event_in_season(Event.begin_date),
         db.or_(
             Category.normalized_name.is_(None),
             Category.normalized_name.notin_(excluded_ranks)
         )
     ).scalar()
     
-    total_events = Event.query.count()
+    total_events = Event.query.filter(*event_in_season(Event.begin_date)).count()
     
     # Подсчет участий без МС и КМС
     total_participations = db.session.query(Participant).join(
         Category, Participant.category_id == Category.id
+    ).join(
+        Event, Participant.event_id == Event.id
     ).filter(
+        *event_in_season(Event.begin_date),
         db.or_(
             Category.normalized_name.is_(None),
             Category.normalized_name.notin_(excluded_ranks)
@@ -175,9 +181,17 @@ def api_statistics():
     
     club_stats = db.session.query(
         Club.name,
-        db.func.count(Athlete.id).label('athlete_count')
-    ).join(Athlete).group_by(Club.id).order_by(
-        db.func.count(Athlete.id).desc()
+        db.func.count(db.distinct(Athlete.id)).label('athlete_count')
+    ).join(
+        Athlete, Club.id == Athlete.club_id
+    ).join(
+        Participant, Athlete.id == Participant.athlete_id
+    ).join(
+        Event, Participant.event_id == Event.id
+    ).filter(
+        *event_in_season(Event.begin_date)
+    ).group_by(Club.id).order_by(
+        db.func.count(db.distinct(Athlete.id)).desc()
     ).limit(10).all()
     return jsonify({
         'total_athletes': total_athletes,
@@ -203,7 +217,11 @@ def api_top_athletes():
             db.func.max(Participant.total_points).label('best_points')
         ).select_from(Athlete).join(
             Participant, Athlete.id == Participant.athlete_id
-        ).join(Category, Participant.category_id == Category.id).group_by(
+        ).join(Category, Participant.category_id == Category.id).join(
+            Event, Participant.event_id == Event.id
+        ).filter(
+            *event_in_season(Event.begin_date)
+        ).group_by(
             Athlete.id, Category.name, Category.gender, Category.normalized_name
         ).all()
 
@@ -264,9 +282,10 @@ def api_top_athletes():
             # Находим лучшее место для этого спортсмена
             best_place_row = db.session.query(
                 db.func.min(Participant.total_place)
-            ).filter(
+            ).join(Event, Participant.event_id == Event.id).filter(
                 Participant.athlete_id == athlete['id'],
-                Participant.total_place.isnot(None)
+                Participant.total_place.isnot(None),
+                *event_in_season(Event.begin_date),
             ).scalar()
             
             by_participations.append({
@@ -293,8 +312,12 @@ def api_club_statistics():
     club_athlete_stats = db.session.query(
         Club.id,
         Club.name,
-        db.func.count(Athlete.id).label('athlete_count')
-    ).outerjoin(Athlete, Club.id == Athlete.club_id).group_by(
+        db.func.count(db.distinct(Athlete.id)).label('athlete_count')
+    ).join(Athlete, Club.id == Athlete.club_id).join(
+        Participant, Athlete.id == Participant.athlete_id
+    ).join(Event, Participant.event_id == Event.id).filter(
+        *event_in_season(Event.begin_date)
+    ).group_by(
         Club.id, Club.name
     ).all()
     club_participation_stats = db.session.query(
@@ -303,6 +326,8 @@ def api_club_statistics():
         db.func.min(Participant.total_place).label('best_place')
     ).join(Athlete, Club.id == Athlete.club_id).outerjoin(
         Participant, Athlete.id == Participant.athlete_id
+    ).join(Event, Participant.event_id == Event.id).filter(
+        *event_in_season(Event.begin_date)
     ).group_by(Club.id).all()
     participation_dict = {c.id: {'count': c.participation_count, 'best': c.best_place} for c in club_participation_stats}
     result = []
@@ -328,7 +353,9 @@ def api_category_statistics():
         Category.normalized_name,
         db.func.count(Participant.id).label('participant_count'),
         db.func.avg(Participant.total_points).label('avg_points')
-    ).outerjoin(Participant).group_by(
+    ).join(Participant).join(Event, Participant.event_id == Event.id).filter(
+        *event_in_season(Event.begin_date)
+    ).group_by(
         Category.name, Category.gender, Category.category_type, Category.normalized_name
     ).order_by(db.func.count(Participant.id).desc()).all()
     rank_stats = {}
@@ -394,7 +421,8 @@ def api_free_participation():
         ).filter(
             Participant.pct_ppname == 'БЕСП',
             db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
-            db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
+            db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
+            *event_in_season(Event.begin_date),
         ).filter(
             db.or_(
                 Category.normalized_name.is_(None),
@@ -458,6 +486,7 @@ def api_free_participation():
             event_id=None,
             only_free_participation=True,
             excluded_normalized_ranks=FREE_PARTICIPATION_EXCLUDED_RANKS,
+            season=get_active_season(),
         )
         rank_groups_data = [g for g in rank_groups_data if g.get('display_name') not in FREE_PARTICIPATION_EXCLUDED_RANKS]
         filtered_rank_groups = []
@@ -497,7 +526,10 @@ def api_free_participation():
             'total_free_participations': sum(g.get('total_free_participations', 0) for g in ranks_with_data)
         }
 
-        rank_unique_stats = compute_rank_unique_participation_stats(FREE_PARTICIPATION_EXCLUDED_RANKS)
+        rank_unique_stats = compute_rank_unique_participation_stats(
+            FREE_PARTICIPATION_EXCLUDED_RANKS,
+            season=get_active_season(),
+        )
 
         total_athletes = len(athletes_list)
         total_free_participations = sum(a['free_participations'] for a in athletes_list)
@@ -551,6 +583,8 @@ def api_club_free_participation():
             Participant, Athlete.id == Participant.athlete_id
         ).outerjoin(
             Event, Participant.event_id == Event.id
+        ).filter(
+            *event_in_season(Event.begin_date)
         ).group_by(
             Club.id, Club.name, Club.short_name, Club.country, Club.city
         ).having(
@@ -626,7 +660,11 @@ def api_athletes():
     # Применяем фильтр поиска СРАЗУ после создания базового запроса
     athletes_query = db.session.query(
         Athlete, Club
-    ).outerjoin(Club, Athlete.club_id == Club.id)
+    ).outerjoin(Club, Athlete.club_id == Club.id).join(
+        Participant, Athlete.id == Participant.athlete_id
+    ).join(Event, Participant.event_id == Event.id).filter(
+        *event_in_season(Event.begin_date)
+    )
     
     # Применяем фильтр поиска ДО всех остальных JOIN'ов
     if search_filter is not None:
@@ -634,22 +672,18 @@ def api_athletes():
     
     # Добавляем JOIN с Participant и Category для сортировки по разрядам (если нужно)
     # Делаем это ПОСЛЕ применения фильтра поиска
-    if sort_by == 'rank' or rank_filter or sort_by in ['participations', 'best_place']:
+    if sort_by == 'rank' or rank_filter:
         athletes_query = athletes_query.outerjoin(
-            Participant, Athlete.id == Participant.athlete_id
+            Category, Participant.category_id == Category.id
         )
-        if sort_by == 'rank' or rank_filter:
-            athletes_query = athletes_query.outerjoin(
-                Category, Participant.category_id == Category.id
-            )
-            if rank_filter:
-                athletes_query = athletes_query.filter(Category.normalized_name == rank_filter)
+        if rank_filter:
+            athletes_query = athletes_query.filter(Category.normalized_name == rank_filter)
     
     # Добавляем group_by для агрегатных функций
     # Делаем это ПОСЛЕ фильтра поиска, чтобы фильтр применялся к базовым записям
     # ВАЖНО: group_by применяется всегда, если sort_by = 'best_place' (по умолчанию)
     # Это означает, что JOIN с Participant всегда делается, и фильтр должен работать ДО этого
-    needs_group_by = sort_by in ['participations', 'best_place'] or sort_by == 'rank' or rank_filter
+    needs_group_by = True
     if needs_group_by:
         athletes_query = athletes_query.group_by(Athlete.id, Club.id)
     
@@ -712,7 +746,10 @@ def api_athletes():
         Event.exclude_free_from_reports.label('event_exclude_free_from_reports')
     ).outerjoin(Category, Participant.category_id == Category.id).outerjoin(
         Event, Category.event_id == Event.id
-    ).filter(Participant.athlete_id.in_(athlete_ids)).all()
+    ).filter(
+        Participant.athlete_id.in_(athlete_ids),
+        *event_in_season(Event.begin_date),
+    ).all()
     
     # Группируем данные по спортсменам
     athletes_stats = {}
@@ -859,6 +896,8 @@ def api_clubs():
         db.func.count(Participant.id).label('participation_count')
     ).outerjoin(Athlete, Club.id == Athlete.club_id).outerjoin(
         Participant, Athlete.id == Participant.athlete_id
+    ).join(Event, Participant.event_id == Event.id).filter(
+        *event_in_season(Event.begin_date)
     ).group_by(Club.id, Club.name, Club.country, Club.city).having(
         db.func.count(db.distinct(Athlete.id)) > 0
     ).order_by(
@@ -883,7 +922,7 @@ def api_free_participation_analysis():
     try:
         min_participations = request.args.get('min_participations', 1, type=int)
         max_participations = request.args.get('max_participations', 999, type=int)
-        season_filter = request.args.get('season', '')
+        season_filter = get_active_season(request.args.get('season'))
         query = db.session.query(
             Athlete.id,
             Athlete.first_name,
@@ -915,25 +954,7 @@ def api_free_participation_analysis():
             db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
             db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
         )
-        if season_filter:
-            if season_filter == 'current':
-                current_year = datetime.now().year
-                if datetime.now().month >= 7:
-                    start_date = datetime(current_year, 7, 1)
-                    end_date = datetime(current_year + 1, 6, 30)
-                else:
-                    start_date = datetime(current_year - 1, 7, 1)
-                    end_date = datetime(current_year, 6, 30)
-            else:
-                try:
-                    start_year = int(season_filter.split('/')[0])
-                    start_date = datetime(start_year, 7, 1)
-                    end_date = datetime(start_year + 1, 6, 30)
-                except (ValueError, IndexError):
-                    start_date = None
-                    end_date = None
-            if start_date and end_date:
-                query = query.filter(Event.begin_date >= start_date, Event.begin_date <= end_date)
+        query = query.filter(*event_in_season(Event.begin_date, season_filter))
         free_participants = query.order_by(
             Event.begin_date.desc(), Athlete.last_name, Athlete.first_name
         ).all()
@@ -1049,13 +1070,12 @@ def api_coaches():
         query = db.session.query(
             Coach.id,
             Coach.name,
-            db.func.count(CoachAssignment.id).label('athletes_count')
-        ).outerjoin(
-            CoachAssignment, 
-            db.and_(
-                Coach.id == CoachAssignment.coach_id,
-                CoachAssignment.is_current == True
-            )
+            db.func.count(db.distinct(CoachAssignment.athlete_id)).label('athletes_count')
+        ).join(
+            CoachAssignment,
+            Coach.id == CoachAssignment.coach_id,
+        ).join(Event, CoachAssignment.event_id == Event.id).filter(
+            *event_in_season(Event.begin_date)
         ).group_by(Coach.id, Coach.name)
         
         # Поиск с нормализацией
@@ -1068,9 +1088,9 @@ def api_coaches():
         if sort_by == 'name':
             order_by = Coach.name.asc() if sort_order == 'asc' else Coach.name.desc()
         elif sort_by == 'athletes':
-            order_by = db.func.count(CoachAssignment.id).asc() if sort_order == 'asc' else db.func.count(CoachAssignment.id).desc()
+            order_by = db.func.count(db.distinct(CoachAssignment.athlete_id)).asc() if sort_order == 'asc' else db.func.count(db.distinct(CoachAssignment.athlete_id)).desc()
         else:
-            order_by = db.func.count(CoachAssignment.id).desc()
+            order_by = db.func.count(db.distinct(CoachAssignment.athlete_id)).desc()
         
         query = query.order_by(order_by)
         coaches_data = query.all()

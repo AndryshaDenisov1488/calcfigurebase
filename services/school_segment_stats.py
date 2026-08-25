@@ -8,6 +8,7 @@ from datetime import date
 from sqlalchemy import case, func, literal
 
 from models import Athlete, Category, Club, Event, Participant
+from season_utils import event_in_season, get_active_season
 
 CLUB_NAME_MAFKK = 'ГБУ ДО Московская академия фигурного катания на коньках'
 CLUB_NAME_CSKA = 'СШОР ЦСКА им.С.А.Жука по фигурному катанию на коньках'
@@ -71,7 +72,8 @@ def count_distinct_athletes_filtered(session):
         .select_from(Participant)
         .join(Athlete, Participant.athlete_id == Athlete.id)
         .join(Category, Participant.category_id == Category.id)
-        .filter(_allowed_category_rank_clause())
+        .join(Event, Participant.event_id == Event.id)
+        .filter(_allowed_category_rank_clause(), *event_in_season(Event.begin_date))
         .scalar()
     )
     return int(n or 0)
@@ -170,6 +172,7 @@ def _report_meta(session, mafk_id, cska_id):
         'club_name_mafkk': CLUB_NAME_MAFKK,
         'club_name_cska': CLUB_NAME_CSKA,
         'generated_date': date.today().isoformat(),
+        'season': get_active_season(),
         'rank_filter_note': RANK_FILTER_NOTE,
     }
 
@@ -191,7 +194,7 @@ def build_event_rank_school_segment_report(session):
         .join(Athlete, Participant.athlete_id == Athlete.id)
         .join(Event, Participant.event_id == Event.id)
         .join(Category, Participant.category_id == Category.id)
-        .filter(_allowed_category_rank_clause())
+        .filter(_allowed_category_rank_clause(), *event_in_season(Event.begin_date))
         .group_by(rank_label, segment)
         .all()
     )
@@ -230,7 +233,7 @@ def build_per_event_school_segment_report(session):
         .join(Athlete, Participant.athlete_id == Athlete.id)
         .join(Event, Participant.event_id == Event.id)
         .join(Category, Participant.category_id == Category.id)
-        .filter(_allowed_category_rank_clause())
+        .filter(_allowed_category_rank_clause(), *event_in_season(Event.begin_date))
         .group_by(Event.id, segment)
         .all()
     )
@@ -298,7 +301,8 @@ def build_per_category_school_segment_report(session):
         .select_from(Participant)
         .join(Athlete, Participant.athlete_id == Athlete.id)
         .join(Category, Participant.category_id == Category.id)
-        .filter(_allowed_category_rank_clause())
+        .join(Event, Participant.event_id == Event.id)
+        .filter(_allowed_category_rank_clause(), *event_in_season(Event.begin_date))
         .group_by(cat_label, segment)
         .all()
     )
@@ -340,7 +344,7 @@ def build_per_event_category_school_segment_report(session):
         .join(Athlete, Participant.athlete_id == Athlete.id)
         .join(Event, Participant.event_id == Event.id)
         .join(Category, Participant.category_id == Category.id)
-        .filter(_allowed_category_rank_clause())
+        .filter(_allowed_category_rank_clause(), *event_in_season(Event.begin_date))
         .group_by(Event.id, cat_label, segment)
         .all()
     )

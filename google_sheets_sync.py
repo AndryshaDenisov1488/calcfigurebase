@@ -17,6 +17,7 @@ from event_rank_constants import (
     UNASSIGNED_EVENT_RANK,
 )
 from models import Athlete, Club, Category, Participant, Event
+from season_utils import event_in_season
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +208,9 @@ def get_event_rank_statistics_data():
     Возвращает два набора строк: без разрядов МС/КМС (как в аналитике) и со всеми разрядами.
     """
     with app.app_context():
-        events = db.session.query(Event.id, Event.event_rank).all()
+        events = db.session.query(Event.id, Event.event_rank).filter(
+            *event_in_season(Event.begin_date)
+        ).all()
 
         rank_to_event_ids = {}
         for event_id, event_rank in events:
@@ -238,7 +241,7 @@ def get_event_rank_statistics_data():
             Event, Participant.event_id == Event.id
         ).outerjoin(
             Category, Participant.category_id == Category.id
-        ).all()
+        ).filter(*event_in_season(Event.begin_date)).all()
 
         for (
             _event_id,
@@ -341,6 +344,7 @@ def get_athletes_data():
         ).outerjoin(
             Event, Participant.event_id == Event.id
         ).filter(
+            *event_in_season(Event.begin_date),
             db.or_(
                 Category.normalized_name.is_(None),
                 Category.normalized_name.notin_(excluded_ranks)
@@ -395,8 +399,11 @@ def get_athletes_data():
             # Всего участий (без МС и КМС)
             total_participations = db.session.query(Participant).join(
                 Category, Participant.category_id == Category.id
+            ).join(
+                Event, Participant.event_id == Event.id
             ).filter(
                 Participant.athlete_id == athlete_id,
+                *event_in_season(Event.begin_date),
                 db.or_(
                     Category.normalized_name.is_(None),
                     Category.normalized_name.notin_(excluded_ranks)
@@ -414,6 +421,7 @@ def get_athletes_data():
                 Participant.pct_ppname == 'БЕСП',
                 db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
                 db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
+                *event_in_season(Event.begin_date),
                 db.or_(
                     Category.normalized_name.is_(None),
                     Category.normalized_name.notin_(excluded_ranks)
@@ -495,7 +503,7 @@ def get_schools_analysis_data():
             Category, Participant.category_id == Category.id
         ).outerjoin(
             Event, Participant.event_id == Event.id
-        ).all()
+        ).filter(*event_in_season(Event.begin_date)).all()
         
         # Группируем по школам
         schools_dict = {}
@@ -555,7 +563,12 @@ def get_schools_analysis_data():
             club = Club.query.get(club_id)
             if club:
                 # Количество спортсменов
-                athlete_count = Athlete.query.filter_by(club_id=club_id).count()
+                athlete_count = db.session.query(db.func.count(db.distinct(Athlete.id))).join(
+                    Participant, Athlete.id == Participant.athlete_id
+                ).join(Event, Participant.event_id == Event.id).filter(
+                    Athlete.club_id == club_id,
+                    *event_in_season(Event.begin_date),
+                ).scalar() or 0
                 schools_dict[club_id]['total_athletes'] = athlete_count
                 
                 # Получаем всех спортсменов школы
@@ -563,8 +576,11 @@ def get_schools_analysis_data():
                 athlete_ids = [a.id for a in athletes]
                 
                 # Всего участий
-                total_participations = Participant.query.filter(
-                    Participant.athlete_id.in_(athlete_ids)
+                total_participations = Participant.query.join(
+                    Event, Participant.event_id == Event.id
+                ).filter(
+                    Participant.athlete_id.in_(athlete_ids),
+                    *event_in_season(Event.begin_date),
                 ).count()
                 schools_dict[club_id]['total_participations'] = total_participations
                 
@@ -576,7 +592,8 @@ def get_schools_analysis_data():
                 ).join(
                     Event, Participant.event_id == Event.id
                 ).filter(
-                    db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
+                    db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
+                    *event_in_season(Event.begin_date),
                 ).count()
                 schools_dict[club_id]['free_participations'] = free_participations
                 
@@ -586,7 +603,12 @@ def get_schools_analysis_data():
                 # Подсчитываем статистику для КАЖДОГО спортсмена
                 for athlete_id in schools_dict[club_id]['athletes'].keys():
                     # Всего участий спортсмена
-                    athlete_participations = Participant.query.filter_by(athlete_id=athlete_id).count()
+                    athlete_participations = Participant.query.join(
+                        Event, Participant.event_id == Event.id
+                    ).filter(
+                        Participant.athlete_id == athlete_id,
+                        *event_in_season(Event.begin_date),
+                    ).count()
                     schools_dict[club_id]['athletes'][athlete_id]['participations'] = athlete_participations
                     
                     # Бесплатных участий спортсмена
@@ -597,7 +619,8 @@ def get_schools_analysis_data():
                     ).filter(
                         Participant.pct_ppname == 'БЕСП',
                         db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
-                        db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
+                        db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
+                        *event_in_season(Event.begin_date),
                     ).count()
                     schools_dict[club_id]['athletes'][athlete_id]['free_participations'] = athlete_free
                     
@@ -637,7 +660,7 @@ def get_general_statistics_data():
         from models import Event, Category
         
         # Подсчитываем общее количество турниров
-        total_events = Event.query.count()
+        total_events = Event.query.filter(*event_in_season(Event.begin_date)).count()
         
         # Получаем всех участников с их категориями (исключая МС и КМС)
         # Используем ту же логику, что в get_events_report_data()
@@ -651,6 +674,7 @@ def get_general_statistics_data():
         ).join(
             Event, Participant.event_id == Event.id
         ).filter(
+            *event_in_season(Event.begin_date),
             db.or_(
                 Category.normalized_name.is_(None),
                 Category.normalized_name.notin_(excluded_ranks)
@@ -755,6 +779,7 @@ def get_participations_statistics_data():
         ).join(
             Event, Participant.event_id == Event.id
         ).filter(
+            *event_in_season(Event.begin_date),
             db.or_(
                 Category.normalized_name.is_(None),
                 Category.normalized_name.notin_(excluded_ranks)
@@ -858,6 +883,7 @@ def get_summary_statistics_data():
         ).join(
             Event, Participant.event_id == Event.id
         ).filter(
+            *event_in_season(Event.begin_date),
             db.or_(
                 Category.normalized_name.is_(None),
                 Category.normalized_name.notin_(excluded_ranks)
@@ -1032,6 +1058,7 @@ def get_weekly_unique_athletes_growth():
             .join(Event, Participant.event_id == Event.id)
             .filter(
                 Event.begin_date.isnot(None),
+                *event_in_season(Event.begin_date),
             )
             .all()
         )
@@ -1145,6 +1172,7 @@ def get_events_first_timers_report_data(rank_contains: str | None = None, free_o
         ).join(
             Event, Participant.event_id == Event.id
         ).filter(
+            *event_in_season(Event.begin_date),
             db.or_(
                 Category.normalized_name.is_(None),
                 Category.normalized_name.notin_(excluded_ranks)
@@ -1177,6 +1205,7 @@ def get_events_first_timers_report_data(rank_contains: str | None = None, free_o
         ).join(
             Event, Participant.event_id == Event.id
         ).filter(
+            *event_in_season(Event.begin_date),
             db.or_(
                 Category.normalized_name.is_(None),
                 Category.normalized_name.notin_(excluded_ranks)
@@ -1445,6 +1474,7 @@ def get_free_participation_exceedance_data():
             Participant.pct_ppname == 'БЕСП',
             db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
             db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
+            *event_in_season(Event.begin_date),
             db.or_(
                 Category.normalized_name.is_(None),
                 Category.normalized_name.notin_(FREE_PARTICIPATION_EXCLUDED_RANKS)
@@ -4195,4 +4225,3 @@ if __name__ == '__main__':
         print(f"🔗 URL: {result['url']}")
     else:
         print(f"❌ {result['message']}")
-

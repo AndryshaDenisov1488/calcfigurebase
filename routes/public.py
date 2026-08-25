@@ -8,7 +8,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 
 from extensions import db
 from models import Event, Category, Athlete, Participant, Club, Coach, CoachAssignment, SiteReaderLoginLog
-from season_utils import get_all_seasons_from_events
+from season_utils import event_in_season, get_active_season, normalize_season
 from services.rank_service import build_rank_groups, build_best_results
 from utils.access_control import SESSION_SITE_READER_KEY, safe_same_site_redirect_path
 from utils.client_ip import get_client_ip
@@ -16,6 +16,17 @@ from utils.client_ip import get_client_ip
 logger = logging.getLogger(__name__)
 
 public_bp = Blueprint('public', __name__)
+
+
+@public_bp.route('/season', methods=['POST'])
+def set_season():
+    """Меняет активный сезон для всех страниц и API текущей сессии."""
+    season = normalize_season(request.form.get('season'))
+    if season:
+        get_active_season(season)
+        flash(f'Выбран сезон {season}. Все показатели пересчитаны в его рамках.', 'info')
+    next_url = safe_same_site_redirect_path(request.form.get('next')) or url_for('public.index')
+    return redirect(next_url)
 
 
 def _normalize_search_text(value):
@@ -28,7 +39,7 @@ def _normalize_search_text(value):
 @public_bp.route('/')
 def index():
     """Главная страница"""
-    events = Event.query.order_by(Event.begin_date.desc()).limit(10).all()
+    events = Event.query.filter(*event_in_season(Event.begin_date)).order_by(Event.begin_date.desc()).limit(10).all()
     return render_template('index.html', events=events)
 
 @public_bp.route('/athletes')
@@ -37,7 +48,9 @@ def athletes():
     search = request.args.get('search', '').strip()
     available_ranks = db.session.query(Category.normalized_name).distinct().filter(
         Category.normalized_name.isnot(None),
-        ~Category.normalized_name.like('Другой%')
+        ~Category.normalized_name.like('Другой%'),
+        Category.event_id == Event.id,
+        *event_in_season(Event.begin_date),
     ).order_by(Category.normalized_name).all()
     available_ranks = [rank[0] for rank in available_ranks]
     return render_template('athletes.html', search=search, available_ranks=available_ranks)
@@ -51,7 +64,8 @@ def athlete_detail(athlete_id):
     ).join(
         Event, Category.event_id == Event.id
     ).filter(
-        Participant.athlete_id == athlete_id
+        Participant.athlete_id == athlete_id,
+        *event_in_season(Event.begin_date),
     ).order_by(Event.begin_date.desc()).all()
     
     # Получаем тренера из последнего участия (или любого, где есть тренер)
@@ -96,7 +110,7 @@ def events():
     if sort_order not in ('asc', 'desc'):
         sort_order = 'desc'
 
-    query = Event.query
+    query = Event.query.filter(*event_in_season(Event.begin_date))
 
     if rank_filter:
         query = query.join(Category, Event.id == Category.event_id).filter(
@@ -146,14 +160,17 @@ def events():
                     filtered_events.append(event)
             events_list = filtered_events
 
-    seasons = get_all_seasons_from_events(events_list)
-    all_ranks = db.session.query(Category.normalized_name).distinct().filter(
+    all_ranks = db.session.query(Category.normalized_name).join(Event, Category.event_id == Event.id).distinct().filter(
         Category.normalized_name.isnot(None),
         Category.normalized_name != '',
-        ~Category.normalized_name.like('Другой%')
+        ~Category.normalized_name.like('Другой%'),
+        *event_in_season(Event.begin_date),
     ).order_by(Category.normalized_name.asc()).all()
     available_ranks = [rank[0] for rank in all_ranks]
-    all_events_with_dates = Event.query.filter(Event.begin_date.isnot(None)).all()
+    all_events_with_dates = Event.query.filter(
+        Event.begin_date.isnot(None),
+        *event_in_season(Event.begin_date),
+    ).all()
     available_months = sorted(set(
         event.begin_date.strftime('%Y-%m')
         for event in all_events_with_dates
@@ -170,7 +187,6 @@ def events():
         'events.html',
         events=events_list,
         search=search,
-        seasons=seasons,
         current_sort_by=sort_by,
         current_sort_order=sort_order,
         current_rank_filter=rank_filter,
@@ -184,8 +200,8 @@ def events():
 def categories():
     """Страница с группировкой по разрядам и спортсменам"""
     event_id = request.args.get('event', type=int)
-    events_list = Event.query.order_by(Event.begin_date.desc()).all()
-    rank_groups = build_rank_groups(event_id=event_id)
+    events_list = Event.query.filter(*event_in_season(Event.begin_date)).order_by(Event.begin_date.desc()).all()
+    rank_groups = build_rank_groups(event_id=event_id, season=get_active_season())
     selected_event_obj = next((event for event in events_list if event.id == event_id), None)
     unique_athlete_ids = set()
     for group in rank_groups:
@@ -214,7 +230,7 @@ def categories():
 def best_results():
     """Страница лучших результатов по разрядам"""
     rank_name = request.args.get('rank', '').strip()
-    rank_groups = build_best_results(rank_name=rank_name or None)
+    rank_groups = build_best_results(rank_name=rank_name or None, season=get_active_season())
     selected_rank_obj = next((rank for rank in rank_groups if rank['display_name'] == rank_name), None)
     rank_summary = {
         'total_ranks': len(rank_groups),
@@ -462,11 +478,18 @@ def coach_detail(coach_id):
     """Детальная страница тренера"""
     coach = Coach.query.get_or_404(coach_id)
     
-    # Получаем текущих спортсменов тренера (группированные по разрядам)
-    current_assignments = CoachAssignment.query.filter_by(
+    # Для выбранного сезона берём последнее назначение каждого спортсмена этому тренеру.
+    season_assignments = CoachAssignment.query.filter_by(
         coach_id=coach_id,
-        is_current=True
-    ).all()
+    ).join(Event, CoachAssignment.event_id == Event.id).filter(
+        *event_in_season(Event.begin_date)
+    ).order_by(Event.begin_date.desc(), CoachAssignment.id.desc()).all()
+    current_assignments = []
+    seen_athletes = set()
+    for assignment in season_assignments:
+        if assignment.athlete_id not in seen_athletes:
+            current_assignments.append(assignment)
+            seen_athletes.add(assignment.athlete_id)
     
     # Группируем спортсменов по разрядам
     athletes_by_rank = {}
@@ -475,8 +498,10 @@ def coach_detail(coach_id):
         # Получаем разряд спортсмена из последнего участия
         last_participation = Participant.query.filter_by(
             athlete_id=athlete.id
-        ).join(Category).order_by(
-            Participant.id.desc()
+        ).join(Category).join(Event, Participant.event_id == Event.id).filter(
+            *event_in_season(Event.begin_date)
+        ).order_by(
+            Event.begin_date.desc(), Participant.id.desc()
         ).first()
         
         rank = 'Не указан'
@@ -493,9 +518,7 @@ def coach_detail(coach_id):
         })
     
     # Получаем историю переходов
-    all_assignments = CoachAssignment.query.filter_by(
-        coach_id=coach_id
-    ).order_by(CoachAssignment.start_date.desc()).all()
+    all_assignments = season_assignments
     
     # Статистика
     total_athletes = len(current_assignments)
@@ -513,7 +536,15 @@ def coach_detail(coach_id):
 @public_bp.route('/clubs')
 def clubs():
     """Страница со списком клубов"""
-    clubs_list = Club.query.order_by(Club.name.asc()).all()
+    clubs_list = Club.query.join(
+        Athlete, Club.id == Athlete.club_id
+    ).join(
+        Participant, Athlete.id == Participant.athlete_id
+    ).join(
+        Event, Participant.event_id == Event.id
+    ).filter(
+        *event_in_season(Event.begin_date)
+    ).distinct().order_by(Club.name.asc()).all()
     return render_template('clubs.html', clubs=clubs_list)
 
 @public_bp.route('/club/<int:club_id>')
@@ -525,7 +556,8 @@ def club_detail(club_id):
     ).join(Participant, Athlete.id == Participant.athlete_id).join(
         Category, Participant.category_id == Category.id
     ).join(Event, Category.event_id == Event.id).filter(
-        Athlete.club_id == club_id
+        Athlete.club_id == club_id,
+        *event_in_season(Event.begin_date),
     ).order_by(Event.begin_date.desc(), Athlete.last_name, Athlete.first_name).all()
     athletes_data = {}
     for athlete, event, category, participant in athletes_with_participations:
