@@ -170,11 +170,19 @@ def _write_export_state(app_obj, state):
 def _start_google_export_background(app_obj):
     """Запускает экспорт в отдельном потоке и обновляет состояние задачи."""
     from google_sheets_sync import export_to_google_sheets
+    from rank_scope import get_include_kms, override_include_kms
+    from season_utils import get_active_season, override_active_season
+
+    # Фоновый поток не имеет request/session: без снимка сезон станет «текущим
+    # календарным», а КМС выключится, после чего export очистит Google-таблицу.
+    export_season = get_active_season()
+    export_include_kms = get_include_kms()
 
     def _worker():
         with app_obj.app_context():
             try:
-                result = export_to_google_sheets()
+                with override_active_season(export_season), override_include_kms(export_include_kms):
+                    result = export_to_google_sheets()
                 with _export_job_lock:
                     state = _read_export_state(app_obj)
                     state['running'] = False

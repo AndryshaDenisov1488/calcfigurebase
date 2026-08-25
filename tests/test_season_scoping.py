@@ -155,6 +155,62 @@ class SeasonScopingTestCase(unittest.TestCase):
         self.assertFalse(without_kms_again['include_kms'])
         self.assertEqual(without_kms_again['scope']['total_athletes'], 1)
 
+    def test_forced_season_and_kms_apply_without_request_context(self):
+        from flask import has_request_context
+        from rank_scope import get_include_kms, override_include_kms
+        from season_utils import event_in_season, override_active_season
+
+        self.assertFalse(has_request_context())
+        self.assertEqual(Event.query.filter(*event_in_season(Event.begin_date)).count(), 1)
+        self.assertEqual(
+            Event.query.filter(*event_in_season(Event.begin_date)).one().name,
+            'Новый сезон',
+        )
+        self.assertFalse(get_include_kms())
+
+        with override_active_season('2025/26'), override_include_kms(True):
+            self.assertEqual(Event.query.filter(*event_in_season(Event.begin_date)).count(), 1)
+            self.assertEqual(
+                Event.query.filter(*event_in_season(Event.begin_date)).one().name,
+                'Прошлый сезон',
+            )
+            self.assertTrue(get_include_kms())
+
+        self.assertEqual(
+            Event.query.filter(*event_in_season(Event.begin_date)).one().name,
+            'Новый сезон',
+        )
+        self.assertFalse(get_include_kms())
+
+    def test_first_timers_keep_career_history_across_seasons(self):
+        current_event = Event.query.filter_by(name='Новый сезон').one()
+        old_athlete = Athlete.query.filter_by(first_name='Старый').one()
+        db.session.add(Participant(
+            event=current_event,
+            category=Category(
+                name='2 спортивный',
+                normalized_name='2 Спортивный, Девочки',
+                event=current_event,
+            ),
+            athlete=old_athlete,
+            total_place=2,
+            total_points=80,
+        ))
+        db.session.commit()
+
+        from google_sheets_sync import get_events_first_timers_report_data
+        from season_utils import override_active_season
+
+        with override_active_season('2026/27'):
+            report = get_events_first_timers_report_data()
+
+        self.assertEqual(len(report['events']), 1)
+        self.assertEqual(report['events'][0]['event_name'], 'Новый сезон')
+        self.assertEqual(report['events'][0]['first_timers'], 1)
+        self.assertEqual(report['events'][0]['repeaters'], 1)
+        self.assertEqual(report['totals']['unique_first_timers'], 1)
+        self.assertEqual(report['totals']['total_repeaters'], 1)
+
     def test_season_scoped_pages_and_reports_render(self):
         self._authorize()
         urls = (
