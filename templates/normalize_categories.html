@@ -250,7 +250,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const tbody = document.getElementById('birthConflictModalBody');
         tbody.innerHTML = conflicts.map(function(c, idx) {
             return (
-                '<tr data-bc-index="' + idx + '" data-person-id="' + escapeAttr(c.person_id) + '" data-athlete-id="' + c.athlete_id + '">' +
+                '<tr data-bc-index="' + idx + '" data-source-key="' + escapeAttr(c.source_key || '') + '" data-person-id="' + escapeAttr(c.person_id) + '" data-athlete-id="' + c.athlete_id + '">' +
                 '<td>' + escapeAttr(c.fio) + '</td>' +
                 '<td><code>' + escapeAttr(c.person_id) + '</code></td>' +
                 '<td><a href="' + escapeAttr(c.profile_url) + '" target="_blank" rel="noopener">#' + c.athlete_id + '</a></td>' +
@@ -278,6 +278,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const sel = row.querySelector('input[name="bc_choice_' + idx + '"]:checked');
             if (!sel) return;
             resolutions.push({
+                source_key: row.getAttribute('data-source-key'),
                 person_id: row.getAttribute('data-person-id'),
                 athlete_id: parseInt(row.getAttribute('data-athlete-id'), 10),
                 use: sel.value
