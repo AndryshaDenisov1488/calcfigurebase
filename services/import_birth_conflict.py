@@ -134,6 +134,13 @@ def apply_birth_conflict_resolutions_json(resolutions: list[dict], parsers: list
 
     registry = AthleteRegistry()
 
+    def _pin_resolved_athlete(person_id: str, athlete_id: int) -> None:
+        """Pin person→athlete so import reuses the resolved card (not lookup_key)."""
+        for parser in parsers:
+            for person_data in parser.persons:
+                if str(person_data.get('id')) == person_id:
+                    person_data['_resolved_athlete_id'] = athlete_id
+
     for r in xml_first:
         aid = int(r['athlete_id'])
         person_id = str(r['person_id'])
@@ -154,6 +161,7 @@ def apply_birth_conflict_resolutions_json(resolutions: list[dict], parsers: list
             'last_name': athlete.last_name,
             'birth_date': xml_date,
         })
+        _pin_resolved_athlete(person_id, aid)
 
     db.session.flush()
 
@@ -168,3 +176,4 @@ def apply_birth_conflict_resolutions_json(resolutions: list[dict], parsers: list
             person_data = next((p for p in parser.persons if str(p['id']) == person_id), None)
             if person_data:
                 person_data['birth_date'] = db_d
+        _pin_resolved_athlete(person_id, aid)

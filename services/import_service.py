@@ -185,7 +185,12 @@ def save_to_database(parser):
             'country': person_data.get('nationality'),
             'club_id': club_id,
         }
-        athlete = athlete_registry.get_or_create(athlete_payload)
+        # Birth-conflict UI matches on display FIO; registry keys on first+last.
+        # Prefer the athlete_id pinned by apply_birth_conflict_resolutions_json.
+        athlete = athlete_registry.get_or_create(
+            athlete_payload,
+            preferred_athlete_id=person_data.get('_resolved_athlete_id'),
+        )
         db.session.flush()
 
         category_id = category_mapping.get(participant_data.get('category_id'))

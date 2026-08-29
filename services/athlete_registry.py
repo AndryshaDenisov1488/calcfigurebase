@@ -22,15 +22,23 @@ class AthleteRegistry:
             return True
         return len(str(new_value)) > len(str(old_value))
 
-    def get_or_create(self, person_data):
-        """Finds or creates an athlete with merge protection."""
+    def get_or_create(self, person_data, preferred_athlete_id=None):
+        """Finds or creates an athlete with merge protection.
+
+        preferred_athlete_id: when birth-conflict UI resolved this person to an
+        existing card, reuse that athlete even if first/last spelling differs
+        from the registry lookup_key (display FIO match ≠ structured names).
+        """
         if not person_data:
             return None
 
+        athlete = None
+        if preferred_athlete_id is not None:
+            athlete = Athlete.query.get(preferred_athlete_id)
+
         lookup_key = self._make_lookup_key(person_data)
 
-        athlete = None
-        if lookup_key:
+        if not athlete and lookup_key:
             athlete = Athlete.query.filter_by(lookup_key=lookup_key).first()
 
         if not athlete:
