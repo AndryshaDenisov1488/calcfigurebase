@@ -23,8 +23,11 @@ def _parse_score(raw_value):
     except (ValueError, TypeError):
         return None
 
-def save_to_database(parser):
-    """Сохраняет данные из парсера в базу данных."""
+def save_to_database(parser, commit=True):
+    """Сохраняет данные из парсера в базу данных.
+
+    commit=False lets callers import several parsers in one transaction.
+    """
     event_data = parser.events[0] if parser.events else {}
     event_begin_date = parse_date(event_data.get('begin_date'))
     event_name = event_data.get('name')
@@ -381,7 +384,10 @@ def save_to_database(parser):
                     db.session.add(component)
 
     try:
-        db.session.commit()
+        if commit:
+            db.session.commit()
+        else:
+            db.session.flush()
     except Exception:
         db.session.rollback()
         raise
