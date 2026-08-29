@@ -52,8 +52,9 @@ def validate_security_at_startup(app):
 
     if keys and not pwd:
         logger.warning(
-            'SITE_READ_PASSWORD не задан: страницы с запросами к /api/* из браузера '
-            'не получат данные без входа администратора.'
+            'SITE_READ_PASSWORD не задан: публичные HTML-страницы с данными будут закрыты '
+            'для гостей, вход через «Доступ судьи» недоступен; используйте вход администратора '
+            'или задайте SITE_READ_PASSWORD для браузерного просмотра.'
         )
     elif pwd and not keys:
         logger.info(
