@@ -6,11 +6,9 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import func
-
 from models import Athlete
 from utils.date_parsing import parse_date
-from utils.normalizers import normalize_string, remove_duplication
+from utils.normalizers import normalize_string, remove_duplication, fold_yo
 
 
 def _person_display_fio(person_data: dict) -> str:
@@ -45,7 +43,9 @@ def _athlete_display_fio(a: Athlete) -> str:
 
 
 def _fio_key(display_fio: str) -> str:
-    return display_fio.strip().lower()
+    # ё/е must match: «Алёна» and «Алена» are the same identity for conflict UI.
+    # casefold (not lower) + fold_yo; do not use SQL LOWER (SQLite is ASCII-only).
+    return fold_yo(display_fio.strip().casefold())
 
 
 def _format_dmycolon(d: date | None) -> str | None:
@@ -64,6 +64,22 @@ def _coerce_xml_date(raw) -> date | None:
     return None
 
 
+def _athletes_by_display_fio() -> dict[str, list[Athlete]]:
+    """Index DB athletes by display-FIO key (Python-side, ё-folded).
+
+    Must not use SQL LOWER()/NOCASE for Cyrillic: SQLite's lower() is ASCII-only,
+    so Title-case surnames never match a Python-lowercased filter and conflict
+    detection silently no-ops. Indexing here also folds ё→е so Алёна/Алена collide.
+    """
+    by_fio: dict[str, list[Athlete]] = {}
+    for athlete in Athlete.query.filter(Athlete.birth_date.isnot(None)).all():
+        key = _fio_key(_athlete_display_fio(athlete))
+        if not key:
+            continue
+        by_fio.setdefault(key, []).append(athlete)
+    return by_fio
+
+
 def find_birth_date_conflicts(parser) -> list[dict]:
     """
     Ищет участников XML: то же отображаемое ФИО, что у спортсмена в БД,
@@ -71,6 +87,7 @@ def find_birth_date_conflicts(parser) -> list[dict]:
     """
     conflicts: list[dict] = []
     seen_pairs: set[tuple[str, int]] = set()
+    athletes_by_fio = _athletes_by_display_fio()
 
     for participant_data in parser.participants:
         person_id = participant_data.get('person_id')
@@ -86,17 +103,9 @@ def find_birth_date_conflicts(parser) -> list[dict]:
         if not display.strip():
             continue
         pkey = _fio_key(display)
-
-        last_raw = person_data.get('last_name_cyrillic') or person_data.get('last_name')
-        last_clean = normalize_string(remove_duplication(last_raw or '')).strip()
-        if not last_clean:
-            continue
-        ln = last_clean.lower()
-        candidates = Athlete.query.filter(func.lower(func.trim(Athlete.last_name)) == ln).all()
+        candidates = athletes_by_fio.get(pkey) or []
 
         for a in candidates:
-            if _fio_key(_athlete_display_fio(a)) != pkey:
-                continue
             adb = a.birth_date
             if not adb or adb == xml_date:
                 continue

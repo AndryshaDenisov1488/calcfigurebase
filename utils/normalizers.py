@@ -16,6 +16,20 @@ def normalize_string(value):
     return value.strip()
 
 
+def fold_yo(value):
+    """Treat ё/Ё as е/Е for identity matching (lookup keys, FIO compare)."""
+    if value is None:
+        return ''
+    if not isinstance(value, str):
+        value = str(value)
+    return value.replace('ё', 'е').replace('Ё', 'Е')
+
+
+def normalize_identity_name(value):
+    """Normalize a person/club name token for dedup keys: trim, casefold, ё→е."""
+    return fold_yo(normalize_string(value).casefold())
+
+
 def remove_duplication(text):
     """Удаляет дублирование слов в тексте (например, 'Софья Софья' -> 'Софья')."""
     if not text or not isinstance(text, str):
