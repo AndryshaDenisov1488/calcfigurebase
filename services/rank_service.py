@@ -324,6 +324,7 @@ def build_rank_groups(
             db.case((
                 db.and_(
                     Participant.pct_ppname == 'БЕСП',
+                    db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
                     db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
                 ), 1
             ), else_=0)
@@ -332,6 +333,7 @@ def build_rank_groups(
             db.case((
                 db.and_(
                     Participant.pct_ppname == 'БЕСП',
+                    db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
                     db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
                 ), 1
             ), else_=0)
