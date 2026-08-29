@@ -144,11 +144,18 @@ class ClubRegistry:
         return club
     
     def merge_all_duplicates(self):
-        """Объединяет все дубликаты клубов в базе данных (вызывается после регистрации всех клубов)"""
+        """Объединяет все дубликаты клубов в базе данных (вызывается после регистрации всех клубов).
+
+        Returns:
+            tuple[int, dict[int, int]]: (число удалённых дубликатов, {removed_id: keep_id}).
+            Caller must remap any xml→db club_id maps with the returned dict — otherwise
+            athletes can be saved with club_id of a deleted Club.
+        """
         all_clubs = Club.query.all()
         processed_clubs = set()
         similarity_threshold = 0.85  # Порог схожести 85%
         merged_count = 0
+        id_remap = {}
         
         for i, club1 in enumerate(all_clubs):
             if not club1.name or club1.id in processed_clubs:
@@ -191,12 +198,16 @@ class ClubRegistry:
                         for cached_name, cached_club in list(self._cache_by_name.items()):
                             if cached_club.id == remove_club.id:
                                 self._cache_by_name[cached_name] = keep_club
+
+                        removed_id = remove_club.id
+                        keep_id = keep_club.id
                         
                         # Удаляем дубликат
                         db.session.delete(remove_club)
                         db.session.flush()
                         
                         merged_count += 1
+                        id_remap[removed_id] = keep_id
                         
                         logger.info(
                             f"Автоматическое объединение дубликатов клубов: "
@@ -214,7 +225,20 @@ class ClubRegistry:
         if merged_count > 0:
             logger.info(f"Автоматически объединено {merged_count} дубликатов клубов")
         
-        return merged_count
+        return merged_count, id_remap
+
+    @staticmethod
+    def apply_club_id_remap(club_mapping, id_remap):
+        """Переписывает xml_id→db_id после merge_all_duplicates (deleted → keep)."""
+        if not club_mapping or not id_remap:
+            return club_mapping
+        for xml_id, club_id in list(club_mapping.items()):
+            seen = set()
+            while club_id in id_remap and club_id not in seen:
+                seen.add(club_id)
+                club_id = id_remap[club_id]
+            club_mapping[xml_id] = club_id
+        return club_mapping
     
     def _merge_club_group(self, clubs):
         """Объединяет группу клубов в один - выбирает клуб для сохранения"""
