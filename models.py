@@ -103,6 +103,21 @@ class Athlete(db.Model):
     gender = db.Column(db.String(1), index=True)
     country = db.Column(db.String(3), index=True)
     club_id = db.Column(db.Integer, db.ForeignKey('club.id'), index=True)
+
+    # Для пары/танцевального дуэта Athlete остаётся одной записью, связанной
+    # с результатом, но данные обоих участников сохраняются отдельно.
+    primary_external_id = db.Column(db.String(50), index=True)
+    primary_first_name = db.Column(db.String(100))
+    primary_last_name = db.Column(db.String(100))
+    primary_patronymic = db.Column(db.String(100))
+    primary_birth_date = db.Column(db.Date, index=True)
+    primary_gender = db.Column(db.String(1))
+    partner_external_id = db.Column(db.String(50), index=True)
+    partner_first_name = db.Column(db.String(100))
+    partner_last_name = db.Column(db.String(100))
+    partner_patronymic = db.Column(db.String(100))
+    partner_birth_date = db.Column(db.Date, index=True)
+    partner_gender = db.Column(db.String(1))
     
     participants = db.relationship('Participant', backref='athlete', lazy=True, cascade='all, delete-orphan')
     
@@ -135,6 +150,35 @@ class Athlete(db.Model):
             return clean_last
         first_initial = clean_first[0] + '.' if clean_first else ''
         return f"{clean_last} {first_initial}".strip()
+
+    @property
+    def is_pair(self):
+        """Whether this athlete row represents a pair or dance duet."""
+        return self.gender == 'P' or bool(self.partner_first_name or self.partner_last_name)
+
+    @staticmethod
+    def _member_full_name(first_name, patronymic, last_name):
+        return ' '.join(
+            str(value).strip()
+            for value in (last_name, first_name, patronymic)
+            if value and str(value).strip()
+        )
+
+    @property
+    def primary_member_full_name(self):
+        return self._member_full_name(
+            self.primary_first_name,
+            self.primary_patronymic,
+            self.primary_last_name,
+        )
+
+    @property
+    def partner_member_full_name(self):
+        return self._member_full_name(
+            self.partner_first_name,
+            self.partner_patronymic,
+            self.partner_last_name,
+        )
     
     __table_args__ = (
         db.Index('idx_athlete_name_birth', 'first_name', 'last_name', 'birth_date'),

@@ -809,6 +809,21 @@ def api_athletes():
             'full_name': athlete.full_name or '',  # Использует full_name_xml (PCT_PLNAME) если есть, иначе составное без дублирования
             'short_name': athlete.short_name or '',  # Использует очищенные имена без дублирования
             'birth_date': athlete.birth_date.strftime('%d.%m.%Y') if athlete.birth_date else None,
+            'is_pair': athlete.is_pair,
+            'pair_members': [
+                {
+                    'external_id': athlete.primary_external_id,
+                    'full_name': athlete.primary_member_full_name,
+                    'birth_date': athlete.primary_birth_date.strftime('%d.%m.%Y') if athlete.primary_birth_date else None,
+                    'gender': athlete.primary_gender,
+                },
+                {
+                    'external_id': athlete.partner_external_id,
+                    'full_name': athlete.partner_member_full_name,
+                    'birth_date': athlete.partner_birth_date.strftime('%d.%m.%Y') if athlete.partner_birth_date else None,
+                    'gender': athlete.partner_gender,
+                },
+            ] if athlete.is_pair else [],
             'gender': athlete.gender,
             'category_name': stats['latest_category'],
             'club_name': club.name if club else None,
@@ -1470,7 +1485,18 @@ def api_participant_performance_details(participant_id):
             'athlete': {
                 'id': athlete.id if athlete else None,
                 'full_name': athlete.full_name if athlete else 'Неизвестный спортсмен',
-                'club_name': club.name if club else None
+                'club_name': club.name if club else None,
+                'is_pair': athlete.is_pair if athlete else False,
+                'pair_members': [
+                    {
+                        'full_name': athlete.primary_member_full_name,
+                        'birth_date': athlete.primary_birth_date.strftime('%d.%m.%Y') if athlete.primary_birth_date else None,
+                    },
+                    {
+                        'full_name': athlete.partner_member_full_name,
+                        'birth_date': athlete.partner_birth_date.strftime('%d.%m.%Y') if athlete.partner_birth_date else None,
+                    },
+                ] if athlete and athlete.is_pair else [],
             },
             'performances': performances_data
         }

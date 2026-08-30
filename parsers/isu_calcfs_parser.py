@@ -342,6 +342,36 @@ class ISUCalcFSParser:
                 person_data['full_name'] = normalize_string(person.get('PCT_PLNAME'))  # Имя для протоколов - приоритетное
                 person_data['short_name'] = normalize_string(person.get('PCT_PSNAME'))
             elif person_type == 'COU':
+                members = person.findall('./Team_Members/Person')
+                primary_member = members[0] if members else None
+                partner_member = members[1] if len(members) > 1 else None
+
+                primary_first_name = self._person_attribute(
+                    primary_member, 'PCT_GNAME', fallback=person.get('PCT_GNAME')
+                )
+                primary_last_name = self._person_attribute(
+                    primary_member,
+                    'PCT_FNAMEC',
+                    'PCT_FNAME',
+                    fallback=person.get('PCT_FNAMEC') or person.get('PCT_FNAME'),
+                )
+                primary_full_name = self._person_attribute(
+                    primary_member, 'PCT_PLNAME', 'PCT_CNAME'
+                )
+
+                partner_first_name = self._person_attribute(
+                    partner_member, 'PCT_GNAME', fallback=person.get('PCT_PGNAME')
+                )
+                partner_last_name = self._person_attribute(
+                    partner_member,
+                    'PCT_FNAMEC',
+                    'PCT_FNAME',
+                    fallback=person.get('PCT_PFNAMC') or person.get('PCT_PFNAME'),
+                )
+                partner_full_name = self._person_attribute(
+                    partner_member, 'PCT_PLNAME', 'PCT_CNAME'
+                )
+
                 person_data['first_name'] = normalize_string(person.get('PCT_CNAME'))
                 person_data['first_name_cyrillic'] = normalize_string(person.get('PCT_CNAME'))
                 person_data['last_name'] = normalize_string(person.get('PCT_PSNAME'))
@@ -351,8 +381,65 @@ class ISUCalcFSParser:
                 person_data['patronymic'] = None
                 person_data['patronymic_cyrillic'] = None
                 person_data['gender'] = 'P'
+                person_data.update({
+                    'primary_external_id': self._person_attribute(
+                        primary_member, 'PCT_EXTDT', fallback=person.get('PCT_PCTID')
+                    ),
+                    'primary_first_name': primary_first_name,
+                    'primary_last_name': primary_last_name,
+                    'primary_patronymic': self._extract_patronymic(
+                        primary_full_name, primary_first_name, primary_last_name
+                    ),
+                    'primary_birth_date': self._parse_date(
+                        self._person_attribute(
+                            primary_member, 'PCT_BDAY', fallback=person.get('PCT_BDAY')
+                        )
+                    ),
+                    'primary_gender': self._person_attribute(
+                        primary_member, 'PCT_GENDER', fallback='F'
+                    ),
+                    'partner_external_id': self._person_attribute(
+                        partner_member, 'PCT_EXTDT', fallback=person.get('PCT_PPCTID')
+                    ),
+                    'partner_first_name': partner_first_name,
+                    'partner_last_name': partner_last_name,
+                    'partner_patronymic': self._extract_patronymic(
+                        partner_full_name, partner_first_name, partner_last_name
+                    ),
+                    'partner_birth_date': self._parse_date(
+                        self._person_attribute(
+                            partner_member, 'PCT_BDAY', fallback=person.get('PCT_PBDAY')
+                        )
+                    ),
+                    'partner_gender': self._person_attribute(
+                        partner_member, 'PCT_GENDER', fallback='M'
+                    ),
+                })
 
             self.persons.append(person_data)
+
+    @staticmethod
+    def _person_attribute(person, *names, fallback=None):
+        """Read the first non-empty XML attribute from a nested team member."""
+        if person is not None:
+            for name in names:
+                value = normalize_string(person.get(name))
+                if value:
+                    return value
+        return normalize_string(fallback)
+
+    @staticmethod
+    def _extract_patronymic(full_name, first_name, last_name):
+        """Extract middle name from the protocol full name without assuming word order."""
+        full_words = normalize_string(full_name).split()
+        first_words = {word.casefold() for word in normalize_string(first_name).split()}
+        last_words = {word.casefold() for word in normalize_string(last_name).split()}
+        middle = [
+            word
+            for word in full_words
+            if word.casefold() not in first_words and word.casefold() not in last_words
+        ]
+        return normalize_string(' '.join(middle)) or None
 
     def _parse_clubs(self, root):
         """Парсинг клубов (без дублирования)"""

@@ -7,6 +7,21 @@ from utils.normalizers import normalize_string
 class AthleteRegistry:
     """Registry for athletes with safe merge logic."""
 
+    PAIR_DETAIL_FIELDS = (
+        'primary_external_id',
+        'primary_first_name',
+        'primary_last_name',
+        'primary_patronymic',
+        'primary_birth_date',
+        'primary_gender',
+        'partner_external_id',
+        'partner_first_name',
+        'partner_last_name',
+        'partner_patronymic',
+        'partner_birth_date',
+        'partner_gender',
+    )
+
     def _make_lookup_key(self, person_data):
         first_name = normalize_string(person_data.get('first_name', '')).lower()
         last_name = normalize_string(person_data.get('last_name', '')).lower()
@@ -45,6 +60,7 @@ class AthleteRegistry:
                 club_id=person_data.get('club_id'),
                 lookup_key=lookup_key,
             )
+            self._merge_pair_details(athlete, person_data)
             db.session.add(athlete)
             return athlete
 
@@ -68,4 +84,16 @@ class AthleteRegistry:
         if not athlete.lookup_key and lookup_key:
             athlete.lookup_key = lookup_key
 
+        self._merge_pair_details(athlete, person_data)
+
         return athlete
+
+    def _merge_pair_details(self, athlete, person_data):
+        """Fill pair member fields and refresh changed non-empty XML values."""
+        for field in self.PAIR_DETAIL_FIELDS:
+            value = person_data.get(field)
+            if value in (None, ''):
+                continue
+            if field.endswith(('_first_name', '_last_name', '_patronymic', '_external_id')):
+                value = normalize_string(value) or None
+            setattr(athlete, field, value)

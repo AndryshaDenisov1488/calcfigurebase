@@ -421,7 +421,12 @@ function updateTable(athletes) {
                 ${athlete.has_withdrawn ? '<br><small class="badge bg-warning text-dark"><i class="fas fa-ban"></i> На одном из турниров была снята</small>' : ''}
             </td>
             <td>
-                ${athlete.birth_date || '<span class="text-muted">Не указана</span>'}
+                ${athlete.is_pair && athlete.pair_members?.length
+                    ? athlete.pair_members
+                        .filter(member => member.full_name || member.birth_date)
+                        .map(member => `<div><small>${member.full_name || 'Партнёр'}: <strong>${member.birth_date || 'не указана'}</strong></small></div>`)
+                        .join('')
+                    : athlete.birth_date || '<span class="text-muted">Не указана</span>'}
             </td>
             <td>
                 ${athlete.gender === 'F' ? '<span class="badge bg-pink">Ж</span>' : 

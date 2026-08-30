@@ -174,10 +174,11 @@ ROUTE /admin/free-participation  ← `scripts/appBU.py`
 
 
 ### `Athlete` (строка 93)
-> Модель спортсмена
+> Модель спортсмена; для пары/дуэта одна запись хранит отдельные данные обоих участников.
 
-- `full_name(self)` — строка 110
-- `short_name(self)` — строка 127
+- `primary_*`: external_id, first_name, last_name, patronymic, birth_date, gender первого участника
+- `partner_*`: те же поля второго участника
+- `is_pair`, `primary_member_full_name`, `partner_member_full_name`
 
 ### `Participant` (строка 146)
 > Модель участника турнира
@@ -453,6 +454,18 @@ CREATE TABLE athlete (
 	gender VARCHAR(1), 
 	country VARCHAR(3), 
 	club_id INTEGER, 
+	primary_external_id VARCHAR(50),
+	primary_first_name VARCHAR(100),
+	primary_last_name VARCHAR(100),
+	primary_patronymic VARCHAR(100),
+	primary_birth_date DATE,
+	primary_gender VARCHAR(1),
+	partner_external_id VARCHAR(50),
+	partner_first_name VARCHAR(100),
+	partner_last_name VARCHAR(100),
+	partner_patronymic VARCHAR(100),
+	partner_birth_date DATE,
+	partner_gender VARCHAR(1),
 	PRIMARY KEY (id), 
 	FOREIGN KEY(club_id) REFERENCES club (id)
 );
@@ -468,6 +481,10 @@ CREATE INDEX idx_athlete_gender_country ON athlete (gender, country);
 CREATE INDEX ix_athlete_first_name ON athlete (first_name);
 CREATE INDEX ix_athlete_external_id ON athlete (external_id);
 CREATE INDEX idx_athlete_club ON athlete (club_id);
+CREATE INDEX ix_athlete_primary_external_id ON athlete (primary_external_id);
+CREATE INDEX ix_athlete_primary_birth_date ON athlete (primary_birth_date);
+CREATE INDEX ix_athlete_partner_external_id ON athlete (partner_external_id);
+CREATE INDEX ix_athlete_partner_birth_date ON athlete (partner_birth_date);
 CREATE TABLE segment (
 	id INTEGER NOT NULL, 
 	category_id INTEGER NOT NULL, 
@@ -1192,9 +1209,9 @@ ROUTE /favicon.ico
 - `Club` (строка 77)
   - Docstring: Модель клуба/организации
 - `Athlete` (строка 93)
-  - Docstring: Модель спортсмена
-  - `full_name(self)` L110
-  - `short_name(self)` L127
+  - Одиночник либо одна запись пары/дуэта.
+  - Для пары сохраняются `primary_*` и `partner_*`, включая обе даты рождения.
+  - `full_name`, `short_name`, `is_pair`, `primary_member_full_name`, `partner_member_full_name`.
 - `Participant` (строка 146)
   - Docstring: Модель участника турнира
 - `Performance` (строка 176)
@@ -8284,7 +8301,8 @@ limiter = Limiter(
      - сначала `person_data['full_name']` (PCT_PLNAME — имя для протоколов, без дублей);
      - иначе `person_data['full_name_xml']`.
   6. Формируется `athlete_payload`:
-     - `external_id`, `first_name`, `last_name`, `patronymic`, `full_name_xml`, `birth_date`, `gender`, `country`, `club_id`.
+     - общие поля: `external_id`, `first_name`, `last_name`, `patronymic`, `full_name_xml`, `birth_date`, `gender`, `country`, `club_id`;
+     - для `PCT_TYPE=COU`: `primary_*` и `partner_*` из двух `Team_Members/Person`, с fallback на `PCT_BDAY` / `PCT_PBDAY` и `PCT_P*`.
   7. Через `athlete_registry.get_or_create(athlete_payload)` создаётся или находится `Athlete` (с учётом логики дедупликации: по внешнему ID, ФИО+дате рождения и пр.).
   8. По `(event.id, category_id, athlete.id)` ищется существующий `Participant`:
      - если нет:
@@ -8293,6 +8311,15 @@ limiter = Limiter(
      - если есть:
        - аккуратно **дозаполняются** поля, если в БД они пусты (чтобы не затереть уже имеющиеся данные);
        - обновляется тренер, если в XML пришло новое имя.
+
+#### Пары и дуэты (обновлено 2026-08-30)
+
+- `Athlete` остаётся одной записью результата; связь `Participant.athlete_id` не меняется.
+- Парсер сохраняет обоих участников из `Team_Members/Person`: ФИО, индивидуальный external ID, пол и дату рождения.
+- При отсутствии вложенных участников используются атрибуты пары `PCT_BDAY`, `PCT_PBDAY`, `PCT_PGNAME`, `PCT_PFNAMC`.
+- Миграция: `a91c7d42f610_pair_member_details.py`.
+- Безопасное заполнение старых записей: `scripts/backfill_pair_members_from_xml.py` (dry-run по умолчанию, запись только с `--apply`).
+- Сверка внешнего реестра спортсменов: `scripts/compare_registry_birth_dates.py`; отчёт разделяет совпадения, расхождения дат, пропуски и неоднозначные ФИО.
 
 ### 5.9 Обработка тренеров и переходов (`Coach` и `CoachAssignment`)
 
@@ -13013,7 +13040,7 @@ else:
 
 ## Исходный код: `models.py`
 
-> 332 строк, 16,527 байт
+> 375 строк, 18,297 байт
 
 ```py
 #!/usr/bin/env python3
@@ -13121,6 +13148,21 @@ class Athlete(db.Model):
     gender = db.Column(db.String(1), index=True)
     country = db.Column(db.String(3), index=True)
     club_id = db.Column(db.Integer, db.ForeignKey('club.id'), index=True)
+
+    # Для пары/танцевального дуэта Athlete остаётся одной записью, связанной
+    # с результатом, но данные обоих участников сохраняются отдельно.
+    primary_external_id = db.Column(db.String(50), index=True)
+    primary_first_name = db.Column(db.String(100))
+    primary_last_name = db.Column(db.String(100))
+    primary_patronymic = db.Column(db.String(100))
+    primary_birth_date = db.Column(db.Date, index=True)
+    primary_gender = db.Column(db.String(1))
+    partner_external_id = db.Column(db.String(50), index=True)
+    partner_first_name = db.Column(db.String(100))
+    partner_last_name = db.Column(db.String(100))
+    partner_patronymic = db.Column(db.String(100))
+    partner_birth_date = db.Column(db.Date, index=True)
+    partner_gender = db.Column(db.String(1))
     
     participants = db.relationship('Participant', backref='athlete', lazy=True, cascade='all, delete-orphan')
     
@@ -13153,6 +13195,35 @@ class Athlete(db.Model):
             return clean_last
         first_initial = clean_first[0] + '.' if clean_first else ''
         return f"{clean_last} {first_initial}".strip()
+
+    @property
+    def is_pair(self):
+        """Whether this athlete row represents a pair or dance duet."""
+        return self.gender == 'P' or bool(self.partner_first_name or self.partner_last_name)
+
+    @staticmethod
+    def _member_full_name(first_name, patronymic, last_name):
+        return ' '.join(
+            str(value).strip()
+            for value in (last_name, first_name, patronymic)
+            if value and str(value).strip()
+        )
+
+    @property
+    def primary_member_full_name(self):
+        return self._member_full_name(
+            self.primary_first_name,
+            self.primary_patronymic,
+            self.primary_last_name,
+        )
+
+    @property
+    def partner_member_full_name(self):
+        return self._member_full_name(
+            self.partner_first_name,
+            self.partner_patronymic,
+            self.partner_last_name,
+        )
     
     __table_args__ = (
         db.Index('idx_athlete_name_birth', 'first_name', 'last_name', 'birth_date'),
@@ -13347,7 +13418,6 @@ class JudgeHelperFreeAudit(db.Model):
     result_no_free = db.Column(db.Integer, nullable=False, default=0)
     result_fio_only = db.Column(db.Integer, nullable=False, default=0)
     result_not_found = db.Column(db.Integer, nullable=False, default=0)
-
 ```
 
 
@@ -13779,7 +13849,7 @@ id=315  |  ФИО: Маргарита Антоновна БОРОВИЧ  |  да
 
 ## Исходный код: `parsers/isu_calcfs_parser.py`
 
-> 572 строк, 26,568 байт
+> 658 строк, 30,709 байт
 
 ```py
 #!/usr/bin/env python3
@@ -14126,6 +14196,36 @@ class ISUCalcFSParser:
                 person_data['full_name'] = normalize_string(person.get('PCT_PLNAME'))  # Имя для протоколов - приоритетное
                 person_data['short_name'] = normalize_string(person.get('PCT_PSNAME'))
             elif person_type == 'COU':
+                members = person.findall('./Team_Members/Person')
+                primary_member = members[0] if members else None
+                partner_member = members[1] if len(members) > 1 else None
+
+                primary_first_name = self._person_attribute(
+                    primary_member, 'PCT_GNAME', fallback=person.get('PCT_GNAME')
+                )
+                primary_last_name = self._person_attribute(
+                    primary_member,
+                    'PCT_FNAMEC',
+                    'PCT_FNAME',
+                    fallback=person.get('PCT_FNAMEC') or person.get('PCT_FNAME'),
+                )
+                primary_full_name = self._person_attribute(
+                    primary_member, 'PCT_PLNAME', 'PCT_CNAME'
+                )
+
+                partner_first_name = self._person_attribute(
+                    partner_member, 'PCT_GNAME', fallback=person.get('PCT_PGNAME')
+                )
+                partner_last_name = self._person_attribute(
+                    partner_member,
+                    'PCT_FNAMEC',
+                    'PCT_FNAME',
+                    fallback=person.get('PCT_PFNAMC') or person.get('PCT_PFNAME'),
+                )
+                partner_full_name = self._person_attribute(
+                    partner_member, 'PCT_PLNAME', 'PCT_CNAME'
+                )
+
                 person_data['first_name'] = normalize_string(person.get('PCT_CNAME'))
                 person_data['first_name_cyrillic'] = normalize_string(person.get('PCT_CNAME'))
                 person_data['last_name'] = normalize_string(person.get('PCT_PSNAME'))
@@ -14135,8 +14235,65 @@ class ISUCalcFSParser:
                 person_data['patronymic'] = None
                 person_data['patronymic_cyrillic'] = None
                 person_data['gender'] = 'P'
+                person_data.update({
+                    'primary_external_id': self._person_attribute(
+                        primary_member, 'PCT_EXTDT', fallback=person.get('PCT_PCTID')
+                    ),
+                    'primary_first_name': primary_first_name,
+                    'primary_last_name': primary_last_name,
+                    'primary_patronymic': self._extract_patronymic(
+                        primary_full_name, primary_first_name, primary_last_name
+                    ),
+                    'primary_birth_date': self._parse_date(
+                        self._person_attribute(
+                            primary_member, 'PCT_BDAY', fallback=person.get('PCT_BDAY')
+                        )
+                    ),
+                    'primary_gender': self._person_attribute(
+                        primary_member, 'PCT_GENDER', fallback='F'
+                    ),
+                    'partner_external_id': self._person_attribute(
+                        partner_member, 'PCT_EXTDT', fallback=person.get('PCT_PPCTID')
+                    ),
+                    'partner_first_name': partner_first_name,
+                    'partner_last_name': partner_last_name,
+                    'partner_patronymic': self._extract_patronymic(
+                        partner_full_name, partner_first_name, partner_last_name
+                    ),
+                    'partner_birth_date': self._parse_date(
+                        self._person_attribute(
+                            partner_member, 'PCT_BDAY', fallback=person.get('PCT_PBDAY')
+                        )
+                    ),
+                    'partner_gender': self._person_attribute(
+                        partner_member, 'PCT_GENDER', fallback='M'
+                    ),
+                })
 
             self.persons.append(person_data)
+
+    @staticmethod
+    def _person_attribute(person, *names, fallback=None):
+        """Read the first non-empty XML attribute from a nested team member."""
+        if person is not None:
+            for name in names:
+                value = normalize_string(person.get(name))
+                if value:
+                    return value
+        return normalize_string(fallback)
+
+    @staticmethod
+    def _extract_patronymic(full_name, first_name, last_name):
+        """Extract middle name from the protocol full name without assuming word order."""
+        full_words = normalize_string(full_name).split()
+        first_words = {word.casefold() for word in normalize_string(first_name).split()}
+        last_words = {word.casefold() for word in normalize_string(last_name).split()}
+        middle = [
+            word
+            for word in full_words
+            if word.casefold() not in first_words and word.casefold() not in last_words
+        ]
+        return normalize_string(' '.join(middle)) or None
 
     def _parse_clubs(self, root):
         """Парсинг клубов (без дублирования)"""
@@ -14353,7 +14510,6 @@ def parse_date_to_string(date_str):
         return date_obj.strftime('%Y-%m-%d')
     except ValueError:
         return None
-
 ```
 
 
@@ -16188,7 +16344,7 @@ def first_timers_detail_pdf():
 
 ## Исходный код: `routes/api.py`
 
-> 1494 строк, 75,657 байт
+> 1,507 строк, 76,741 байт
 
 ```py
 #!/usr/bin/env python3
@@ -16196,21 +16352,20 @@ def first_timers_detail_pdf():
 """API routes."""
 import json
 import logging
-from datetime import datetime
 from flask import Blueprint, jsonify, request, Response, abort
 
 from extensions import db
 from utils.access_control import request_has_api_access
 from event_rank_constants import CATEGORY_RANKS_MS_KMS
 from models import Event, Category, Athlete, Participant, Club, Segment, Performance, Coach, CoachAssignment, Element, ComponentScore
-from season_utils import get_season_from_date
+from season_utils import event_in_season, get_active_season, get_season_from_date
+from rank_scope import category_scope_clause, get_include_kms, get_rank_scope_label
 from services.rank_service import (
     normalize_category_name,
     get_rank_weight,
     build_rank_groups,
     athlete_display_name,
     compute_rank_unique_participation_stats,
-    RANK_DICTIONARY,
 )
 from utils.search_utils import normalize_search_term, create_multi_field_search_filter
 from utils.normalizers import normalize_string
@@ -16243,7 +16398,8 @@ def api_athlete_results_chart(athlete_id):
     ).join(
         Event, Category.event_id == Event.id
     ).filter(
-        Participant.athlete_id == athlete_id
+        Participant.athlete_id == athlete_id,
+        *event_in_season(Event.begin_date),
     ).order_by(Event.begin_date.asc()).all()
     chart_data = {
         'labels': [],
@@ -16267,7 +16423,7 @@ def api_athlete_results_chart(athlete_id):
 @api_bp.route('/events', methods=['GET'])
 def api_events():
     """Возвращает список турниров для интеграций"""
-    events = Event.query.order_by(Event.begin_date.desc()).all()
+    events = Event.query.filter(*event_in_season(Event.begin_date)).order_by(Event.begin_date.desc()).all()
     def serialize_date(value):
         return value.isoformat() if value else None
     events_payload = [
@@ -16328,56 +16484,45 @@ def export_event_results(event_id):
 
 @api_bp.route('/statistics')
 def api_statistics():
-    """API для получения статистики
-    ВАЖНО: Исключает МС и КМС из подсчета. Считаются только разряды с 1 сп до 3 юношеского.
-    """
-    from models import Category
-    
-    # Разряды, которые нужно исключить из отчета (МС и КМС)
-    excluded_ranks = {
-        'МС, Женщины',
-        'МС, Мужчины',
-        'МС, Пары',
-        'МС, Танцы',
-        'КМС, Девушки',
-        'КМС, Юноши',
-        'КМС, Пары',
-        'КМС, Танцы'
+    """Полная статистика сезона и профильный диапазон 3 юн.–1 сп. (+ КМС по переключателю)."""
+    include_kms = get_include_kms()
+    season_clause = event_in_season(Event.begin_date)
+
+    all_stats = {
+        'total_athletes': db.session.query(
+            db.func.count(db.distinct(Participant.athlete_id))
+        ).join(Event, Participant.event_id == Event.id).filter(*season_clause).scalar() or 0,
+        'total_events': Event.query.filter(*season_clause).count(),
+        'total_participations': db.session.query(Participant).join(
+            Event, Participant.event_id == Event.id
+        ).filter(*season_clause).count(),
     }
-    
-    # Подсчет спортсменов, которые участвовали в разрядах без МС и КМС
-    total_athletes = db.session.query(db.func.count(db.distinct(Participant.athlete_id))).join(
+
+    scoped_base = db.session.query(Participant).join(
         Category, Participant.category_id == Category.id
-    ).filter(
-        db.or_(
-            Category.normalized_name.is_(None),
-            Category.normalized_name.notin_(excluded_ranks)
-        )
-    ).scalar()
-    
-    total_events = Event.query.count()
-    
-    # Подсчет участий без МС и КМС
-    total_participations = db.session.query(Participant).join(
-        Category, Participant.category_id == Category.id
-    ).filter(
-        db.or_(
-            Category.normalized_name.is_(None),
-            Category.normalized_name.notin_(excluded_ranks)
-        )
-    ).count()
-    
-    club_stats = db.session.query(
-        Club.name,
-        db.func.count(Athlete.id).label('athlete_count')
-    ).join(Athlete).group_by(Club.id).order_by(
-        db.func.count(Athlete.id).desc()
-    ).limit(10).all()
+    ).join(Event, Participant.event_id == Event.id).filter(
+        *season_clause,
+        category_scope_clause(include_kms),
+    )
+    scoped_stats = {
+        'total_athletes': scoped_base.with_entities(
+            db.func.count(db.distinct(Participant.athlete_id))
+        ).scalar() or 0,
+        'total_events': scoped_base.with_entities(
+            db.func.count(db.distinct(Participant.event_id))
+        ).scalar() or 0,
+        'total_participations': scoped_base.count(),
+    }
+
     return jsonify({
-        'total_athletes': total_athletes,
-        'total_events': total_events,
-        'total_participations': total_participations,
-        'top_clubs': [{'name': name, 'count': count} for name, count in club_stats]
+        'all': all_stats,
+        'scope': scoped_stats,
+        'include_kms': include_kms,
+        'scope_label': get_rank_scope_label(include_kms),
+        # Совместимость существующей страницы аналитики.
+        'total_athletes': scoped_stats['total_athletes'],
+        'total_events': scoped_stats['total_events'],
+        'total_participations': scoped_stats['total_participations'],
     })
 
 @api_bp.route('/analytics/top-athletes')
@@ -16397,7 +16542,12 @@ def api_top_athletes():
             db.func.max(Participant.total_points).label('best_points')
         ).select_from(Athlete).join(
             Participant, Athlete.id == Participant.athlete_id
-        ).join(Category, Participant.category_id == Category.id).group_by(
+        ).join(Category, Participant.category_id == Category.id).join(
+            Event, Participant.event_id == Event.id
+        ).filter(
+            *event_in_season(Event.begin_date),
+            category_scope_clause(),
+        ).group_by(
             Athlete.id, Category.name, Category.gender, Category.normalized_name
         ).all()
 
@@ -16458,9 +16608,13 @@ def api_top_athletes():
             # Находим лучшее место для этого спортсмена
             best_place_row = db.session.query(
                 db.func.min(Participant.total_place)
+            ).join(Category, Participant.category_id == Category.id).join(
+                Event, Participant.event_id == Event.id
             ).filter(
                 Participant.athlete_id == athlete['id'],
-                Participant.total_place.isnot(None)
+                Participant.total_place.isnot(None),
+                *event_in_season(Event.begin_date),
+                category_scope_clause(),
             ).scalar()
             
             by_participations.append({
@@ -16487,8 +16641,15 @@ def api_club_statistics():
     club_athlete_stats = db.session.query(
         Club.id,
         Club.name,
-        db.func.count(Athlete.id).label('athlete_count')
-    ).outerjoin(Athlete, Club.id == Athlete.club_id).group_by(
+        db.func.count(db.distinct(Athlete.id)).label('athlete_count')
+    ).join(Athlete, Club.id == Athlete.club_id).join(
+        Participant, Athlete.id == Participant.athlete_id
+    ).join(
+        Category, Participant.category_id == Category.id
+    ).join(Event, Participant.event_id == Event.id).filter(
+        *event_in_season(Event.begin_date),
+        category_scope_clause(),
+    ).group_by(
         Club.id, Club.name
     ).all()
     club_participation_stats = db.session.query(
@@ -16497,6 +16658,11 @@ def api_club_statistics():
         db.func.min(Participant.total_place).label('best_place')
     ).join(Athlete, Club.id == Athlete.club_id).outerjoin(
         Participant, Athlete.id == Participant.athlete_id
+    ).join(
+        Category, Participant.category_id == Category.id
+    ).join(Event, Participant.event_id == Event.id).filter(
+        *event_in_season(Event.begin_date),
+        category_scope_clause(),
     ).group_by(Club.id).all()
     participation_dict = {c.id: {'count': c.participation_count, 'best': c.best_place} for c in club_participation_stats}
     result = []
@@ -16522,7 +16688,10 @@ def api_category_statistics():
         Category.normalized_name,
         db.func.count(Participant.id).label('participant_count'),
         db.func.avg(Participant.total_points).label('avg_points')
-    ).outerjoin(Participant).group_by(
+    ).join(Participant).join(Event, Participant.event_id == Event.id).filter(
+        *event_in_season(Event.begin_date),
+        category_scope_clause(),
+    ).group_by(
         Category.name, Category.gender, Category.category_type, Category.normalized_name
     ).order_by(db.func.count(Participant.id).desc()).all()
     rank_stats = {}
@@ -16557,15 +16726,15 @@ def api_category_statistics():
     result = sorted(rank_stats.values(), key=lambda x: x['total_participants'], reverse=True)
     return jsonify(result)
 
-# Разряды МС и КМС — исключаются из подсчёта на странице бесплатного участия (как и везде: только 3 юн–1 сп)
+# МС всегда вне профильного диапазона; КМС управляется общим переключателем.
 FREE_PARTICIPATION_EXCLUDED_RANKS = CATEGORY_RANKS_MS_KMS
 
 
 @api_bp.route('/analytics/free-participation')
 def api_free_participation():
-    """API для получения спортсменов с бесплатным участием (без МС и КМС, только 3 юн–1 сп)."""
+    """API бесплатных участий в общем диапазоне разрядов с опциональным КМС."""
     try:
-        # Получаем данные о бесплатных участиях только по разрядам без МС/КМС
+        # Получаем данные только в выбранном глобальном диапазоне разрядов.
         free_participants = db.session.query(
             Athlete.id,
             Athlete.first_name,
@@ -16588,12 +16757,11 @@ def api_free_participation():
         ).filter(
             Participant.pct_ppname == 'БЕСП',
             db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
-            db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
+            db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
+            *event_in_season(Event.begin_date),
+            category_scope_clause(),
         ).filter(
-            db.or_(
-                Category.normalized_name.is_(None),
-                Category.normalized_name.notin_(FREE_PARTICIPATION_EXCLUDED_RANKS)
-            )
+            Category.normalized_name.isnot(None),
         ).order_by(
             Event.begin_date.desc(), Athlete.last_name, Athlete.first_name
         ).all()
@@ -16647,13 +16815,19 @@ def api_free_participation():
 
         athletes_list = sorted(athletes_data.values(), key=lambda x: x['free_participations'], reverse=True)
 
-        # Только бесплатные старты и без МС/КМС — без полного прохода по всем участиям
+        # Только бесплатные старты в выбранном диапазоне — без полного прохода по всем участиям.
+        excluded_ranks = {
+            rank for rank in FREE_PARTICIPATION_EXCLUDED_RANKS
+            if not (get_include_kms() and rank.startswith('КМС'))
+        }
         rank_groups_data = build_rank_groups(
             event_id=None,
             only_free_participation=True,
-            excluded_normalized_ranks=FREE_PARTICIPATION_EXCLUDED_RANKS,
+            excluded_normalized_ranks=excluded_ranks,
+            season=get_active_season(),
+            rank_scope=True,
         )
-        rank_groups_data = [g for g in rank_groups_data if g.get('display_name') not in FREE_PARTICIPATION_EXCLUDED_RANKS]
+        rank_groups_data = [g for g in rank_groups_data if g.get('display_name') not in excluded_ranks]
         filtered_rank_groups = []
         for group in rank_groups_data:
             free_athletes = [a for a in group.get('athletes', []) if a.get('has_free_participation', False)]
@@ -16691,7 +16865,11 @@ def api_free_participation():
             'total_free_participations': sum(g.get('total_free_participations', 0) for g in ranks_with_data)
         }
 
-        rank_unique_stats = compute_rank_unique_participation_stats(FREE_PARTICIPATION_EXCLUDED_RANKS)
+        rank_unique_stats = compute_rank_unique_participation_stats(
+            excluded_ranks,
+            season=get_active_season(),
+            rank_scope=True,
+        )
 
         total_athletes = len(athletes_list)
         total_free_participations = sum(a['free_participations'] for a in athletes_list)
@@ -16743,8 +16921,13 @@ def api_club_free_participation():
             Athlete, Club.id == Athlete.club_id
         ).outerjoin(
             Participant, Athlete.id == Participant.athlete_id
+        ).join(
+            Category, Participant.category_id == Category.id
         ).outerjoin(
             Event, Participant.event_id == Event.id
+        ).filter(
+            *event_in_season(Event.begin_date),
+            category_scope_clause(),
         ).group_by(
             Club.id, Club.name, Club.short_name, Club.country, Club.city
         ).having(
@@ -16820,7 +17003,11 @@ def api_athletes():
     # Применяем фильтр поиска СРАЗУ после создания базового запроса
     athletes_query = db.session.query(
         Athlete, Club
-    ).outerjoin(Club, Athlete.club_id == Club.id)
+    ).outerjoin(Club, Athlete.club_id == Club.id).join(
+        Participant, Athlete.id == Participant.athlete_id
+    ).join(Event, Participant.event_id == Event.id).filter(
+        *event_in_season(Event.begin_date)
+    )
     
     # Применяем фильтр поиска ДО всех остальных JOIN'ов
     if search_filter is not None:
@@ -16828,22 +17015,18 @@ def api_athletes():
     
     # Добавляем JOIN с Participant и Category для сортировки по разрядам (если нужно)
     # Делаем это ПОСЛЕ применения фильтра поиска
-    if sort_by == 'rank' or rank_filter or sort_by in ['participations', 'best_place']:
+    if sort_by == 'rank' or rank_filter:
         athletes_query = athletes_query.outerjoin(
-            Participant, Athlete.id == Participant.athlete_id
+            Category, Participant.category_id == Category.id
         )
-        if sort_by == 'rank' or rank_filter:
-            athletes_query = athletes_query.outerjoin(
-                Category, Participant.category_id == Category.id
-            )
-            if rank_filter:
-                athletes_query = athletes_query.filter(Category.normalized_name == rank_filter)
+        if rank_filter:
+            athletes_query = athletes_query.filter(Category.normalized_name == rank_filter)
     
     # Добавляем group_by для агрегатных функций
     # Делаем это ПОСЛЕ фильтра поиска, чтобы фильтр применялся к базовым записям
     # ВАЖНО: group_by применяется всегда, если sort_by = 'best_place' (по умолчанию)
     # Это означает, что JOIN с Participant всегда делается, и фильтр должен работать ДО этого
-    needs_group_by = sort_by in ['participations', 'best_place'] or sort_by == 'rank' or rank_filter
+    needs_group_by = True
     if needs_group_by:
         athletes_query = athletes_query.group_by(Athlete.id, Club.id)
     
@@ -16906,7 +17089,10 @@ def api_athletes():
         Event.exclude_free_from_reports.label('event_exclude_free_from_reports')
     ).outerjoin(Category, Participant.category_id == Category.id).outerjoin(
         Event, Category.event_id == Event.id
-    ).filter(Participant.athlete_id.in_(athlete_ids)).all()
+    ).filter(
+        Participant.athlete_id.in_(athlete_ids),
+        *event_in_season(Event.begin_date),
+    ).all()
     
     # Группируем данные по спортсменам
     athletes_stats = {}
@@ -16972,6 +17158,21 @@ def api_athletes():
             'full_name': athlete.full_name or '',  # Использует full_name_xml (PCT_PLNAME) если есть, иначе составное без дублирования
             'short_name': athlete.short_name or '',  # Использует очищенные имена без дублирования
             'birth_date': athlete.birth_date.strftime('%d.%m.%Y') if athlete.birth_date else None,
+            'is_pair': athlete.is_pair,
+            'pair_members': [
+                {
+                    'external_id': athlete.primary_external_id,
+                    'full_name': athlete.primary_member_full_name,
+                    'birth_date': athlete.primary_birth_date.strftime('%d.%m.%Y') if athlete.primary_birth_date else None,
+                    'gender': athlete.primary_gender,
+                },
+                {
+                    'external_id': athlete.partner_external_id,
+                    'full_name': athlete.partner_member_full_name,
+                    'birth_date': athlete.partner_birth_date.strftime('%d.%m.%Y') if athlete.partner_birth_date else None,
+                    'gender': athlete.partner_gender,
+                },
+            ] if athlete.is_pair else [],
             'gender': athlete.gender,
             'category_name': stats['latest_category'],
             'club_name': club.name if club else None,
@@ -17053,6 +17254,11 @@ def api_clubs():
         db.func.count(Participant.id).label('participation_count')
     ).outerjoin(Athlete, Club.id == Athlete.club_id).outerjoin(
         Participant, Athlete.id == Participant.athlete_id
+    ).join(
+        Category, Participant.category_id == Category.id
+    ).join(Event, Participant.event_id == Event.id).filter(
+        *event_in_season(Event.begin_date),
+        category_scope_clause(),
     ).group_by(Club.id, Club.name, Club.country, Club.city).having(
         db.func.count(db.distinct(Athlete.id)) > 0
     ).order_by(
@@ -17077,8 +17283,7 @@ def api_free_participation_analysis():
     try:
         min_participations = request.args.get('min_participations', 1, type=int)
         max_participations = request.args.get('max_participations', 999, type=int)
-        season_filter = request.args.get('season', '')
-        rank_filter = (request.args.get('rank', '') or '').strip()
+        season_filter = get_active_season(request.args.get('season'))
         query = db.session.query(
             Athlete.id,
             Athlete.first_name,
@@ -17110,32 +17315,8 @@ def api_free_participation_analysis():
             db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
             db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None))
         )
-        if rank_filter:
-            query = query.filter(
-                db.or_(
-                    Category.normalized_name == rank_filter,
-                    Category.name == rank_filter,
-                )
-            )
-        if season_filter:
-            if season_filter == 'current':
-                current_year = datetime.now().year
-                if datetime.now().month >= 7:
-                    start_date = datetime(current_year, 7, 1)
-                    end_date = datetime(current_year + 1, 6, 30)
-                else:
-                    start_date = datetime(current_year - 1, 7, 1)
-                    end_date = datetime(current_year, 6, 30)
-            else:
-                try:
-                    start_year = int(season_filter.split('/')[0])
-                    start_date = datetime(start_year, 7, 1)
-                    end_date = datetime(start_year + 1, 6, 30)
-                except (ValueError, IndexError):
-                    start_date = None
-                    end_date = None
-            if start_date and end_date:
-                query = query.filter(Event.begin_date >= start_date, Event.begin_date <= end_date)
+        query = query.filter(*event_in_season(Event.begin_date, season_filter))
+        query = query.filter(category_scope_clause())
         free_participants = query.order_by(
             Event.begin_date.desc(), Athlete.last_name, Athlete.first_name
         ).all()
@@ -17233,32 +17414,11 @@ def api_free_participation_analysis():
             'filters': {
                 'min_participations': min_participations,
                 'max_participations': max_participations,
-                'season': season_filter,
-                'rank': rank_filter,
+                'season': season_filter
             }
         })
     except Exception as e:
         logger.error(f"Ошибка в api_free_participation_analysis: {e}")
-        return jsonify({'error': str(e)}), 500
-
-
-@api_bp.route('/analytics/free-participation-analysis/ranks')
-def api_free_participation_analysis_ranks():
-    """API для списка разрядов из словаря системы для фильтра анализа БЕСП."""
-    try:
-        ranks = set()
-        for rank_data in RANK_DICTIONARY.values():
-            genders = rank_data.get('genders')
-            if genders:
-                for display_name in genders.values():
-                    ranks.add(display_name)
-            else:
-                ranks.add(rank_data['name'])
-
-        sorted_ranks = sorted(ranks, key=lambda rank: (get_rank_weight(rank), rank))
-        return jsonify({'ranks': sorted_ranks})
-    except Exception as e:
-        logger.error(f"Ошибка в api_free_participation_analysis_ranks: {e}")
         return jsonify({'error': str(e)}), 500
 
 @api_bp.route('/coaches')
@@ -17272,13 +17432,12 @@ def api_coaches():
         query = db.session.query(
             Coach.id,
             Coach.name,
-            db.func.count(CoachAssignment.id).label('athletes_count')
-        ).outerjoin(
-            CoachAssignment, 
-            db.and_(
-                Coach.id == CoachAssignment.coach_id,
-                CoachAssignment.is_current == True
-            )
+            db.func.count(db.distinct(CoachAssignment.athlete_id)).label('athletes_count')
+        ).join(
+            CoachAssignment,
+            Coach.id == CoachAssignment.coach_id,
+        ).join(Event, CoachAssignment.event_id == Event.id).filter(
+            *event_in_season(Event.begin_date)
         ).group_by(Coach.id, Coach.name)
         
         # Поиск с нормализацией
@@ -17291,9 +17450,9 @@ def api_coaches():
         if sort_by == 'name':
             order_by = Coach.name.asc() if sort_order == 'asc' else Coach.name.desc()
         elif sort_by == 'athletes':
-            order_by = db.func.count(CoachAssignment.id).asc() if sort_order == 'asc' else db.func.count(CoachAssignment.id).desc()
+            order_by = db.func.count(db.distinct(CoachAssignment.athlete_id)).asc() if sort_order == 'asc' else db.func.count(db.distinct(CoachAssignment.athlete_id)).desc()
         else:
-            order_by = db.func.count(CoachAssignment.id).desc()
+            order_by = db.func.count(db.distinct(CoachAssignment.athlete_id)).desc()
         
         query = query.order_by(order_by)
         coaches_data = query.all()
@@ -17675,7 +17834,18 @@ def api_participant_performance_details(participant_id):
             'athlete': {
                 'id': athlete.id if athlete else None,
                 'full_name': athlete.full_name if athlete else 'Неизвестный спортсмен',
-                'club_name': club.name if club else None
+                'club_name': club.name if club else None,
+                'is_pair': athlete.is_pair if athlete else False,
+                'pair_members': [
+                    {
+                        'full_name': athlete.primary_member_full_name,
+                        'birth_date': athlete.primary_birth_date.strftime('%d.%m.%Y') if athlete.primary_birth_date else None,
+                    },
+                    {
+                        'full_name': athlete.partner_member_full_name,
+                        'birth_date': athlete.partner_birth_date.strftime('%d.%m.%Y') if athlete.partner_birth_date else None,
+                    },
+                ] if athlete and athlete.is_pair else [],
             },
             'performances': performances_data
         }
@@ -17684,7 +17854,6 @@ def api_participant_performance_details(participant_id):
     except Exception as e:
         logger.error(f"Ошибка в api_participant_performance_details: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
-
 ```
 
 
@@ -39937,7 +40106,7 @@ def parse_xml_date_to_season(date_str: str) -> str:
 
 ## Исходный код: `services/athlete_registry.py`
 
-> 72 строк, 3,357 байт
+> 99 строк, 4,337 байт
 
 ```py
 """Athlete registry with deduplication by name+birth date."""
@@ -39948,6 +40117,21 @@ from utils.normalizers import normalize_string
 
 class AthleteRegistry:
     """Registry for athletes with safe merge logic."""
+
+    PAIR_DETAIL_FIELDS = (
+        'primary_external_id',
+        'primary_first_name',
+        'primary_last_name',
+        'primary_patronymic',
+        'primary_birth_date',
+        'primary_gender',
+        'partner_external_id',
+        'partner_first_name',
+        'partner_last_name',
+        'partner_patronymic',
+        'partner_birth_date',
+        'partner_gender',
+    )
 
     def _make_lookup_key(self, person_data):
         first_name = normalize_string(person_data.get('first_name', '')).lower()
@@ -39987,6 +40171,7 @@ class AthleteRegistry:
                 club_id=person_data.get('club_id'),
                 lookup_key=lookup_key,
             )
+            self._merge_pair_details(athlete, person_data)
             db.session.add(athlete)
             return athlete
 
@@ -40010,8 +40195,19 @@ class AthleteRegistry:
         if not athlete.lookup_key and lookup_key:
             athlete.lookup_key = lookup_key
 
+        self._merge_pair_details(athlete, person_data)
+
         return athlete
 
+    def _merge_pair_details(self, athlete, person_data):
+        """Fill pair member fields and refresh changed non-empty XML values."""
+        for field in self.PAIR_DETAIL_FIELDS:
+            value = person_data.get(field)
+            if value in (None, ''):
+                continue
+            if field.endswith(('_first_name', '_last_name', '_patronymic', '_external_id')):
+                value = normalize_string(value) or None
+            setattr(athlete, field, value)
 ```
 
 
@@ -40509,7 +40705,7 @@ def apply_birth_conflict_resolutions_json(resolutions: list[dict], parsers: list
 
 ## Исходный код: `services/import_service.py`
 
-> 388 строк, 20,870 байт
+> 399 строк, 21,753 байт
 
 ```py
 #!/usr/bin/env python3
@@ -40698,6 +40894,18 @@ def save_to_database(parser):
             'gender': gender,
             'country': person_data.get('nationality'),
             'club_id': club_id,
+            'primary_external_id': person_data.get('primary_external_id'),
+            'primary_first_name': person_data.get('primary_first_name'),
+            'primary_last_name': person_data.get('primary_last_name'),
+            'primary_patronymic': person_data.get('primary_patronymic'),
+            'primary_birth_date': parse_date(person_data.get('primary_birth_date')),
+            'primary_gender': person_data.get('primary_gender'),
+            'partner_external_id': person_data.get('partner_external_id'),
+            'partner_first_name': person_data.get('partner_first_name'),
+            'partner_last_name': person_data.get('partner_last_name'),
+            'partner_patronymic': person_data.get('partner_patronymic'),
+            'partner_birth_date': parse_date(person_data.get('partner_birth_date')),
+            'partner_gender': person_data.get('partner_gender'),
         }
         athlete = athlete_registry.get_or_create(athlete_payload)
         db.session.flush()
@@ -40899,7 +41107,6 @@ def save_to_database(parser):
     except Exception:
         db.session.rollback()
         raise
-
 ```
 
 
@@ -45426,7 +45633,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 ## Исходный код: `templates/athlete_detail.html`
 
-> 1605 строк, 63,393 байт
+> 1,628 строк, 64,714 байт
 
 ```html
 {% extends "base.html" %}
@@ -46165,10 +46372,34 @@ document.addEventListener('DOMContentLoaded', function() {
                 <hr>
                 
                 <div class="athlete-info">
+                    {% if athlete.is_pair and (athlete.primary_member_full_name or athlete.partner_member_full_name) %}
+                    <div class="alert alert-info py-2">
+                        <strong><i class="fas fa-user-friends"></i> Состав пары / дуэта</strong>
+                    </div>
+                    <div class="info-item">
+                        <strong>Партнёр 1:</strong>
+                        <span>
+                            {{ athlete.primary_member_full_name or 'Не указан' }}
+                            {% if athlete.primary_birth_date %}
+                            · {{ athlete.primary_birth_date.strftime('%d.%m.%Y') }}
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="info-item">
+                        <strong>Партнёр 2:</strong>
+                        <span>
+                            {{ athlete.partner_member_full_name or 'Не указан' }}
+                            {% if athlete.partner_birth_date %}
+                            · {{ athlete.partner_birth_date.strftime('%d.%m.%Y') }}
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% else %}
                     <div class="info-item">
                         <strong><i class="fas fa-birthday-cake"></i> Дата рождения:</strong>
                         <span>{{ athlete.birth_date.strftime('%d.%m.%Y') if athlete.birth_date else 'Не указана' }}</span>
                     </div>
+                    {% endif %}
                     
                     <div class="info-item">
                         <strong><i class="fas fa-venus-mars"></i> Пол:</strong>
@@ -47033,7 +47264,6 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 {% endblock %}
-
 ```
 
 
@@ -47041,7 +47271,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 ## Исходный код: `templates/athletes.html`
 
-> 720 строк, 28,591 байт
+> 725 строк, 28,991 байт
 
 ```html
 {% extends "base.html" %}
@@ -47467,7 +47697,12 @@ function updateTable(athletes) {
                 ${athlete.has_withdrawn ? '<br><small class="badge bg-warning text-dark"><i class="fas fa-ban"></i> На одном из турниров была снята</small>' : ''}
             </td>
             <td>
-                ${athlete.birth_date || '<span class="text-muted">Не указана</span>'}
+                ${athlete.is_pair && athlete.pair_members?.length
+                    ? athlete.pair_members
+                        .filter(member => member.full_name || member.birth_date)
+                        .map(member => `<div><small>${member.full_name || 'Партнёр'}: <strong>${member.birth_date || 'не указана'}</strong></small></div>`)
+                        .join('')
+                    : athlete.birth_date || '<span class="text-muted">Не указана</span>'}
             </td>
             <td>
                 ${athlete.gender === 'F' ? '<span class="badge bg-pink">Ж</span>' : 
@@ -55944,6 +56179,775 @@ git log --reverse --pretty=format:"%ad | %h | %s" --date=short
 
 ```
 
+
+---
+
+
+
+---
+
+## Исходный код: `migrations/versions/a91c7d42f610_pair_member_details.py`
+
+> 55 строк, 2,695 байт
+
+```py
+"""pair member details
+
+Revision ID: a91c7d42f610
+Revises: e7f2a91b3c44
+Create Date: 2026-08-30
+
+"""
+from alembic import op
+import sqlalchemy as sa
+
+
+revision = 'a91c7d42f610'
+down_revision = 'e7f2a91b3c44'
+branch_labels = None
+depends_on = None
+
+
+def upgrade():
+    with op.batch_alter_table('athlete') as batch:
+        batch.add_column(sa.Column('primary_external_id', sa.String(length=50), nullable=True))
+        batch.add_column(sa.Column('primary_first_name', sa.String(length=100), nullable=True))
+        batch.add_column(sa.Column('primary_last_name', sa.String(length=100), nullable=True))
+        batch.add_column(sa.Column('primary_patronymic', sa.String(length=100), nullable=True))
+        batch.add_column(sa.Column('primary_birth_date', sa.Date(), nullable=True))
+        batch.add_column(sa.Column('primary_gender', sa.String(length=1), nullable=True))
+        batch.add_column(sa.Column('partner_external_id', sa.String(length=50), nullable=True))
+        batch.add_column(sa.Column('partner_first_name', sa.String(length=100), nullable=True))
+        batch.add_column(sa.Column('partner_last_name', sa.String(length=100), nullable=True))
+        batch.add_column(sa.Column('partner_patronymic', sa.String(length=100), nullable=True))
+        batch.add_column(sa.Column('partner_birth_date', sa.Date(), nullable=True))
+        batch.add_column(sa.Column('partner_gender', sa.String(length=1), nullable=True))
+        batch.create_index('ix_athlete_primary_external_id', ['primary_external_id'], unique=False)
+        batch.create_index('ix_athlete_primary_birth_date', ['primary_birth_date'], unique=False)
+        batch.create_index('ix_athlete_partner_external_id', ['partner_external_id'], unique=False)
+        batch.create_index('ix_athlete_partner_birth_date', ['partner_birth_date'], unique=False)
+
+
+def downgrade():
+    with op.batch_alter_table('athlete') as batch:
+        batch.drop_index('ix_athlete_partner_birth_date')
+        batch.drop_index('ix_athlete_partner_external_id')
+        batch.drop_index('ix_athlete_primary_birth_date')
+        batch.drop_index('ix_athlete_primary_external_id')
+        batch.drop_column('partner_gender')
+        batch.drop_column('partner_birth_date')
+        batch.drop_column('partner_patronymic')
+        batch.drop_column('partner_last_name')
+        batch.drop_column('partner_first_name')
+        batch.drop_column('partner_external_id')
+        batch.drop_column('primary_gender')
+        batch.drop_column('primary_birth_date')
+        batch.drop_column('primary_patronymic')
+        batch.drop_column('primary_last_name')
+        batch.drop_column('primary_first_name')
+        batch.drop_column('primary_external_id')
+```
+
+---
+
+## Исходный код: `scripts/compare_registry_birth_dates.py`
+
+> 387 строк, 13,857 байт
+
+```py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Compare an athlete registry XLSX with Athlete rows from a SQLite database."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sqlite3
+import subprocess
+from collections import defaultdict
+from datetime import date, datetime
+from pathlib import Path
+from typing import Any
+
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
+
+
+def normalize_name(value: Any) -> tuple[str, ...]:
+    """Return an order-independent normalized FIO token key."""
+    text = str(value or "").strip().lower().replace("ё", "е")
+    text = re.sub(r"[^0-9a-zа-я-]+", " ", text)
+    return tuple(sorted(part for part in text.split() if part))
+
+
+def parse_registry_date(value: Any) -> date | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value).strip()
+    for pattern in ("%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(text, pattern).date()
+        except ValueError:
+            continue
+    return None
+
+
+def load_registry(path: Path) -> list[dict[str, Any]]:
+    workbook = load_workbook(path, data_only=True, read_only=False)
+    try:
+        worksheet = workbook.active
+        rows = []
+        for row_number in range(2, worksheet.max_row + 1):
+            fio_parts = [
+                str(worksheet.cell(row_number, column).value or "").strip()
+                for column in (1, 2, 3)
+            ]
+            fio = " ".join(part for part in fio_parts if part)
+            if not fio:
+                continue
+            raw_birth_date = worksheet.cell(row_number, 4).value
+            rows.append(
+                {
+                    "registry_row": row_number,
+                    "fio": fio,
+                    "name_key": normalize_name(fio),
+                    "birth_date": parse_registry_date(raw_birth_date),
+                    "birth_date_raw": raw_birth_date,
+                    "organization": worksheet.cell(row_number, 5).value,
+                    "rank": worksheet.cell(row_number, 7).value,
+                }
+            )
+        return rows
+    finally:
+        workbook.close()
+
+
+def load_database_rows(database_path: Path) -> list[dict[str, Any]]:
+    connection = sqlite3.connect(database_path)
+    connection.row_factory = sqlite3.Row
+    try:
+        existing_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(athlete)").fetchall()
+        }
+        optional_columns = [
+            column
+            for column in (
+                "primary_external_id",
+                "primary_first_name",
+                "primary_last_name",
+                "primary_patronymic",
+                "primary_birth_date",
+                "partner_external_id",
+                "partner_first_name",
+                "partner_last_name",
+                "partner_patronymic",
+                "partner_birth_date",
+            )
+            if column in existing_columns
+        ]
+        rows = connection.execute(
+            "SELECT id, first_name, last_name, patronymic, full_name_xml, birth_date"
+            + (", " + ", ".join(optional_columns) if optional_columns else "")
+            + " FROM athlete"
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        connection.close()
+
+
+def load_database_rows_over_ssh(
+    host: str,
+    port: int,
+    user: str,
+    key_path: Path,
+    database_path: str,
+) -> list[dict[str, Any]]:
+    query = (
+        "SELECT id, first_name, last_name, patronymic, full_name_xml, birth_date, "
+        "primary_external_id, primary_first_name, primary_last_name, "
+        "primary_patronymic, primary_birth_date, partner_external_id, "
+        "partner_first_name, partner_last_name, partner_patronymic, "
+        "partner_birth_date "
+        "FROM athlete;"
+    )
+    command = [
+        "ssh",
+        "-i",
+        str(key_path),
+        "-p",
+        str(port),
+        "-o",
+        "BatchMode=yes",
+        f"{user}@{host}",
+        f"sqlite3 -json {database_path!s} {json.dumps(query)}",
+    ]
+    completed = subprocess.run(
+        command,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    return json.loads(completed.stdout or "[]")
+
+
+def database_name(row: dict[str, Any]) -> str:
+    full_name = str(row.get("full_name_xml") or "").strip()
+    if full_name:
+        return full_name
+    return " ".join(
+        str(row.get(field) or "").strip()
+        for field in ("last_name", "first_name", "patronymic")
+        if str(row.get(field) or "").strip()
+    )
+
+
+def compare(
+    registry_rows: list[dict[str, Any]],
+    database_rows: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    database_by_name: dict[tuple[str, ...], list[dict[str, Any]]] = defaultdict(list)
+    for row in database_rows:
+        fio = database_name(row)
+        if "/" not in fio:
+            individual = {**row, "fio": fio, "name_key": normalize_name(fio)}
+            database_by_name[individual["name_key"]].append(individual)
+            continue
+
+        # A pair is one result record, but both people can be matched against
+        # the external athlete registry after the pair-member migration.
+        for prefix in ("primary", "partner"):
+            member_fio = " ".join(
+                str(row.get(f"{prefix}_{field}") or "").strip()
+                for field in ("last_name", "first_name", "patronymic")
+                if str(row.get(f"{prefix}_{field}") or "").strip()
+            )
+            if not member_fio:
+                continue
+            member = {
+                **row,
+                "fio": member_fio,
+                "birth_date": row.get(f"{prefix}_birth_date"),
+                "name_key": normalize_name(member_fio),
+            }
+            database_by_name[member["name_key"]].append(member)
+
+    result: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for registry in registry_rows:
+        candidates = database_by_name.get(registry["name_key"], [])
+        base = {
+            "registry_row": registry["registry_row"],
+            "registry_fio": registry["fio"],
+            "registry_birth_date": registry["birth_date"],
+            "organization": registry["organization"],
+            "rank": registry["rank"],
+        }
+        if not candidates:
+            result["not_found"].append(base)
+            continue
+
+        if len(candidates) > 1:
+            same_date = [
+                candidate
+                for candidate in candidates
+                if registry["birth_date"]
+                and parse_registry_date(candidate.get("birth_date")) == registry["birth_date"]
+            ]
+            if len(same_date) == 1:
+                candidates = same_date
+            else:
+                result["ambiguous"].append(
+                    {
+                        **base,
+                        "database_candidates": "; ".join(
+                            f"ID {candidate['id']}: {candidate['fio']} "
+                            f"({candidate.get('birth_date') or 'без ДР'})"
+                            for candidate in candidates
+                        ),
+                    }
+                )
+                continue
+
+        candidate = candidates[0]
+        database_birth_date = parse_registry_date(candidate.get("birth_date"))
+        combined = {
+            **base,
+            "database_id": candidate["id"],
+            "database_fio": candidate["fio"],
+            "database_birth_date": database_birth_date,
+        }
+        if registry["birth_date"] and database_birth_date:
+            bucket = "same_date" if registry["birth_date"] == database_birth_date else "different_date"
+        elif registry["birth_date"] and not database_birth_date:
+            bucket = "missing_in_database"
+        elif not registry["birth_date"] and database_birth_date:
+            bucket = "missing_in_registry"
+        else:
+            bucket = "both_dates_missing"
+        result[bucket].append(combined)
+    return result
+
+
+def display_date(value: Any) -> str:
+    parsed = parse_registry_date(value)
+    return parsed.strftime("%d.%m.%Y") if parsed else ""
+
+
+def write_sheet(
+    workbook: Workbook,
+    title: str,
+    rows: list[dict[str, Any]],
+    columns: list[tuple[str, str]],
+) -> None:
+    worksheet = workbook.create_sheet(title)
+    worksheet.append([header for _, header in columns])
+    for cell in worksheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="4472C4")
+    for row in rows:
+        worksheet.append(
+            [
+                display_date(row.get(key)) if "birth_date" in key else row.get(key, "")
+                for key, _ in columns
+            ]
+        )
+    worksheet.freeze_panes = "A2"
+    worksheet.auto_filter.ref = worksheet.dimensions
+    for index, (_, header) in enumerate(columns, start=1):
+        values = [str(worksheet.cell(row, index).value or "") for row in range(1, worksheet.max_row + 1)]
+        worksheet.column_dimensions[get_column_letter(index)].width = min(
+            max(len(header), *(len(value) for value in values)) + 2,
+            60,
+        )
+
+
+def write_report(path: Path, result: dict[str, list[dict[str, Any]]]) -> None:
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+
+    summary = workbook.create_sheet("Сводка")
+    summary.append(["Категория", "Количество"])
+    labels = [
+        ("different_date", "Расхождение даты"),
+        ("missing_in_database", "Дата отсутствует в БД"),
+        ("missing_in_registry", "Дата отсутствует в реестре"),
+        ("ambiguous", "Неоднозначное ФИО"),
+        ("not_found", "Не найдено в БД"),
+        ("same_date", "ФИО и дата совпадают"),
+        ("both_dates_missing", "Обе даты отсутствуют"),
+    ]
+    for key, label in labels:
+        summary.append([label, len(result.get(key, []))])
+    summary.column_dimensions["A"].width = 34
+    summary.column_dimensions["B"].width = 14
+    for cell in summary[1]:
+        cell.font = Font(bold=True)
+
+    matched_columns = [
+        ("registry_row", "Строка Excel"),
+        ("registry_fio", "ФИО в реестре"),
+        ("registry_birth_date", "Дата в реестре"),
+        ("database_id", "ID в БД"),
+        ("database_fio", "ФИО в БД"),
+        ("database_birth_date", "Дата в БД"),
+        ("organization", "Организация"),
+        ("rank", "Разряд"),
+    ]
+    write_sheet(workbook, "Расхождения дат", result.get("different_date", []), matched_columns)
+    write_sheet(workbook, "Нет даты в БД", result.get("missing_in_database", []), matched_columns)
+    write_sheet(workbook, "Нет даты в Excel", result.get("missing_in_registry", []), matched_columns)
+    write_sheet(workbook, "Совпадают", result.get("same_date", []), matched_columns)
+    write_sheet(workbook, "Обе даты пустые", result.get("both_dates_missing", []), matched_columns)
+    write_sheet(
+        workbook,
+        "Неоднозначные",
+        result.get("ambiguous", []),
+        [
+            ("registry_row", "Строка Excel"),
+            ("registry_fio", "ФИО в реестре"),
+            ("registry_birth_date", "Дата в реестре"),
+            ("database_candidates", "Кандидаты в БД"),
+            ("organization", "Организация"),
+        ],
+    )
+    write_sheet(
+        workbook,
+        "Не найдены",
+        result.get("not_found", []),
+        [
+            ("registry_row", "Строка Excel"),
+            ("registry_fio", "ФИО в реестре"),
+            ("registry_birth_date", "Дата в реестре"),
+            ("organization", "Организация"),
+            ("rank", "Разряд"),
+        ],
+    )
+    workbook.save(path)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--registry", required=True, type=Path)
+    parser.add_argument("--output", required=True, type=Path)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--database", type=Path)
+    source.add_argument("--ssh-host")
+    parser.add_argument("--ssh-port", type=int, default=2222)
+    parser.add_argument("--ssh-user", default="root")
+    parser.add_argument("--ssh-key", type=Path)
+    parser.add_argument(
+        "--remote-database",
+        default="/var/www/calc.figurebase.ru/instance/figure_skating.db",
+    )
+    args = parser.parse_args()
+
+    registry_rows = load_registry(args.registry)
+    if args.database:
+        database_rows = load_database_rows(args.database)
+    else:
+        if not args.ssh_key:
+            parser.error("--ssh-key is required with --ssh-host")
+        database_rows = load_database_rows_over_ssh(
+            args.ssh_host,
+            args.ssh_port,
+            args.ssh_user,
+            args.ssh_key,
+            args.remote_database,
+        )
+
+    result = compare(registry_rows, database_rows)
+    write_report(args.output, result)
+    print(f"Registry rows: {len(registry_rows)}")
+    print(f"Database rows: {len(database_rows)}")
+    for key in (
+        "different_date",
+        "missing_in_database",
+        "missing_in_registry",
+        "ambiguous",
+        "not_found",
+        "same_date",
+        "both_dates_missing",
+    ):
+        print(f"{key}: {len(result.get(key, []))}")
+    print(f"Report: {args.output}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+---
+
+## Исходный код: `tests/test_pair_member_parsing.py`
+
+> 171 строк, 6,334 байт
+
+```py
+import os
+import tempfile
+import unittest
+from datetime import date
+from pathlib import Path
+
+
+os.environ.setdefault("ALLOW_INSECURE_DEFAULTS", "1")
+os.environ.setdefault("DISABLE_PUBLIC_API_AUTH", "1")
+_db_fd, _db_path = tempfile.mkstemp(prefix="calcfigurebase-pairs-", suffix=".db")
+os.close(_db_fd)
+os.environ["DATABASE_URL"] = f"sqlite:///{_db_path.replace(os.sep, '/')}"
+
+from app_factory import create_app
+from extensions import db
+from models import Athlete
+from parsers.isu_calcfs_parser import ISUCalcFSParser
+from scripts.backfill_pair_members_from_xml import backfill
+from services.import_service import save_to_database
+
+
+PAIR_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<ISUCalcFS>
+  <Event EVT_ID="1" EVT_NAME="Тест" EVT_BEGDAT="20260824">
+    <Categories_List>
+      <Category CAT_ID="10" EVT_ID="1" CAT_NAME="Танцы на льду" CAT_GENDER="P"/>
+    </Categories_List>
+    <Participants_List>
+      <Person_Couple_Team
+        PCT_ID="30"
+        PCT_EXTDT="pair-30"
+        PCT_TYPE="COU"
+        PCT_PLNAME="София Павловна ЩЕГЛОВА / Александр Викторович МУШКИН"
+        PCT_CNAME="София ЩЕГЛОВА / Александр МУШКИН"
+        PCT_PSNAME="ЩЕГЛОВА / МУШКИН"
+        PCT_GNAME="София"
+        PCT_FNAMEC="ЩЕГЛОВА"
+        PCT_BDAY="20131209"
+        PCT_PGNAME="Александр"
+        PCT_PFNAMC="МУШКИН"
+        PCT_PBDAY="20080416">
+        <Team_Members>
+          <Person
+            PCT_ID="28"
+            PCT_EXTDT="skater-28"
+            PCT_TYPE="PER"
+            PCT_PLNAME="София Павловна ЩЕГЛОВА"
+            PCT_GNAME="София"
+            PCT_FNAMEC="ЩЕГЛОВА"
+            PCT_BDAY="20131209"
+            PCT_GENDER="F"/>
+          <Person
+            PCT_ID="29"
+            PCT_EXTDT="skater-29"
+            PCT_TYPE="PER"
+            PCT_PLNAME="Александр Викторович МУШКИН"
+            PCT_GNAME="Александр"
+            PCT_FNAMEC="МУШКИН"
+            PCT_BDAY="20080416"
+            PCT_GENDER="M"/>
+        </Team_Members>
+      </Person_Couple_Team>
+    </Participants_List>
+    <Participant PAR_ID="40" CAT_ID="10" PCT_ID="30"/>
+  </Event>
+</ISUCalcFS>
+"""
+
+
+class PairMemberParsingTestCase(unittest.TestCase):
+    def setUp(self):
+        self.app = create_app()
+        self.context = self.app.app_context()
+        self.context.push()
+        db.create_all()
+
+    def tearDown(self):
+        db.session.remove()
+        db.drop_all()
+        db.engine.dispose()
+        self.context.pop()
+
+    def test_both_pair_members_are_preserved(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".xml", encoding="utf-8", delete=False) as handle:
+            handle.write(PAIR_XML)
+            path = Path(handle.name)
+        try:
+            parser = ISUCalcFSParser(path)
+            parser.parse()
+            self.assertEqual(len(parser.persons), 1)
+            pair = parser.persons[0]
+
+            self.assertEqual(pair["birth_date"], date(2013, 12, 9))
+            self.assertEqual(pair["primary_external_id"], "skater-28")
+            self.assertEqual(pair["primary_first_name"], "София")
+            self.assertEqual(pair["primary_last_name"], "ЩЕГЛОВА")
+            self.assertEqual(pair["primary_patronymic"], "Павловна")
+            self.assertEqual(pair["primary_birth_date"], date(2013, 12, 9))
+            self.assertEqual(pair["partner_external_id"], "skater-29")
+            self.assertEqual(pair["partner_first_name"], "Александр")
+            self.assertEqual(pair["partner_last_name"], "МУШКИН")
+            self.assertEqual(pair["partner_patronymic"], "Викторович")
+            self.assertEqual(pair["partner_birth_date"], date(2008, 4, 16))
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_pair_member_details_are_saved_to_database(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".xml", encoding="utf-8", delete=False) as handle:
+            handle.write(PAIR_XML)
+            path = Path(handle.name)
+        try:
+            parser = ISUCalcFSParser(path)
+            parser.parse()
+            save_to_database(parser)
+
+            pair = Athlete.query.one()
+            self.assertTrue(pair.is_pair)
+            self.assertEqual(pair.primary_member_full_name, "ЩЕГЛОВА София Павловна")
+            self.assertEqual(pair.primary_birth_date, date(2013, 12, 9))
+            self.assertEqual(pair.partner_member_full_name, "МУШКИН Александр Викторович")
+            self.assertEqual(pair.partner_birth_date, date(2008, 4, 16))
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_backfill_has_dry_run_and_apply_modes(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".xml", encoding="utf-8", delete=False) as handle:
+            handle.write(PAIR_XML)
+            path = Path(handle.name)
+        try:
+            parser = ISUCalcFSParser(path)
+            parser.parse()
+            save_to_database(parser)
+            pair = Athlete.query.one()
+            for field in (
+                "primary_external_id",
+                "primary_first_name",
+                "primary_last_name",
+                "primary_patronymic",
+                "primary_birth_date",
+                "primary_gender",
+                "partner_external_id",
+                "partner_first_name",
+                "partner_last_name",
+                "partner_patronymic",
+                "partner_birth_date",
+                "partner_gender",
+            ):
+                setattr(pair, field, None)
+            db.session.commit()
+
+            dry_run = backfill(path, apply=False)
+            self.assertEqual(dry_run["matched"], 1)
+            self.assertEqual(dry_run["updated"], 1)
+            self.assertIsNone(Athlete.query.one().partner_birth_date)
+
+            applied = backfill(path, apply=True)
+            self.assertEqual(applied["updated"], 1)
+            self.assertEqual(Athlete.query.one().partner_birth_date, date(2008, 4, 16))
+        finally:
+            path.unlink(missing_ok=True)
+
+
+def tearDownModule():
+    try:
+        os.unlink(_db_path)
+    except OSError:
+        pass
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+---
+
+
+
+---
+
+## Исходный код: `scripts/backfill_pair_members_from_xml.py`
+
+> 112 строк, 3,514 байт
+
+```py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Backfill pair-member fields for existing Athlete rows from an ISUCalcFS XML."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from pathlib import Path
+
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from app_factory import create_app
+from extensions import db
+from models import Athlete
+from parsers.isu_calcfs_parser import ISUCalcFSParser
+from services.athlete_registry import AthleteRegistry
+from utils.date_parsing import parse_date
+
+
+def find_pair(person_data: dict) -> tuple[Athlete | None, str]:
+    """Find an existing composite pair without creating a new athlete."""
+    external_id = person_data.get("external_id")
+    if external_id:
+        candidates = Athlete.query.filter_by(external_id=external_id).all()
+        if len(candidates) == 1:
+            return candidates[0], "external_id"
+        if len(candidates) > 1:
+            return None, "ambiguous_external_id"
+
+    full_name = person_data.get("full_name") or person_data.get("full_name_xml")
+    birth_date = parse_date(person_data.get("birth_date"))
+    if full_name:
+        candidates = Athlete.query.filter_by(
+            full_name_xml=full_name,
+            birth_date=birth_date,
+        ).all()
+        if len(candidates) == 1:
+            return candidates[0], "name_birth"
+        if len(candidates) > 1:
+            return None, "ambiguous_name_birth"
+    return None, "not_found"
+
+
+def backfill(xml_path: Path, apply: bool) -> dict[str, int]:
+    parser = ISUCalcFSParser(xml_path)
+    parser.parse()
+    registry = AthleteRegistry()
+    stats = {
+        "xml_pairs": 0,
+        "matched": 0,
+        "updated": 0,
+        "not_found": 0,
+        "ambiguous": 0,
+    }
+
+    for person_data in parser.persons:
+        if person_data.get("type") != "COU":
+            continue
+        stats["xml_pairs"] += 1
+        athlete, match_type = find_pair(person_data)
+        if not athlete:
+            key = "ambiguous" if match_type.startswith("ambiguous") else "not_found"
+            stats[key] += 1
+            print(
+                f"SKIP {match_type}: "
+                f"{person_data.get('full_name') or person_data.get('full_name_xml')}"
+            )
+            continue
+
+        stats["matched"] += 1
+        before = tuple(getattr(athlete, field) for field in registry.PAIR_DETAIL_FIELDS)
+        registry._merge_pair_details(athlete, person_data)
+        after = tuple(getattr(athlete, field) for field in registry.PAIR_DETAIL_FIELDS)
+        if before != after:
+            stats["updated"] += 1
+            print(
+                f"{'UPDATE' if apply else 'WOULD UPDATE'} ID {athlete.id}: "
+                f"{athlete.full_name}"
+            )
+
+    if apply:
+        db.session.commit()
+    else:
+        db.session.rollback()
+    return stats
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("xml", type=Path)
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Commit updates. Without this flag the command is a dry run.",
+    )
+    args = parser.parse_args()
+
+    app = create_app()
+    with app.app_context():
+        stats = backfill(args.xml, args.apply)
+        print("mode:", "apply" if args.apply else "dry-run")
+        for key, value in stats.items():
+            print(f"{key}: {value}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
 
 ---
 

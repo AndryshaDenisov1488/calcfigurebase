@@ -734,10 +734,34 @@
                 <hr>
                 
                 <div class="athlete-info">
+                    {% if athlete.is_pair and (athlete.primary_member_full_name or athlete.partner_member_full_name) %}
+                    <div class="alert alert-info py-2">
+                        <strong><i class="fas fa-user-friends"></i> Состав пары / дуэта</strong>
+                    </div>
+                    <div class="info-item">
+                        <strong>Партнёр 1:</strong>
+                        <span>
+                            {{ athlete.primary_member_full_name or 'Не указан' }}
+                            {% if athlete.primary_birth_date %}
+                            · {{ athlete.primary_birth_date.strftime('%d.%m.%Y') }}
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="info-item">
+                        <strong>Партнёр 2:</strong>
+                        <span>
+                            {{ athlete.partner_member_full_name or 'Не указан' }}
+                            {% if athlete.partner_birth_date %}
+                            · {{ athlete.partner_birth_date.strftime('%d.%m.%Y') }}
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% else %}
                     <div class="info-item">
                         <strong><i class="fas fa-birthday-cake"></i> Дата рождения:</strong>
                         <span>{{ athlete.birth_date.strftime('%d.%m.%Y') if athlete.birth_date else 'Не указана' }}</span>
                     </div>
+                    {% endif %}
                     
                     <div class="info-item">
                         <strong><i class="fas fa-venus-mars"></i> Пол:</strong>

@@ -184,6 +184,18 @@ def save_to_database(parser):
             'gender': gender,
             'country': person_data.get('nationality'),
             'club_id': club_id,
+            'primary_external_id': person_data.get('primary_external_id'),
+            'primary_first_name': person_data.get('primary_first_name'),
+            'primary_last_name': person_data.get('primary_last_name'),
+            'primary_patronymic': person_data.get('primary_patronymic'),
+            'primary_birth_date': parse_date(person_data.get('primary_birth_date')),
+            'primary_gender': person_data.get('primary_gender'),
+            'partner_external_id': person_data.get('partner_external_id'),
+            'partner_first_name': person_data.get('partner_first_name'),
+            'partner_last_name': person_data.get('partner_last_name'),
+            'partner_patronymic': person_data.get('partner_patronymic'),
+            'partner_birth_date': parse_date(person_data.get('partner_birth_date')),
+            'partner_gender': person_data.get('partner_gender'),
         }
         athlete = athlete_registry.get_or_create(athlete_payload)
         db.session.flush()
