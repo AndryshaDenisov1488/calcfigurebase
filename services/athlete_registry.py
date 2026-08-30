@@ -23,8 +23,8 @@ class AthleteRegistry:
     )
 
     def _make_lookup_key(self, person_data):
-        first_name = normalize_string(person_data.get('first_name', '')).lower()
-        last_name = normalize_string(person_data.get('last_name', '')).lower()
+        first_name = normalize_string(person_data.get('first_name', '')).lower().replace('ё', 'е')
+        last_name = normalize_string(person_data.get('last_name', '')).lower().replace('ё', 'е')
         birth_date = person_data.get('birth_date')
         if first_name and last_name and birth_date:
             return f"name:{first_name}:{last_name}:{birth_date}"

@@ -8320,6 +8320,8 @@ limiter = Limiter(
 - Миграция: `a91c7d42f610_pair_member_details.py`.
 - Безопасное заполнение старых записей: `scripts/backfill_pair_members_from_xml.py` (dry-run по умолчанию, запись только с `--apply`).
 - Сверка внешнего реестра спортсменов: `scripts/compare_registry_birth_dates.py`; отчёт разделяет совпадения, расхождения дат, пропуски и неоднозначные ФИО.
+- Синхронизация обеих дат пар из официального XLSX: `scripts/sync_pair_birth_dates_from_registry.py` (dry-run по умолчанию).
+- Разовые подтверждённые дубли Е/Ё объединяются атомарно скриптом `scripts/merge_yo_duplicate_athletes.py`; `AthleteRegistry` нормализует `ё → е` в `lookup_key`, чтобы повторно такие дубли не создавать.
 
 ### 5.9 Обработка тренеров и переходов (`Coach` и `CoachAssignment`)
 
@@ -40106,7 +40108,7 @@ def parse_xml_date_to_season(date_str: str) -> str:
 
 ## Исходный код: `services/athlete_registry.py`
 
-> 99 строк, 4,337 байт
+> 99 строк, 4,377 байт
 
 ```py
 """Athlete registry with deduplication by name+birth date."""
@@ -40134,8 +40136,8 @@ class AthleteRegistry:
     )
 
     def _make_lookup_key(self, person_data):
-        first_name = normalize_string(person_data.get('first_name', '')).lower()
-        last_name = normalize_string(person_data.get('last_name', '')).lower()
+        first_name = normalize_string(person_data.get('first_name', '')).lower().replace('ё', 'е')
+        last_name = normalize_string(person_data.get('last_name', '')).lower().replace('ё', 'е')
         birth_date = person_data.get('birth_date')
         if first_name and last_name and birth_date:
             return f"name:{first_name}:{last_name}:{birth_date}"
@@ -56976,6 +56978,452 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+```
+
+---
+
+
+
+---
+
+## Исходный код: `scripts/merge_yo_duplicate_athletes.py`
+
+> 179 строк, 5,807 байт
+
+```py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Merge the production athlete duplicates confirmed in the Е/Ё review."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from datetime import date
+
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from app_factory import create_app
+from extensions import db
+from models import Athlete, CoachAssignment, Participant
+from services.athlete_registry import AthleteRegistry
+
+
+# keep_id, remove_id, spelling_source_id, corrected_birth_date
+MERGES = (
+    (1232, 3163, 3163, None),
+    (1816, 2712, 1816, None),
+    (1357, 2650, 1357, None),
+    (2740, 1233, 2740, None),
+    (1109, 3443, 1109, None),
+    (917, 2611, 2611, None),
+    (1818, 2707, 2707, None),
+    (414, 3271, 3271, None),
+    (3358, 1770, 3358, None),
+    (3243, 3315, 3315, None),
+    (1060, 3552, 1060, None),
+    (2009, 2622, 2009, None),
+    (211, 3044, 211, None),
+    (1602, 3454, 3454, date(2016, 1, 1)),
+    (913, 3320, 3320, None),
+    (3570, 3577, 3577, None),
+    (2600, 35, 2600, None),
+)
+
+
+def merge_duplicates(apply: bool) -> dict[str, int]:
+    registry = AthleteRegistry()
+    stats = {
+        "planned": len(MERGES),
+        "merged": 0,
+        "already_merged": 0,
+        "conflicts": 0,
+        "normalized_lookup_keys": 0,
+    }
+
+    for keep_id, remove_id, spelling_source_id, corrected_birth_date in MERGES:
+        keep = db.session.get(Athlete, keep_id)
+        remove = db.session.get(Athlete, remove_id)
+        if keep and not remove:
+            stats["already_merged"] += 1
+            print(f"ALREADY MERGED: {remove_id} -> {keep_id}")
+            continue
+        if not keep or not remove:
+            stats["conflicts"] += 1
+            print(f"ERROR missing row: keep={keep_id} remove={remove_id}")
+            continue
+
+        keep_slots = {
+            (event_id, category_id)
+            for event_id, category_id in db.session.query(
+                Participant.event_id, Participant.category_id
+            ).filter(Participant.athlete_id == keep_id)
+        }
+        remove_slots = {
+            (event_id, category_id)
+            for event_id, category_id in db.session.query(
+                Participant.event_id, Participant.category_id
+            ).filter(Participant.athlete_id == remove_id)
+        }
+        participation_conflicts = len(keep_slots & remove_slots)
+        if participation_conflicts:
+            stats["conflicts"] += 1
+            print(
+                f"CONFLICT {remove_id} -> {keep_id}: "
+                f"{participation_conflicts} duplicate event/category slots"
+            )
+            continue
+
+        source = keep if spelling_source_id == keep_id else remove
+        final_birth_date = corrected_birth_date or keep.birth_date or remove.birth_date
+        remove_participations = Participant.query.filter_by(athlete_id=remove_id).count()
+        remove_assignments = CoachAssignment.query.filter_by(athlete_id=remove_id).count()
+        print(
+            f"{'MERGE' if apply else 'WOULD MERGE'} {remove_id} -> {keep_id}: "
+            f"{remove.full_name} => {source.full_name}; "
+            f"participations={remove_participations}, coaches={remove_assignments}, "
+            f"birth_date={final_birth_date}"
+        )
+
+        if not apply:
+            stats["merged"] += 1
+            continue
+
+        for field in (
+            "external_id",
+            "first_name",
+            "last_name",
+            "patronymic",
+            "full_name_xml",
+            "gender",
+            "country",
+            "club_id",
+        ):
+            source_value = getattr(source, field)
+            if source_value not in (None, ""):
+                setattr(keep, field, source_value)
+
+        keep.birth_date = final_birth_date
+        keep.lookup_key = registry._make_lookup_key(
+            {
+                "first_name": keep.first_name,
+                "last_name": keep.last_name,
+                "birth_date": keep.birth_date,
+            }
+        )
+        Participant.query.filter_by(athlete_id=remove_id).update(
+            {"athlete_id": keep_id},
+            synchronize_session=False,
+        )
+        CoachAssignment.query.filter_by(athlete_id=remove_id).update(
+            {"athlete_id": keep_id},
+            synchronize_session=False,
+        )
+        db.session.delete(remove)
+        stats["merged"] += 1
+
+    if stats["conflicts"]:
+        db.session.rollback()
+        print("ROLLBACK: unresolved conflicts found")
+        return stats
+
+    for athlete in Athlete.query.filter(Athlete.birth_date.isnot(None)):
+        normalized_lookup_key = registry._make_lookup_key(
+            {
+                "first_name": athlete.first_name,
+                "last_name": athlete.last_name,
+                "birth_date": athlete.birth_date,
+            }
+        )
+        if normalized_lookup_key and athlete.lookup_key != normalized_lookup_key:
+            stats["normalized_lookup_keys"] += 1
+            if apply:
+                athlete.lookup_key = normalized_lookup_key
+
+    if apply:
+        db.session.commit()
+    else:
+        db.session.rollback()
+    return stats
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Commit all merges atomically. Without this flag the command is a dry run.",
+    )
+    args = parser.parse_args()
+
+    app = create_app()
+    with app.app_context():
+        stats = merge_duplicates(args.apply)
+        print("mode:", "apply" if args.apply else "dry-run")
+        for key, value in stats.items():
+            print(f"{key}: {value}")
+    return 1 if stats["conflicts"] else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+---
+
+## Исходный код: `scripts/sync_pair_birth_dates_from_registry.py`
+
+> 131 строк, 4,538 байт
+
+```py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Synchronize both members of pair Athlete rows from the official XLSX registry."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from app_factory import create_app
+from extensions import db
+from models import Athlete
+from scripts.compare_registry_birth_dates import load_registry, normalize_name
+
+
+def split_protocol_name(value: str | None) -> tuple[str | None, str | None, str | None]:
+    words = str(value or "").strip().split()
+    if len(words) < 2:
+        return None, None, None
+    first_name = words[0]
+    last_name = words[-1]
+    patronymic = " ".join(words[1:-1]) or None
+    return first_name, last_name, patronymic
+
+
+def pair_member_names(athlete: Athlete) -> tuple[str, str] | None:
+    if athlete.primary_member_full_name and athlete.partner_member_full_name:
+        return athlete.primary_member_full_name, athlete.partner_member_full_name
+    protocol_names = [part.strip() for part in (athlete.full_name or "").split("/")]
+    if len(protocol_names) != 2 or not all(protocol_names):
+        return None
+    return protocol_names[0], protocol_names[1]
+
+
+def sync_pair_birth_dates(registry_path: Path, apply: bool) -> dict[str, int]:
+    registry_dates: dict[tuple[str, ...], set] = defaultdict(set)
+    for row in load_registry(registry_path):
+        if row["birth_date"]:
+            registry_dates[row["name_key"]].add(row["birth_date"])
+
+    stats = {
+        "pair_rows": 0,
+        "matched_members": 0,
+        "updated_members": 0,
+        "unchanged_members": 0,
+        "not_found_members": 0,
+        "ambiguous_members": 0,
+    }
+
+    for athlete in Athlete.query.filter(Athlete.gender == "P").order_by(Athlete.id):
+        names = pair_member_names(athlete)
+        if not names:
+            continue
+        stats["pair_rows"] += 1
+
+        for prefix, fio in zip(("primary", "partner"), names):
+            dates = registry_dates.get(normalize_name(fio), set())
+            if not dates:
+                stats["not_found_members"] += 1
+                continue
+            if len(dates) > 1:
+                stats["ambiguous_members"] += 1
+                print(
+                    f"SKIP ambiguous ID {athlete.id} {prefix}: {fio} "
+                    f"=> {', '.join(sorted(value.isoformat() for value in dates))}"
+                )
+                continue
+
+            stats["matched_members"] += 1
+            registry_birth_date = next(iter(dates))
+            date_field = f"{prefix}_birth_date"
+            old_birth_date = getattr(athlete, date_field)
+            if old_birth_date == registry_birth_date:
+                stats["unchanged_members"] += 1
+                continue
+
+            stats["updated_members"] += 1
+            print(
+                f"{'UPDATE' if apply else 'WOULD UPDATE'} ID {athlete.id} {prefix}: "
+                f"{fio}: {old_birth_date or 'empty'} -> {registry_birth_date}"
+            )
+            if not apply:
+                continue
+
+            setattr(athlete, date_field, registry_birth_date)
+            if prefix == "primary":
+                athlete.birth_date = registry_birth_date
+
+            first_name, last_name, patronymic = split_protocol_name(fio)
+            if not getattr(athlete, f"{prefix}_first_name"):
+                setattr(athlete, f"{prefix}_first_name", first_name)
+            if not getattr(athlete, f"{prefix}_last_name"):
+                setattr(athlete, f"{prefix}_last_name", last_name)
+            if not getattr(athlete, f"{prefix}_patronymic"):
+                setattr(athlete, f"{prefix}_patronymic", patronymic)
+
+    if apply:
+        db.session.commit()
+    else:
+        db.session.rollback()
+    return stats
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("registry", type=Path)
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Commit updates. Without this flag the command is a dry run.",
+    )
+    args = parser.parse_args()
+
+    app = create_app()
+    with app.app_context():
+        stats = sync_pair_birth_dates(args.registry, args.apply)
+        print("mode:", "apply" if args.apply else "dry-run")
+        for key, value in stats.items():
+            print(f"{key}: {value}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+---
+
+## Исходный код: `tests/test_athlete_maintenance.py`
+
+> 105 строк, 3,887 байт
+
+```py
+import os
+import tempfile
+import unittest
+from datetime import date
+from pathlib import Path
+
+from openpyxl import Workbook
+
+
+os.environ.setdefault("ALLOW_INSECURE_DEFAULTS", "1")
+os.environ.setdefault("DISABLE_PUBLIC_API_AUTH", "1")
+_db_fd, _db_path = tempfile.mkstemp(prefix="calcfigurebase-maintenance-", suffix=".db")
+os.close(_db_fd)
+os.environ["DATABASE_URL"] = f"sqlite:///{_db_path.replace(os.sep, '/')}"
+
+from app_factory import create_app
+from extensions import db
+from models import Athlete
+from scripts.sync_pair_birth_dates_from_registry import sync_pair_birth_dates
+from services.athlete_registry import AthleteRegistry
+
+
+class AthleteMaintenanceTestCase(unittest.TestCase):
+    def setUp(self):
+        self.app = create_app()
+        self.context = self.app.app_context()
+        self.context.push()
+        db.create_all()
+
+    def tearDown(self):
+        db.session.remove()
+        db.drop_all()
+        db.engine.dispose()
+        self.context.pop()
+
+    def test_lookup_key_treats_e_and_yo_as_the_same_letter(self):
+        registry = AthleteRegistry()
+        without_yo = registry._make_lookup_key(
+            {
+                "first_name": "Алена",
+                "last_name": "Бухмарева",
+                "birth_date": date(2017, 11, 11),
+            }
+        )
+        with_yo = registry._make_lookup_key(
+            {
+                "first_name": "Алёна",
+                "last_name": "Бухмарёва",
+                "birth_date": date(2017, 11, 11),
+            }
+        )
+        self.assertEqual(without_yo, with_yo)
+
+    def test_pair_dates_are_dry_run_then_synchronized_from_xlsx(self):
+        pair = Athlete(
+            first_name="Таисия ГУСЕВА / Даниил ОВЧИННИКОВ",
+            last_name="ГУСЕВА / ОВЧИННИКОВ",
+            full_name_xml="Таисия Денисовна ГУСЕВА / Даниил Дмитриевич ОВЧИННИКОВ",
+            birth_date=date(2012, 8, 12),
+            gender="P",
+            primary_first_name="Таисия",
+            primary_last_name="ГУСЕВА",
+            primary_patronymic="Денисовна",
+            primary_birth_date=date(2012, 8, 12),
+            partner_first_name="Даниил",
+            partner_last_name="ОВЧИННИКОВ",
+            partner_patronymic="Дмитриевич",
+            partner_birth_date=date(2008, 1, 1),
+        )
+        db.session.add(pair)
+        db.session.commit()
+
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.append(["Фамилия", "Имя", "Отчество", "Дата рождения"])
+        worksheet.append(["Гусева", "Таисия", "Денисовна", date(2015, 9, 3)])
+        worksheet.append(["Овчинников", "Даниил", "Дмитриевич", date(2008, 1, 1)])
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as handle:
+            registry_path = Path(handle.name)
+        workbook.save(registry_path)
+
+        try:
+            dry_run = sync_pair_birth_dates(registry_path, apply=False)
+            self.assertEqual(dry_run["updated_members"], 1)
+            self.assertEqual(Athlete.query.one().primary_birth_date, date(2012, 8, 12))
+
+            applied = sync_pair_birth_dates(registry_path, apply=True)
+            self.assertEqual(applied["updated_members"], 1)
+            updated_pair = Athlete.query.one()
+            self.assertEqual(updated_pair.primary_birth_date, date(2015, 9, 3))
+            self.assertEqual(updated_pair.birth_date, date(2015, 9, 3))
+            self.assertEqual(updated_pair.partner_birth_date, date(2008, 1, 1))
+        finally:
+            registry_path.unlink(missing_ok=True)
+
+
+def tearDownModule():
+    try:
+        os.unlink(_db_path)
+    except OSError:
+        pass
+
+
+if __name__ == "__main__":
+    unittest.main()
 ```
 
 ---
