@@ -272,9 +272,11 @@ ROUTE /admin/free-participation  ← `scripts/appBU.py`
 ### `AthleteRegistry` (строка 7)
 > Registry for athletes with safe merge logic.
 
-- `_make_lookup_key(self, person_data)` — строка 10
-- `_should_update(self, old_value, new_value)` — строка 18
-- `get_or_create(self, person_data)` — строка 25
+- `_make_lookup_key(self, person_data)` — строка 25
+- `_fold_lookup_key(self, lookup_key)` — свёртка ё→е в уже сохранённом ключе
+- `_find_existing_athlete(self, lookup_key, person_data)` — точный ключ, затем legacy-ключи с ё
+- `_should_update(self, old_value, new_value)`
+- `get_or_create(self, person_data)`
 
 ### `ClubRegistry` (строка 11)
 > Cache/registry for clubs to prevent overwrite by empty values.
@@ -2776,9 +2778,11 @@ ROUTE /admin/free-participation
 
 - `AthleteRegistry` (строка 7)
   - Docstring: Registry for athletes with safe merge logic.
-  - `_make_lookup_key(self, person_data)` L10
-  - `_should_update(self, old_value, new_value)` L18
-  - `get_or_create(self, person_data)` L25
+  - `_make_lookup_key(self, person_data)` — ключ с ё→е
+  - `_fold_lookup_key(self, lookup_key)` — свёртка уже сохранённого ключа
+  - `_find_existing_athlete(self, lookup_key, person_data)` — exact key, затем legacy ё
+  - `_should_update(self, old_value, new_value)`
+  - `get_or_create(self, person_data)`
 
 ### Файл: `services/club_registry.py`
 
@@ -8321,7 +8325,7 @@ limiter = Limiter(
 - Безопасное заполнение старых записей: `scripts/backfill_pair_members_from_xml.py` (dry-run по умолчанию, запись только с `--apply`).
 - Сверка внешнего реестра спортсменов: `scripts/compare_registry_birth_dates.py`; отчёт разделяет совпадения, расхождения дат, пропуски и неоднозначные ФИО.
 - Синхронизация обеих дат пар из официального XLSX: `scripts/sync_pair_birth_dates_from_registry.py` (dry-run по умолчанию).
-- Разовые подтверждённые дубли Е/Ё объединяются атомарно скриптом `scripts/merge_yo_duplicate_athletes.py`; `AthleteRegistry` нормализует `ё → е` в `lookup_key`, чтобы повторно такие дубли не создавать.
+- Разовые подтверждённые дубли Е/Ё объединяются атомарно скриптом `scripts/merge_yo_duplicate_athletes.py`; `AthleteRegistry` нормализует `ё → е` в `lookup_key` и при импорте находит legacy-строки, у которых ключ ещё хранится с `ё`, чтобы не создавать вторую карточку.
 
 ### 5.9 Обработка тренеров и переходов (`Coach` и `CoachAssignment`)
 
@@ -40143,6 +40147,43 @@ class AthleteRegistry:
             return f"name:{first_name}:{last_name}:{birth_date}"
         return None
 
+    def _fold_lookup_key(self, lookup_key):
+        if not lookup_key:
+            return None
+        return str(lookup_key).replace('ё', 'е').replace('Ё', 'е')
+
+    def _find_existing_athlete(self, lookup_key, person_data):
+        """Match by folded key, including rows still stored with ё from before folding."""
+        if lookup_key:
+            athlete = Athlete.query.filter_by(lookup_key=lookup_key).first()
+            if athlete:
+                return athlete
+
+        birth_date = person_data.get('birth_date')
+        if not lookup_key or not birth_date:
+            return None
+
+        # Exact filter_by misses legacy keys such as name:алёна:... after ё→е folding.
+        candidates = (
+            Athlete.query.filter(Athlete.birth_date == birth_date)
+            .order_by(Athlete.id.asc())
+            .all()
+        )
+        for candidate in candidates:
+            stored = self._fold_lookup_key(candidate.lookup_key)
+            if stored == lookup_key:
+                return candidate
+            recomputed = self._make_lookup_key(
+                {
+                    'first_name': candidate.first_name,
+                    'last_name': candidate.last_name,
+                    'birth_date': candidate.birth_date,
+                }
+            )
+            if recomputed == lookup_key:
+                return candidate
+        return None
+
     def _should_update(self, old_value, new_value):
         if not new_value:
             return False
@@ -40156,10 +40197,7 @@ class AthleteRegistry:
             return None
 
         lookup_key = self._make_lookup_key(person_data)
-
-        athlete = None
-        if lookup_key:
-            athlete = Athlete.query.filter_by(lookup_key=lookup_key).first()
+        athlete = self._find_existing_athlete(lookup_key, person_data)
 
         if not athlete:
             athlete = Athlete(
@@ -40194,7 +40232,7 @@ class AthleteRegistry:
             athlete.country = normalize_string(person_data.get('country', ''))
         if not athlete.club_id and person_data.get('club_id'):
             athlete.club_id = person_data.get('club_id')
-        if not athlete.lookup_key and lookup_key:
+        if lookup_key and athlete.lookup_key != lookup_key:
             athlete.lookup_key = lookup_key
 
         self._merge_pair_details(athlete, person_data)
@@ -57371,6 +57409,52 @@ class AthleteMaintenanceTestCase(unittest.TestCase):
             }
         )
         self.assertEqual(without_yo, with_yo)
+
+    def test_get_or_create_reuses_legacy_yo_lookup_key(self):
+        """Re-import must attach to the existing card, not create a split career.
+
+        Production rows stored lookup_key with ё before 495bc13 folded the key.
+        Exact filter_by(lookup_key=folded) misses those rows.
+        """
+        registry = AthleteRegistry()
+        birth = date(2017, 11, 11)
+        existing = Athlete(
+            first_name="Алёна",
+            last_name="Бухмарева",
+            full_name_xml="Алёна Бухмарева",
+            birth_date=birth,
+            lookup_key=f"name:алёна:бухмарева:{birth}",
+        )
+        db.session.add(existing)
+        db.session.commit()
+        existing_id = existing.id
+
+        reused = registry.get_or_create(
+            {
+                "first_name": "Алена",
+                "last_name": "Бухмарева",
+                "birth_date": birth,
+            }
+        )
+        db.session.flush()
+
+        self.assertEqual(reused.id, existing_id)
+        self.assertEqual(Athlete.query.count(), 1)
+        self.assertEqual(
+            reused.lookup_key,
+            f"name:алена:бухмарева:{birth}",
+        )
+
+        reused_yo = registry.get_or_create(
+            {
+                "first_name": "Алёна",
+                "last_name": "Бухмарева",
+                "birth_date": birth,
+            }
+        )
+        db.session.flush()
+        self.assertEqual(reused_yo.id, existing_id)
+        self.assertEqual(Athlete.query.count(), 1)
 
     def test_pair_dates_are_dry_run_then_synchronized_from_xlsx(self):
         pair = Athlete(
