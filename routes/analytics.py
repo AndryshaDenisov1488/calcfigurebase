@@ -13,7 +13,7 @@ from sqlalchemy import func
 from extensions import db
 from models import Athlete, Participant, Event, Category, JudgeHelperFreeAudit
 from rank_scope import category_scope_clause
-from season_utils import event_in_season
+from season_utils import event_in_season, get_active_season, get_season_display_name
 from utils.access_control import SESSION_SITE_READER_KEY
 from utils.client_ip import get_client_ip
 
@@ -316,16 +316,18 @@ def _parse_xlsx_entries(file_storage):
     return _dedupe_entries(entries)
 
 
-def _check_names_against_db(names_or_entries):
+def _check_names_against_db(names_or_entries, season=None):
     """По списку ФИО (или [{fio, birth_date}]) вернуть (found, fio_only_matches, not_found).
 
     found / fio_only_matches = [(display_label, [match_info, ...]), ...]
     match_info: id, full_name, birth_date, patronymic, rank
     При наличии ДР: приоритет совпадений ФИО/ФИ + дата рождения.
+    Разряд в match_info — из участий выбранного сезона.
     """
     if not names_or_entries:
         return [], [], []
 
+    season = season or get_active_season()
     entries = []
     for item in names_or_entries:
         if isinstance(item, dict):
@@ -395,19 +397,19 @@ def _check_names_against_db(names_or_entries):
             dob_full = _filter_dob(raw_full) if raw_full else []
             dob_base = _filter_dob(raw_base)
             if dob_full:
-                matches = _enrich_matches(dob_full)
+                matches = _enrich_matches(dob_full, season=season)
                 found.append((label, matches))
                 continue
             if dob_base:
-                matches = _enrich_matches(dob_base)
+                matches = _enrich_matches(dob_base, season=season)
                 found.append((label, matches))
                 continue
             if raw_full:
-                matches = _enrich_matches(raw_full)
+                matches = _enrich_matches(raw_full, season=season)
                 fio_only_matches.append((label, matches))
                 continue
             if raw_base:
-                matches = _enrich_matches(raw_base)
+                matches = _enrich_matches(raw_base, season=season)
                 fio_only_matches.append((label, matches))
                 continue
             not_found.append(label)
@@ -416,14 +418,14 @@ def _check_names_against_db(names_or_entries):
         if full_key:
             raw_matches = raw_full
             if not raw_matches:
-                matches = _enrich_matches(raw_base)
+                matches = _enrich_matches(raw_base, season=season)
                 if matches:
                     fio_only_matches.append((label, matches))
                     continue
         else:
             raw_matches = raw_base
 
-        matches = _enrich_matches(raw_matches)
+        matches = _enrich_matches(raw_matches, season=season)
         if matches:
             found.append((label, matches))
         else:
@@ -431,17 +433,18 @@ def _check_names_against_db(names_or_entries):
     return found, fio_only_matches, not_found
 
 
-def _enrich_matches(raw_matches):
+def _enrich_matches(raw_matches, season=None):
     """Добавляет метаданные к совпадениям: дата рождения, отчество, текущий/последний разряд."""
     if not raw_matches:
         return []
 
     athlete_ids = [aid for aid, _ in raw_matches]
+    season = season or get_active_season()
 
     athletes = Athlete.query.filter(Athlete.id.in_(athlete_ids)).all()
     athlete_map = {a.id: a for a in athletes}
 
-    # Последний разряд по дате турнира (при равенстве дат — по более новой записи Participant.id)
+    # Последний разряд по дате турнира в выбранном сезоне
     latest_rank_map = {}
     participations = (
         db.session.query(
@@ -455,7 +458,7 @@ def _enrich_matches(raw_matches):
         .join(Event, Participant.event_id == Event.id)
         .filter(
             Participant.athlete_id.in_(athlete_ids),
-            *event_in_season(Event.begin_date),
+            *event_in_season(Event.begin_date, season),
             category_scope_clause(),
         )
         .order_by(Participant.athlete_id, Event.begin_date.desc(), Participant.id.desc())
@@ -482,8 +485,9 @@ def _enrich_matches(raw_matches):
     return enriched
 
 
-def _get_participation_counts():
-    """Возвращает (total_by_athlete, free_by_athlete) — словари athlete_id -> count."""
+def _get_participation_counts(season=None):
+    """Возвращает (total_by_athlete, free_by_athlete) только за выбранный сезон."""
+    season = season or get_active_season()
     free_counts = (
         db.session.query(Participant.athlete_id, func.count(Participant.id).label('cnt'))
         .join(Category, Participant.category_id == Category.id)
@@ -492,7 +496,7 @@ def _get_participation_counts():
             Participant.pct_ppname == 'БЕСП',
             db.or_(Participant.exclude_free_from_reports.is_(False), Participant.exclude_free_from_reports.is_(None)),
             db.or_(Event.exclude_free_from_reports.is_(False), Event.exclude_free_from_reports.is_(None)),
-            *event_in_season(Event.begin_date),
+            *event_in_season(Event.begin_date, season),
             category_scope_clause(),
         )
         .group_by(Participant.athlete_id)
@@ -502,15 +506,15 @@ def _get_participation_counts():
         db.session.query(Participant.athlete_id, func.count(Participant.id).label('cnt'))
         .join(Category, Participant.category_id == Category.id)
         .join(Event, Participant.event_id == Event.id)
-        .filter(*event_in_season(Event.begin_date), category_scope_clause())
+        .filter(*event_in_season(Event.begin_date, season), category_scope_clause())
         .group_by(Participant.athlete_id)
     )
     total_by_athlete = {row.athlete_id: row.cnt for row in total_counts}
     return total_by_athlete, free_by_athlete
 
 
-def _check_names_against_db_free(names_or_entries):
-    """Проверка списка ФИО (или [{fio, birth_date}]) по БД с учётом БЕСП.
+def _check_names_against_db_free(names_or_entries, season=None):
+    """Проверка списка ФИО (или [{fio, birth_date}]) по БД с учётом БЕСП за сезон.
     Возвращает (has_free, no_free, fio_only_matches, not_found):
     - has_free: [(display_fio, match_info, total_participations, free_count), ...]
     - no_free: [(display_fio, match_info, total_participations, 0), ...]
@@ -518,11 +522,13 @@ def _check_names_against_db_free(names_or_entries):
     - not_found: [display_fio, ...]
     ВАЖНО: если по одному ФИО найдено несколько id, каждый id раскладывается отдельно
     в свою колонку (с БЕСП / без БЕСП), чтобы не смешивать разных людей.
+    Счётчики участий и БЕСП — только за выбранный сезон (по умолчанию активный).
     """
     if not names_or_entries:
         return [], [], [], []
-    found, fio_only_found, not_found = _check_names_against_db(names_or_entries)
-    total_by_athlete, free_by_athlete = _get_participation_counts()
+    season = season or get_active_season()
+    found, fio_only_found, not_found = _check_names_against_db(names_or_entries, season=season)
+    total_by_athlete, free_by_athlete = _get_participation_counts(season)
     has_free = []
     no_free = []
     fio_only_matches = []
@@ -638,6 +644,13 @@ def judge_helper_free():
     not_found = []
     pasted = ''
     upload_error = None
+
+    # Сезон для подсчёта участий/БЕСП: из формы или активный (по умолчанию текущий, сейчас 2026/27)
+    if request.method == 'POST':
+        season = get_active_season(request.form.get('season'))
+    else:
+        season = get_active_season(request.args.get('season'))
+
     if request.method == 'POST':
         raw_body = request.form.get('names_text') or ''
         pasted = raw_body.strip()
@@ -666,7 +679,7 @@ def judge_helper_free():
                 upload_error = 'Нужен файл .xlsx (выгрузка с сайта регистрации).'
 
         if entries:
-            has_free, no_free, fio_only_matches, not_found = _check_names_against_db_free(entries)
+            has_free, no_free, fio_only_matches, not_found = _check_names_against_db_free(entries, season=season)
         else:
             has_free = no_free = fio_only_matches = not_found = []
 
@@ -676,7 +689,9 @@ def judge_helper_free():
             stored_raw = stored_raw[:_JUDGE_HELPER_NAMES_RAW_MAX]
             truncated = True
         if upload and upload.filename:
-            stored_raw = (stored_raw + f'\n[upload:{upload.filename};rows={len(entries)}]').strip()
+            stored_raw = (stored_raw + f'\n[upload:{upload.filename};rows={len(entries)};season={season}]').strip()
+        elif entries:
+            stored_raw = (stored_raw + f'\n[season={season}]').strip()
 
         try:
             row = JudgeHelperFreeAudit(
@@ -704,6 +719,8 @@ def judge_helper_free():
         not_found=not_found,
         pasted=pasted,
         upload_error=upload_error,
+        helper_season=season,
+        helper_season_label=get_season_display_name(season),
     )
 
 

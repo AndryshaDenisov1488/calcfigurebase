@@ -3,21 +3,36 @@
 {% block title %}Помощник главным судьям — только бесплатные участия - Система управления турнирами{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="fas fa-gift"></i> Помощник главным судьям — только для бесплатных участий</h2>
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <h2 class="mb-0"><i class="fas fa-gift"></i> Помощник главным судьям — только для бесплатных участий</h2>
+    <span class="badge bg-primary fs-6" title="Участия и БЕСП считаются только за этот сезон">
+        <i class="fas fa-calendar-alt"></i> Сезон {{ helper_season_label or season_display_name(active_season) }}
+    </span>
 </div>
 
 <p class="text-muted mb-4">
     Вставьте список ФИО или загрузите выгрузку с сайта регистрации
     (колонка <strong>B — ФИО</strong>, колонка <strong>C — дата рождения</strong>).
-    Сервис покажет: <strong>у кого уже было участие с БЕСП</strong>,
-    <strong>кто выступал только платно</strong> (ни разу бесплатно) и <strong>кого нет в базе</strong>.
+    Сервис покажет: <strong>у кого уже было участие с БЕСП в выбранном сезоне</strong>,
+    <strong>кто выступал только платно</strong> (ни разу бесплатно в этом сезоне) и <strong>кого нет в базе</strong>.
+    По умолчанию — текущий сезон <strong>2026/27</strong>; другой сезон можно выбрать ниже.
     При наличии даты рождения поиск точнее: сначала ФИО+ДР, затем фамилия+имя+ДР.
     Пары в выгрузке («ФИО1 / ФИО2») разбираются на двух спортсменов.
 </p>
 
 <form method="post" action="{{ url_for('analytics.judge_helper_free') }}" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+    <div class="mb-3">
+        <label for="helper_season" class="form-label">Сезон для проверки участий и БЕСП</label>
+        <select class="form-select" id="helper_season" name="season" aria-label="Выбрать сезон для поиска">
+            {% for season in available_seasons %}
+            <option value="{{ season }}" {% if season == (helper_season or active_season) %}selected{% endif %}>
+                {{ season_display_name(season) }}{% if season == (helper_season or active_season) %} — выбран{% endif %}
+            </option>
+            {% endfor %}
+        </select>
+        <div class="form-text">Считаются только старты с 1 июля по 30 июня выбранного сезона. ФИО ищутся во всей базе, цифры участий — только за сезон.</div>
+    </div>
     <div class="mb-3">
         <label for="reg_file" class="form-label">Файл выгрузки регистрации (.xlsx)</label>
         <input class="form-control" type="file" id="reg_file" name="reg_file" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
@@ -33,17 +48,21 @@
     <div class="alert alert-warning" role="alert">{{ upload_error }}</div>
     {% endif %}
     <button type="submit" class="btn btn-primary">
-        <i class="fas fa-search"></i> Проверить по базе и БЕСП
+        <i class="fas fa-search"></i> Проверить по базе и БЕСП за сезон
     </button>
 </form>
 
 {% if has_free is defined and (has_free or no_free or fio_only_matches or not_found) %}
 <hr class="my-4">
+<p class="mb-3">
+    Результаты за сезон <strong>{{ helper_season_label or season_display_name(helper_season or active_season) }}</strong>
+    (<code>{{ helper_season or active_season }}</code>).
+</p>
 <div class="row">
     <div class="col-lg-3 col-md-6 mb-3">
         <div class="card border-success h-100">
             <div class="card-header bg-success text-white">
-                <i class="fas fa-check-circle"></i> Есть бесплатные участия (БЕСП) <span class="badge bg-light text-dark">{{ has_free|length }}</span>
+                <i class="fas fa-check-circle"></i> Есть БЕСП в сезоне <span class="badge bg-light text-dark">{{ has_free|length }}</span>
             </div>
             <div class="card-body">
                 {% if has_free %}
@@ -51,8 +70,8 @@
                     {% for fio, match, total, free, first_aid in has_free %}
                     <li class="mb-2">
                         <strong><a href="{{ url_for('public.athlete_detail', athlete_id=first_aid) }}" class="text-decoration-none link-dark">{{ fio }}</a></strong>
-                        <span class="badge bg-success ms-1" title="бесплатных участий (БЕСП)">{{ free }} беспл.</span>
-                        <span class="text-muted small">· всего {{ total }}</span>
+                        <span class="badge bg-success ms-1" title="бесплатных участий (БЕСП) в сезоне">{{ free }} беспл.</span>
+                        <span class="text-muted small">· всего {{ total }} в сезоне</span>
                         <br><small class="text-muted">
                             → <a href="{{ url_for('public.athlete_detail', athlete_id=match.id) }}" class="text-muted text-decoration-none">id={{ match.id }}: {{ match.full_name }}</a>
                             · ДР: {{ match.birth_date }}
@@ -70,7 +89,7 @@
     <div class="col-lg-3 col-md-6 mb-3">
         <div class="card border-warning h-100">
             <div class="card-header bg-warning text-dark">
-                <i class="fas fa-ticket-alt"></i> Нет бесплатных (все платно) <span class="badge bg-dark">{{ no_free|length }}</span>
+                <i class="fas fa-ticket-alt"></i> Нет БЕСП в сезоне <span class="badge bg-dark">{{ no_free|length }}</span>
             </div>
             <div class="card-body">
                 {% if no_free %}
@@ -78,8 +97,12 @@
                     {% for fio, match, total, free, first_aid in no_free %}
                     <li class="mb-2">
                         <strong><a href="{{ url_for('public.athlete_detail', athlete_id=first_aid) }}" class="text-decoration-none link-dark">{{ fio }}</a></strong>
-                        <span class="badge bg-secondary ms-1" title="всего выступлений">{{ total }} выст.</span>
+                        {% if total > 0 %}
+                        <span class="badge bg-secondary ms-1" title="всего выступлений в сезоне">{{ total }} выст.</span>
                         <span class="badge bg-danger ms-1">0 беспл.</span>
+                        {% else %}
+                        <span class="badge bg-info text-dark ms-1" title="нет стартов в выбранном сезоне">0 стартов в сезоне</span>
+                        {% endif %}
                         <br><small class="text-muted">
                             → <a href="{{ url_for('public.athlete_detail', athlete_id=match.id) }}" class="text-muted text-decoration-none">id={{ match.id }}: {{ match.full_name }}</a>
                             · ДР: {{ match.birth_date }}
@@ -110,7 +133,7 @@
                         {% else %}
                         <span class="badge bg-danger ms-1">0 беспл.</span>
                         {% endif %}
-                        <span class="text-muted small">· всего {{ total }}</span>
+                        <span class="text-muted small">· всего {{ total }} в сезоне</span>
                         <br><small class="text-muted">
                             → <a href="{{ url_for('public.athlete_detail', athlete_id=match.id) }}" class="text-muted text-decoration-none">id={{ match.id }}: {{ match.full_name }}</a>
                             · ДР: {{ match.birth_date }}
@@ -145,6 +168,7 @@
     </div>
 </div>
 <p class="mt-3 text-muted small">
+    Участия и БЕСП считаются только за выбранный сезон (1 июля — 30 июня).
     Если в выгрузке есть дата рождения — сначала ищем совпадение по ФИО+ДР (или фамилия+имя+ДР).
     Без даты: при отчестве — по трём словам, без отчества — по фамилии и имени.
     БЕСП — участие с отметкой бесплатного старта в системе.

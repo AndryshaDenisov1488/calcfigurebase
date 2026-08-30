@@ -1347,6 +1347,7 @@ ROUTE /favicon.ico
 - `judge_helper_free()` — POST: textarea и/или `.xlsx` (enctype multipart)
 
 **Judge helper (2026-08-30):** поддержка выгрузки регистрации `reg_tournament*_all.xlsx` — колонка B ФИО, C дата рождения; пары разбиваются; поиск участий/БЕСП с учётом ДР.
+**Сезон:** подсчёт БЕСП/стартов только за выбранный сезон (по умолчанию текущий `2026/27`); на странице — select `season`, синхронизация с `get_active_season`.
 
 ### Файл: `routes/api.py`
 
@@ -3131,8 +3132,8 @@ ROUTE /admin/free-participation
 
 | Свойство | Значение |
 |----------|----------|
-| Строк | 141 |
-| Размер | 8,004 байт |
+| Назначение | Помощник главным судьям: textarea + upload `.xlsx` (B=ФИО, C=ДР) |
+| Форма | `enctype=multipart/form-data`, поля `names_text`, `reg_file` |
 
 ### Файл: `templates/normalize_categories.html`
 
