@@ -51,6 +51,52 @@ class AthleteMaintenanceTestCase(unittest.TestCase):
         )
         self.assertEqual(without_yo, with_yo)
 
+    def test_get_or_create_reuses_legacy_yo_lookup_key(self):
+        """Re-import must attach to the existing card, not create a split career.
+
+        Production rows stored lookup_key with ё before 495bc13 folded the key.
+        Exact filter_by(lookup_key=folded) misses those rows.
+        """
+        registry = AthleteRegistry()
+        birth = date(2017, 11, 11)
+        existing = Athlete(
+            first_name="Алёна",
+            last_name="Бухмарева",
+            full_name_xml="Алёна Бухмарева",
+            birth_date=birth,
+            lookup_key=f"name:алёна:бухмарева:{birth}",
+        )
+        db.session.add(existing)
+        db.session.commit()
+        existing_id = existing.id
+
+        reused = registry.get_or_create(
+            {
+                "first_name": "Алена",
+                "last_name": "Бухмарева",
+                "birth_date": birth,
+            }
+        )
+        db.session.flush()
+
+        self.assertEqual(reused.id, existing_id)
+        self.assertEqual(Athlete.query.count(), 1)
+        self.assertEqual(
+            reused.lookup_key,
+            f"name:алена:бухмарева:{birth}",
+        )
+
+        reused_yo = registry.get_or_create(
+            {
+                "first_name": "Алёна",
+                "last_name": "Бухмарева",
+                "birth_date": birth,
+            }
+        )
+        db.session.flush()
+        self.assertEqual(reused_yo.id, existing_id)
+        self.assertEqual(Athlete.query.count(), 1)
+
     def test_pair_dates_are_dry_run_then_synchronized_from_xlsx(self):
         pair = Athlete(
             first_name="Таисия ГУСЕВА / Даниил ОВЧИННИКОВ",

@@ -30,6 +30,43 @@ class AthleteRegistry:
             return f"name:{first_name}:{last_name}:{birth_date}"
         return None
 
+    def _fold_lookup_key(self, lookup_key):
+        if not lookup_key:
+            return None
+        return str(lookup_key).replace('ё', 'е').replace('Ё', 'е')
+
+    def _find_existing_athlete(self, lookup_key, person_data):
+        """Match by folded key, including rows still stored with ё from before folding."""
+        if lookup_key:
+            athlete = Athlete.query.filter_by(lookup_key=lookup_key).first()
+            if athlete:
+                return athlete
+
+        birth_date = person_data.get('birth_date')
+        if not lookup_key or not birth_date:
+            return None
+
+        # Exact filter_by misses legacy keys such as name:алёна:... after ё→е folding.
+        candidates = (
+            Athlete.query.filter(Athlete.birth_date == birth_date)
+            .order_by(Athlete.id.asc())
+            .all()
+        )
+        for candidate in candidates:
+            stored = self._fold_lookup_key(candidate.lookup_key)
+            if stored == lookup_key:
+                return candidate
+            recomputed = self._make_lookup_key(
+                {
+                    'first_name': candidate.first_name,
+                    'last_name': candidate.last_name,
+                    'birth_date': candidate.birth_date,
+                }
+            )
+            if recomputed == lookup_key:
+                return candidate
+        return None
+
     def _should_update(self, old_value, new_value):
         if not new_value:
             return False
@@ -43,10 +80,7 @@ class AthleteRegistry:
             return None
 
         lookup_key = self._make_lookup_key(person_data)
-
-        athlete = None
-        if lookup_key:
-            athlete = Athlete.query.filter_by(lookup_key=lookup_key).first()
+        athlete = self._find_existing_athlete(lookup_key, person_data)
 
         if not athlete:
             athlete = Athlete(
@@ -81,7 +115,7 @@ class AthleteRegistry:
             athlete.country = normalize_string(person_data.get('country', ''))
         if not athlete.club_id and person_data.get('club_id'):
             athlete.club_id = person_data.get('club_id')
-        if not athlete.lookup_key and lookup_key:
+        if lookup_key and athlete.lookup_key != lookup_key:
             athlete.lookup_key = lookup_key
 
         self._merge_pair_details(athlete, person_data)
