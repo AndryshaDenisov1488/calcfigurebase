@@ -1335,27 +1335,18 @@ ROUTE /favicon.ico
 
 **Функции верхнего уровня:**
 
-- `_normalize_words(s)` L26
-- `_is_year(s)` L33
-- `_is_rank(s)` L39
-- `_is_city_or_school(s)` L45
-- `_looks_like_fio(s)` L58
-- `_parse_pasted_list(text)` L75
-- `_check_names_against_db(names)` L102
-- `_enrich_matches(raw_matches)` L162
-- `_get_participation_counts()` L209
-- `_check_names_against_db_free(names)` L230
-- `analytics()` L270
-- `free_participation()` L275
-- `club_free_analysis()` L280
-- `school_segment_event_ranks()` L286
-- `school_segment_report_pdf()` L312
-- `free_participation_analysis()` L345
-- `judge_helper_free()` L351
-- `first_timers_detail()` L402
-- `first_timers_detail_1_sport()` L416
-- `first_timers_detail_free()` L427
-- `first_timers_detail_pdf()` L437
+- `_normalize_words(s)` — нормализация ФИО (ё→е)
+- `_parse_birth_date(value)` — ДД.ММ.ГГГГ / Excel date
+- `_parse_pasted_entries(text)` — ФИО или таблица регистрации (B=ФИО, C=ДР; пары «ФИО1 / ФИО2»)
+- `_parse_xlsx_entries(file_storage)` — загрузка .xlsx выгрузки регистрации
+- `_parse_pasted_list(text)` — совместимость (только ФИО)
+- `_check_names_against_db(names_or_entries)` — матчинг с приоритетом ФИО+ДР / ФИ+ДР
+- `_enrich_matches(raw_matches)`
+- `_get_participation_counts()`
+- `_check_names_against_db_free(names_or_entries)`
+- `judge_helper_free()` — POST: textarea и/или `.xlsx` (enctype multipart)
+
+**Judge helper (2026-08-30):** поддержка выгрузки регистрации `reg_tournament*_all.xlsx` — колонка B ФИО, C дата рождения; пары разбиваются; поиск участий/БЕСП с учётом ДР.
 
 ### Файл: `routes/api.py`
 

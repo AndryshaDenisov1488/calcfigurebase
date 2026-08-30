@@ -5,7 +5,7 @@ import io
 import logging
 import os
 import re
-from datetime import date
+from datetime import date, datetime
 
 from flask import Blueprint, render_template, request, send_file, url_for, session
 
@@ -28,7 +28,7 @@ _JUDGE_HELPER_NAMES_RAW_MAX = int(os.environ.get('JUDGE_HELPER_NAMES_RAW_MAX', '
 def _normalize_words(s):
     if not s or not isinstance(s, str):
         return []
-    s = re.sub(r'\s+', ' ', (s or '').strip()).lower()
+    s = re.sub(r'\s+', ' ', (s or '').strip()).lower().replace('ё', 'е')
     return s.split() if s else []
 
 
@@ -74,90 +74,360 @@ def _looks_like_fio(s):
     return True
 
 
-def _parse_pasted_list(text):
-    """Умный разбор: из вставленного текста извлечь все строки, похожие на ФИО (игнорируя год, разряд, город/школу).
-    Сохраняем полное ФИО как вставил судья (для отображения).
-    Поиск по БД:
-    - если введено отчество, матчим по 3 словам (фамилия+имя+отчество)
-    - если отчества нет, матчим по 2 словам (фамилия+имя)"""
-    lines = [ln.strip() for ln in (text or '').splitlines() if ln.strip()]
+def _parse_birth_date(value):
+    """Разобрать дату рождения из ячейки Excel / текста (ДД.ММ.ГГГГ и др.)."""
+    if value is None or value == '':
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    s = str(value).strip()
+    if not s:
+        return None
+    for fmt in ('%d.%m.%Y', '%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y', '%d.%m.%y'):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _format_entry_label(fio, birth_date=None):
+    if birth_date:
+        return f"{fio} ({birth_date.strftime('%d.%m.%Y')})"
+    return fio
+
+
+def _split_table_cells(line):
+    """Разбить строку вставки из Excel/CSV на ячейки."""
+    if '\t' in line:
+        return [c.strip() for c in line.split('\t')]
+    if line.count(';') >= 2:
+        return [c.strip() for c in line.split(';')]
+    if line.count(',') >= 2:
+        return [c.strip() for c in line.split(',')]
+    return [line.strip()]
+
+
+def _is_reg_header_row(cells):
+    joined = ' '.join((c or '').lower() for c in cells)
+    return ('фамили' in joined and 'имя' in joined) or 'дата рождения' in joined or '№ п.п' in joined
+
+
+def _detect_fio_dob_indexes(header_cells):
+    """Индексы колонок ФИО и ДР по заголовку выгрузки регистрации."""
+    fio_idx = None
+    dob_idx = None
+    for i, cell in enumerate(header_cells):
+        low = (cell or '').strip().lower().replace('ё', 'е')
+        if fio_idx is None and ('фамили' in low or low in ('фио', 'спортсмен')):
+            fio_idx = i
+        if dob_idx is None and ('рожден' in low or low in ('др', 'дата др', 'д.р.', 'д.р')):
+            dob_idx = i
+    if fio_idx is None and len(header_cells) >= 2:
+        fio_idx = 1
+    if dob_idx is None and len(header_cells) >= 3:
+        dob_idx = 2
+    return fio_idx, dob_idx
+
+
+def _entries_from_fio_dob_pair(fio_raw, dob_raw):
+    """Один спортсмен или пара «ФИО1 / ФИО2» с «ДР1 / ДР2» → список entries."""
+    if fio_raw is None:
+        return []
+    if isinstance(fio_raw, (date, datetime)):
+        return []
+    fio_text = str(fio_raw).strip()
+    if not fio_text:
+        return []
+
+    parts = [p.strip() for p in re.split(r'\s*/\s*', fio_text) if p.strip()]
+    dob_parts = []
+    if isinstance(dob_raw, (date, datetime)):
+        dob_parts = [dob_raw]
+    elif dob_raw is not None and str(dob_raw).strip():
+        dob_parts = [p.strip() for p in re.split(r'\s*/\s*', str(dob_raw).strip()) if p.strip()]
+
+    entries = []
+    for i, part in enumerate(parts):
+        if not _looks_like_fio(part):
+            continue
+        dob = _parse_birth_date(dob_parts[i]) if i < len(dob_parts) else None
+        entries.append({'fio': part, 'birth_date': dob})
+    return entries
+
+
+def _entry_from_cells(cells, fio_idx=1, dob_idx=2):
+    """Извлечь ФИО(+пары) и ДР из строки таблицы (по умолчанию B и C)."""
+    if not cells:
+        return []
+    # Нормализуем к строкам / датам
+    norm = []
+    for c in cells:
+        if c is None:
+            norm.append('')
+        elif isinstance(c, (date, datetime)):
+            norm.append(c)
+        else:
+            norm.append(str(c).strip())
+
+    if len(norm) == 1:
+        return _entries_from_fio_dob_pair(norm[0], None)
+
+    first = norm[0]
+    first_s = first.strftime('%d.%m.%Y') if isinstance(first, (date, datetime)) else str(first)
+
+    if first_s.isdigit() or first_s.lower().startswith('№'):
+        fio = norm[fio_idx] if fio_idx < len(norm) else ''
+        dob_raw = norm[dob_idx] if dob_idx < len(norm) else None
+        return _entries_from_fio_dob_pair(fio, dob_raw)
+
+    if isinstance(first, str) and _looks_like_fio(first):
+        dob = norm[1] if len(norm) > 1 else None
+        return _entries_from_fio_dob_pair(first, dob)
+
+    if '/' in first_s:
+        dob = norm[1] if len(norm) > 1 else (norm[dob_idx] if dob_idx < len(norm) else None)
+        return _entries_from_fio_dob_pair(first, dob)
+
+    if fio_idx < len(norm):
+        dob_raw = norm[dob_idx] if dob_idx < len(norm) else None
+        return _entries_from_fio_dob_pair(norm[fio_idx], dob_raw)
+    return []
+
+
+def _dedupe_entries(entries):
     result = []
     seen = set()
-    for ln in lines:
-        if _is_year(ln) or _is_rank(ln) or _is_city_or_school(ln):
+    for entry in entries:
+        fio = (entry.get('fio') or '').strip()
+        if not fio:
             continue
-        if not _looks_like_fio(ln):
-            continue
-        words = _normalize_words(ln)
+        words = _normalize_words(fio)
         if len(words) < 2:
             continue
-        # Не схлопываем разных людей с одинаковыми фамилией+именем:
-        # если есть отчество, считаем ключ по 3 словам.
+        birth_date = entry.get('birth_date')
         fio_key = tuple(words[:3]) if len(words) >= 3 else tuple(words[:2])
-        if fio_key in seen:
+        dedup_key = (fio_key, birth_date.isoformat() if birth_date else None)
+        if dedup_key in seen:
             continue
-        seen.add(fio_key)
-        result.append(ln)
+        seen.add(dedup_key)
+        result.append({'fio': fio, 'birth_date': birth_date})
     return result
 
 
-def _check_names_against_db(names):
-    """По списку ФИО вернуть (found, fio_only_matches, not_found).
-    found = [(name, [match_info, ...]), ...], где match_info содержит:
-      id, full_name, birth_date, patronymic, rank
-    fio_only_matches = [(input_fio, [match_info, ...]), ...] — когда точного ФИО нет,
-      но есть совпадения по фамилии+имени
+def _parse_pasted_entries(text):
+    """Разобрать вставку: чистые ФИО или таблицу регистрации (кол. B = ФИО, C = ДР).
+
+    Возвращает [{'fio': str, 'birth_date': date|None}, ...].
     """
-    if not names:
+    lines = [ln.strip() for ln in (text or '').splitlines() if ln.strip()]
+    if not lines:
+        return []
+
+    entries = []
+    fio_idx, dob_idx = 1, 2
+    first_cells = _split_table_cells(lines[0])
+    start = 0
+    if len(first_cells) >= 2 and _is_reg_header_row(first_cells):
+        detected = _detect_fio_dob_indexes(first_cells)
+        fio_idx = detected[0] if detected[0] is not None else 1
+        dob_idx = detected[1] if detected[1] is not None else 2
+        start = 1
+
+    for ln in lines[start:]:
+        cells = _split_table_cells(ln)
+        if len(cells) >= 2:
+            if _is_reg_header_row(cells):
+                detected = _detect_fio_dob_indexes(cells)
+                fio_idx = detected[0] if detected[0] is not None else fio_idx
+                dob_idx = detected[1] if detected[1] is not None else dob_idx
+                continue
+            entries.extend(_entry_from_cells(cells, fio_idx=fio_idx, dob_idx=dob_idx))
+            continue
+
+        if _is_year(ln) or _is_rank(ln) or _is_city_or_school(ln):
+            continue
+        if '/' in ln:
+            entries.extend(_entries_from_fio_dob_pair(ln, None))
+            continue
+        if not _looks_like_fio(ln):
+            continue
+        entries.append({'fio': ln, 'birth_date': None})
+
+    return _dedupe_entries(entries)
+
+
+def _parse_pasted_list(text):
+    """Совместимость: только список ФИО без дат."""
+    return [e['fio'] for e in _parse_pasted_entries(text)]
+
+
+def _parse_xlsx_entries(file_storage):
+    """Разбор .xlsx выгрузки регистрации: колонка B = ФИО, C = дата рождения."""
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        logger.warning('openpyxl недоступен для разбора xlsx judge-helper')
+        return []
+
+    raw = file_storage.read()
+    if not raw:
+        return []
+    # read_only=False: у части выгрузок регистрации dimensions/колонки в read_only ломаются
+    wb = load_workbook(io.BytesIO(raw), data_only=True, read_only=False)
+    try:
+        ws = wb.active
+        rows = []
+        for row in ws.iter_rows(min_row=1, max_row=ws.max_row or 1, max_col=max(ws.max_column or 1, 3), values_only=True):
+            rows.append(row)
+    finally:
+        wb.close()
+
+    if not rows:
+        return []
+
+    fio_idx, dob_idx = 1, 2
+    start = 0
+    header = [str(c).strip() if c is not None else '' for c in rows[0]]
+    if _is_reg_header_row(header):
+        detected = _detect_fio_dob_indexes(header)
+        fio_idx = detected[0] if detected[0] is not None else 1
+        dob_idx = detected[1] if detected[1] is not None else 2
+        start = 1
+
+    entries = []
+    for row in rows[start:]:
+        if not row or not any(c is not None and str(c).strip() for c in row):
+            continue
+        str_cells = [
+            '' if c is None else (c.strftime('%d.%m.%Y') if isinstance(c, (date, datetime)) else str(c).strip())
+            for c in row
+        ]
+        if _is_reg_header_row(str_cells):
+            detected = _detect_fio_dob_indexes(str_cells)
+            fio_idx = detected[0] if detected[0] is not None else fio_idx
+            dob_idx = detected[1] if detected[1] is not None else dob_idx
+            continue
+        fio_raw = row[fio_idx] if fio_idx < len(row) else None
+        dob_raw = row[dob_idx] if dob_idx < len(row) else None
+        entries.extend(_entries_from_fio_dob_pair(fio_raw, dob_raw))
+    return _dedupe_entries(entries)
+
+
+def _check_names_against_db(names_or_entries):
+    """По списку ФИО (или [{fio, birth_date}]) вернуть (found, fio_only_matches, not_found).
+
+    found / fio_only_matches = [(display_label, [match_info, ...]), ...]
+    match_info: id, full_name, birth_date, patronymic, rank
+    При наличии ДР: приоритет совпадений ФИО/ФИ + дата рождения.
+    """
+    if not names_or_entries:
         return [], [], []
-    # Собираем ключи поиска:
-    # - full_key (3 слова), если в вводе есть отчество
-    # - base_key (2 слова) для случая без отчества
+
+    entries = []
+    for item in names_or_entries:
+        if isinstance(item, dict):
+            fio = (item.get('fio') or '').strip()
+            birth_date = item.get('birth_date')
+            if isinstance(birth_date, str):
+                birth_date = _parse_birth_date(birth_date)
+        else:
+            fio = (item or '').strip()
+            birth_date = None
+        if fio:
+            entries.append({'fio': fio, 'birth_date': birth_date})
+    if not entries:
+        return [], [], []
+
     name_keys = []
-    for fio in names:
+    for entry in entries:
+        fio = entry['fio']
+        birth_date = entry.get('birth_date')
         words = _normalize_words(fio)
         if len(words) >= 2:
             base_key = frozenset(words[:2])
             full_key = frozenset(words[:3]) if len(words) >= 3 else None
-            dedup_key = tuple(words[:3]) if len(words) >= 3 else tuple(words[:2])
-            name_keys.append((fio, base_key, full_key, dedup_key))
+            dedup_key = (
+                tuple(words[:3]) if len(words) >= 3 else tuple(words[:2]),
+                birth_date.isoformat() if birth_date else None,
+            )
+            label = _format_entry_label(fio, birth_date)
+            name_keys.append((label, base_key, full_key, dedup_key, birth_date))
     if not name_keys:
-        return [], [], list(names)
-    # Все спортсмены из БД: (id, full_name, set слов)
+        return [], [], [_format_entry_label(e['fio'], e.get('birth_date')) for e in entries]
+
     athletes_data = []
     for a in Athlete.query.all():
         name = a.full_name
         words = set(_normalize_words(name))
         if words:
-            athletes_data.append((a.id, name, words))
+            athletes_data.append((a.id, name, words, a.birth_date))
+
     found = []
     fio_only_matches = []
     not_found = []
     seen_key = set()
-    for fio, base_key, full_key, dedup_key in name_keys:
+    for label, base_key, full_key, dedup_key, birth_date in name_keys:
         if dedup_key in seen_key:
             continue
         seen_key.add(dedup_key)
 
-        # Если ввели отчество — ищем точное совпадение по 3 словам.
+        def _by_words(key):
+            return [(aid, db_name) for aid, db_name, name_words, _bd in athletes_data if key <= name_words]
+
+        def _filter_dob(raw):
+            if not birth_date:
+                return raw
+            id_set = {aid for aid, _ in raw}
+            return [
+                (aid, db_name)
+                for aid, db_name, _words, bd in athletes_data
+                if aid in id_set and bd == birth_date
+            ]
+
+        raw_full = _by_words(full_key) if full_key else []
+        raw_base = _by_words(base_key)
+
+        if birth_date:
+            # ДР из выгрузки: сначала ФИО+ДР, затем ФИ+ДР (сильный сигнал)
+            dob_full = _filter_dob(raw_full) if raw_full else []
+            dob_base = _filter_dob(raw_base)
+            if dob_full:
+                matches = _enrich_matches(dob_full)
+                found.append((label, matches))
+                continue
+            if dob_base:
+                matches = _enrich_matches(dob_base)
+                found.append((label, matches))
+                continue
+            if raw_full:
+                matches = _enrich_matches(raw_full)
+                fio_only_matches.append((label, matches))
+                continue
+            if raw_base:
+                matches = _enrich_matches(raw_base)
+                fio_only_matches.append((label, matches))
+                continue
+            not_found.append(label)
+            continue
+
         if full_key:
-            raw_matches = [(aid, db_name) for aid, db_name, name_words in athletes_data if full_key <= name_words]
+            raw_matches = raw_full
             if not raw_matches:
-                # Мягкий fallback: точного ФИО нет, но есть совпадения по ФИ.
-                base_matches = [(aid, db_name) for aid, db_name, name_words in athletes_data if base_key <= name_words]
-                matches = _enrich_matches(base_matches)
+                matches = _enrich_matches(raw_base)
                 if matches:
-                    fio_only_matches.append((fio, matches))
+                    fio_only_matches.append((label, matches))
                     continue
         else:
-            # Без отчества показываем все варианты с одинаковыми фамилией и именем.
-            raw_matches = [(aid, db_name) for aid, db_name, name_words in athletes_data if base_key <= name_words]
+            raw_matches = raw_base
 
         matches = _enrich_matches(raw_matches)
         if matches:
-            found.append((fio, matches))
+            found.append((label, matches))
         else:
-            not_found.append(fio)
+            not_found.append(label)
     return found, fio_only_matches, not_found
 
 
@@ -239,8 +509,8 @@ def _get_participation_counts():
     return total_by_athlete, free_by_athlete
 
 
-def _check_names_against_db_free(names):
-    """Проверка списка ФИО по БД с учётом бесплатных участий (БЕСП).
+def _check_names_against_db_free(names_or_entries):
+    """Проверка списка ФИО (или [{fio, birth_date}]) по БД с учётом БЕСП.
     Возвращает (has_free, no_free, fio_only_matches, not_found):
     - has_free: [(display_fio, match_info, total_participations, free_count), ...]
     - no_free: [(display_fio, match_info, total_participations, 0), ...]
@@ -249,9 +519,9 @@ def _check_names_against_db_free(names):
     ВАЖНО: если по одному ФИО найдено несколько id, каждый id раскладывается отдельно
     в свою колонку (с БЕСП / без БЕСП), чтобы не смешивать разных людей.
     """
-    if not names:
+    if not names_or_entries:
         return [], [], [], []
-    found, fio_only_found, not_found = _check_names_against_db(names)
+    found, fio_only_found, not_found = _check_names_against_db(names_or_entries)
     total_by_athlete, free_by_athlete = _get_participation_counts()
     has_free = []
     no_free = []
@@ -367,12 +637,36 @@ def judge_helper_free():
     fio_only_matches = []
     not_found = []
     pasted = ''
+    upload_error = None
     if request.method == 'POST':
         raw_body = request.form.get('names_text') or ''
         pasted = raw_body.strip()
-        names = _parse_pasted_list(pasted)
-        if names:
-            has_free, no_free, fio_only_matches, not_found = _check_names_against_db_free(names)
+        entries = _parse_pasted_entries(pasted)
+
+        upload = request.files.get('reg_file')
+        if upload and upload.filename:
+            filename = (upload.filename or '').lower()
+            if filename.endswith(('.xlsx', '.xlsm')):
+                try:
+                    xlsx_entries = _parse_xlsx_entries(upload)
+                    if xlsx_entries:
+                        # Файл дополняет/заменяет текстовую вставку
+                        entries = _dedupe_entries(entries + xlsx_entries)
+                        if not pasted:
+                            pasted = '\n'.join(
+                                _format_entry_label(e['fio'], e.get('birth_date'))
+                                for e in xlsx_entries
+                            )
+                    else:
+                        upload_error = 'В файле не найдены строки с ФИО (ожидаются колонки «Фамилия Имя» и «Дата рождения»).'
+                except Exception as exc:
+                    logger.warning('Judge helper xlsx parse: %s', exc, exc_info=True)
+                    upload_error = 'Не удалось прочитать Excel-файл. Сохраните выгрузку как .xlsx и попробуйте снова.'
+            else:
+                upload_error = 'Нужен файл .xlsx (выгрузка с сайта регистрации).'
+
+        if entries:
+            has_free, no_free, fio_only_matches, not_found = _check_names_against_db_free(entries)
         else:
             has_free = no_free = fio_only_matches = not_found = []
 
@@ -381,12 +675,14 @@ def judge_helper_free():
         if len(stored_raw) > _JUDGE_HELPER_NAMES_RAW_MAX:
             stored_raw = stored_raw[:_JUDGE_HELPER_NAMES_RAW_MAX]
             truncated = True
+        if upload and upload.filename:
+            stored_raw = (stored_raw + f'\n[upload:{upload.filename};rows={len(entries)}]').strip()
 
         try:
             row = JudgeHelperFreeAudit(
                 remote_addr=(get_client_ip(request) or '')[:45],
                 reader_logged_in=bool(session.get(SESSION_SITE_READER_KEY)),
-                parsed_names_count=len(names),
+                parsed_names_count=len(entries),
                 input_char_len=len(raw_body),
                 names_raw=stored_raw if stored_raw else None,
                 input_truncated=truncated,
@@ -407,6 +703,7 @@ def judge_helper_free():
         fio_only_matches=fio_only_matches,
         not_found=not_found,
         pasted=pasted,
+        upload_error=upload_error,
     )
 
 

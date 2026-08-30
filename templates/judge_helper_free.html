@@ -8,18 +8,30 @@
 </div>
 
 <p class="text-muted mb-4">
-    Вставьте список ФИО спортсменов. Сервис покажет: <strong>у кого уже было участие с БЕСП</strong>, 
-    <strong>кто выступал только платно</strong> (ни разу бесплатно) и <strong>кого нет в базе</strong>. 
-    Для тех, кто в базе, отображается количество выступлений и сколько из них бесплатных.
+    Вставьте список ФИО или загрузите выгрузку с сайта регистрации
+    (колонка <strong>B — ФИО</strong>, колонка <strong>C — дата рождения</strong>).
+    Сервис покажет: <strong>у кого уже было участие с БЕСП</strong>,
+    <strong>кто выступал только платно</strong> (ни разу бесплатно) и <strong>кого нет в базе</strong>.
+    При наличии даты рождения поиск точнее: сначала ФИО+ДР, затем фамилия+имя+ДР.
+    Пары в выгрузке («ФИО1 / ФИО2») разбираются на двух спортсменов.
 </p>
 
-<form method="post" action="{{ url_for('analytics.judge_helper_free') }}">
+<form method="post" action="{{ url_for('analytics.judge_helper_free') }}" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
     <div class="mb-3">
-        <label for="names_text" class="form-label">Список ФИО (можно блоки «ФИО, год, разряд, город» или только ФИО)</label>
-        <textarea class="form-control font-monospace" id="names_text" name="names_text" rows="16" 
-                  placeholder="Иванова Мария Ивановна&#10;Петров Иван Петрович">{{ pasted }}</textarea>
+        <label for="reg_file" class="form-label">Файл выгрузки регистрации (.xlsx)</label>
+        <input class="form-control" type="file" id="reg_file" name="reg_file" accept=".xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+        <div class="form-text">Например <code>reg_tournament…_all.xlsx</code>: «Фамилия Имя» + «Дата рождения».</div>
     </div>
+    <div class="mb-3">
+        <label for="names_text" class="form-label">Или вставьте таблицу / список ФИО</label>
+        <textarea class="form-control font-monospace" id="names_text" name="names_text" rows="16"
+                  placeholder="№ п.п.&#9;Фамилия Имя&#9;Дата рождения&#9;…&#10;1&#9;Иванова Мария Ивановна&#9;10.08.2012&#9;…&#10;&#10;или просто:&#10;Иванова Мария Ивановна&#10;Петров Иван Петрович">{{ pasted }}</textarea>
+        <div class="form-text">Можно вставить строки из Excel целиком (табуляция) — ФИО и ДР подхватятся автоматически.</div>
+    </div>
+    {% if upload_error %}
+    <div class="alert alert-warning" role="alert">{{ upload_error }}</div>
+    {% endif %}
     <button type="submit" class="btn btn-primary">
         <i class="fas fa-search"></i> Проверить по базе и БЕСП
     </button>
@@ -85,7 +97,7 @@
     <div class="col-lg-3 col-md-6 mb-3">
         <div class="card border-info h-100">
             <div class="card-header bg-info text-dark">
-                <i class="fas fa-circle-question"></i> Нет точного ФИО, но есть по ФИ <span class="badge bg-dark">{{ fio_only_matches|length }}</span>
+                <i class="fas fa-circle-question"></i> ФИО без точного ДР / только ФИ <span class="badge bg-dark">{{ fio_only_matches|length }}</span>
             </div>
             <div class="card-body">
                 {% if fio_only_matches %}
@@ -133,7 +145,9 @@
     </div>
 </div>
 <p class="mt-3 text-muted small">
-    Если указано отчество, совпадение ищется по фамилии, имени и отчеству. Если отчество не указано — по фамилии и имени с показом всех найденных вариантов. БЕСП — участие с отметкой бесплатного старта в системе.
+    Если в выгрузке есть дата рождения — сначала ищем совпадение по ФИО+ДР (или фамилия+имя+ДР).
+    Без даты: при отчестве — по трём словам, без отчества — по фамилии и имени.
+    БЕСП — участие с отметкой бесплатного старта в системе.
 </p>
 {% endif %}
 
