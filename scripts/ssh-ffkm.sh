@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# SSH на production ffkm-consent.
-# Те же секреты, что и у scripts/deploy-production.sh
+# SSH на production VPS ФФКМ (Tailscale).
+# С Windows-машины то же самое:
+#   ssh -i "$USERPROFILE/.ssh/id_ed25519" -p 2222 root@100.86.158.36
 set -euo pipefail
 
-HOST="${FFKM_SSH_HOST:-46.173.17.188}"
+HOST="${FFKM_SSH_HOST:-100.86.158.36}"
 PORT="${FFKM_SSH_PORT:-2222}"
 USER_NAME="${FFKM_SSH_USER:-root}"
-KEY_PATH="${FFKM_SSH_KEY_PATH:-$HOME/.ssh/ffkm_consent_ed25519}"
+KEY_PATH="${FFKM_SSH_KEY_PATH:-}"
 
 mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
@@ -17,8 +18,16 @@ if [[ -n "${FFKM_SSH_PRIVATE_KEY:-}" ]]; then
   chmod 600 "$KEY_PATH"
 fi
 
+if [[ -z "$KEY_PATH" ]]; then
+  if [[ -f "$HOME/.ssh/id_ed25519" ]]; then
+    KEY_PATH="$HOME/.ssh/id_ed25519"
+  else
+    KEY_PATH="$HOME/.ssh/ffkm_consent_ed25519"
+  fi
+fi
+
 if [[ ! -f "$KEY_PATH" ]]; then
-  echo "ERROR: SSH key not found. Set FFKM_SSH_PRIVATE_KEY or FFKM_SSH_KEY_PATH." >&2
+  echo "ERROR: SSH key not found. Set FFKM_SSH_PRIVATE_KEY or FFKM_SSH_KEY_PATH, or put ~/.ssh/id_ed25519." >&2
   exit 1
 fi
 

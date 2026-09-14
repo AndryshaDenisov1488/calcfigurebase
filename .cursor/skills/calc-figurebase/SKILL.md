@@ -3,7 +3,7 @@ name: calc-figurebase
 description: >-
   ULTRA-документация Турнирный калькулятор Figurebase (calc.ffkm.ru). Путь: /var/www/calc.figurebase.ru.
   reference.md содержит ПОЛНЫЙ исходный код всех файлов, API, модели, схемы БД.
-  При ЛЮБОЙ задаче — читать reference.md ПЕРВЫМ. Не сканировать проект. При изменении кода — синхронизировать SKILL.md и reference.md. После каждого изменения — commit и push. Сервер: 46.173.17.188 (ffkm).
+  При ЛЮБОЙ задаче — читать reference.md ПЕРВЫМ. Не сканировать проект. При изменении кода — синхронизировать SKILL.md и reference.md. После каждого изменения — commit и push. SSH: 100.86.158.36:2222 (Tailscale).
 ---
 
 # Турнирный калькулятор Figurebase — Ultra Skill
@@ -27,7 +27,7 @@ description: >-
 | Путь | `/var/www/calc.figurebase.ru` |
 | URL | https://calc.ffkm.ru |
 | Старый URL | https://calc.figurebase.ru → 301 на calc.ffkm.ru |
-| Сервер | `46.173.17.188` (SSH `:2222`) |
+| Сервер | Tailscale `100.86.158.36` (SSH `:2222`) |
 | Порт | 7000 (Gunicorn) |
 | БД | SQLite `instance/figure_skating.db` |
 | Systemd | `calc-figurebase` |

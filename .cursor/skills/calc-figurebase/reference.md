@@ -17,7 +17,7 @@
 
 | | |
 |--|--|
-| Сервер | wtgbplphcv (`46.173.17.188`, Beget VPS, Ubuntu 24.04) |
+| Сервер | SSH с этой машины: Tailscale `100.86.158.36:2222` (ключ `id_ed25519`). Старый Beget IP в текстах: `46.173.17.188`. |
 | URL | https://calc.ffkm.ru |
 | Старый URL | https://calc.figurebase.ru → 301 на calc.ffkm.ru (архив `45.12.237.105`) |
 | Backend | 127.0.0.1:7000 (Gunicorn) |
