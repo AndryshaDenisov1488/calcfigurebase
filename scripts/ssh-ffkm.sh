@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# SSH на production VPS ФФКМ (Tailscale).
+# SSH на production VPS ФФКМ (SSH).
 # С Windows-машины то же самое:
-#   ssh -i "$USERPROFILE/.ssh/id_ed25519" -p 2222 root@100.86.158.36
+#   ssh -i "$USERPROFILE/.ssh/id_ed25519" -p 2222 root@46.173.17.188
 set -euo pipefail
 
-HOST="${FFKM_SSH_HOST:-100.86.158.36}"
+HOST="${FFKM_SSH_HOST:-46.173.17.188}"
 PORT="${FFKM_SSH_PORT:-2222}"
 USER_NAME="${FFKM_SSH_USER:-root}"
 KEY_PATH="${FFKM_SSH_KEY_PATH:-}"

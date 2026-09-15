@@ -1,8 +1,8 @@
 ---
 name: ffkm-server
 description: >-
-  Общий доступ по SSH к production VPS ФФКМ через Tailscale
-  (100.86.158.36:2222). Секреты FFKM_SSH_* одинаковы для ВСЕХ репозиториев/агентов.
+  Общий доступ по SSH к production VPS ФФКМ
+  (46.173.17.188:2222). Секреты FFKM_SSH_* одинаковы для ВСЕХ репозиториев/агентов.
   Для сервиса на сервере: push origin main → деплой в /opt/<project> → restart.
   consents: scripts/deploy-production.sh → /opt/ffkm-consent, systemd ffkm-consent.
 ---
@@ -13,19 +13,19 @@ description: >-
 
 ## Как зайти с рабочей Windows-машины
 
-Ключ `id_ed25519`, порт **2222**, Tailscale-адрес (не публичный Beget IP):
+Ключ `id_ed25519`, порт **2222**, SSH-хост:
 
 ```powershell
-ssh -i $env:USERPROFILE\.ssh\id_ed25519 -p 2222 root@100.86.158.36
+ssh -i $env:USERPROFILE\.ssh\id_ed25519 -p 2222 root@46.173.17.188
 ```
 
 Linux / Git Bash:
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 -p 2222 root@100.86.158.36
+ssh -i ~/.ssh/id_ed25519 -p 2222 root@46.173.17.188
 ```
 
-`46.173.17.188` для SSH с этой машины **не использовать** — оттуда таймаут. Публичный адрес этой VM: `159.194.203.175`.
+SSH с рабочей машины: `46.173.17.188:2222`.
 
 ## Секреты один раз на всё
 
@@ -37,14 +37,14 @@ ssh -i ~/.ssh/id_ed25519 -p 2222 root@100.86.158.36
 
 | Имя | Тип | Значение |
 |-----|-----|----------|
-| `FFKM_SSH_HOST` | Env var | `100.86.158.36` |
+| `FFKM_SSH_HOST` | Env var | `46.173.17.188` |
 | `FFKM_SSH_PORT` | Env var | `2222` |
 | `FFKM_SSH_USER` | Env var | `root` |
 | `FFKM_SSH_PRIVATE_KEY` | **Runtime Secret** | весь текст приватного ключа |
 
 Публичный ключ уже должен быть в `/root/.ssh/authorized_keys` на сервере.
 
-После этого **любой** Cloud Agent, стартующий из репо этого Environment, видит те же `FFKM_SSH_*` и может зайти на сервер. Cloud Agent без Tailscale до `100.86.158.36` не достучится — тогда работай с этой машины.
+После этого **любой** Cloud Agent, стартующий из репо этого Environment, видит те же `FFKM_SSH_*` и может зайти на сервер. Cloud Agent должен иметь сетевой доступ к `46.173.17.188:2222`.
 
 Routing Rules (опционально): направь нужные репо на environment `ffkm-prod`.
 
@@ -59,7 +59,7 @@ chmod 600 ~/.ssh/ffkm_ed25519
 # 2) Подключение
 ssh -i ~/.ssh/ffkm_ed25519 -p "${FFKM_SSH_PORT:-2222}" \
   -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new \
-  "${FFKM_SSH_USER:-root}@${FFKM_SSH_HOST:-100.86.158.36}"
+  "${FFKM_SSH_USER:-root}@${FFKM_SSH_HOST:-46.173.17.188}"
 ```
 
 Если в репозитории есть хелпер:
@@ -75,8 +75,8 @@ bash scripts/ssh-ffkm.sh 'hostname; ls /opt'
 
 | | |
 |--|--|
-| SSH (Tailscale) | `100.86.158.36` |
-| Публичный IP этой VM | `159.194.203.175` |
+| SSH (SSH) | `46.173.17.188` |
+| Публичный IP этой VM | `46.173.17.188` |
 | SSH | порт **2222**, user **root** |
 | Ключ с этой машины | `$env:USERPROFILE\.ssh\id_ed25519` |
 | Каталог проектов | `/opt/` |
