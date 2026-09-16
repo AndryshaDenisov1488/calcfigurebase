@@ -24,4 +24,4 @@ Flask service for importing, storing, and analyzing ISUCalcFS competition data.
 Run targeted parser/service tests, then `python -m pytest` when proportionate. Check template and static behavior together for UI changes.
 
 # Deploy
-After verifier PASS and automatic push, deploy runtime changes automatically via `README.md`/`scripts/` for `calc.figurebase.ru`, then check `calc-figurebase` and the smoke scenario. Skip when the user opts out; backup and recovery are mandatory before migration.
+After verifier PASS and automatic push, deploy runtime changes automatically. First create and verify an off-Git backup of the active DB, `instance` state and uploads; schema/data changes require a tested versioned migration and restore path. Follow `README.md`/`scripts/`, then check `calc-figurebase` and its smoke scenario. Skip on opt-out.
