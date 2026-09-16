@@ -1,32 +1,27 @@
-# Figurebase: турнирный калькулятор
+# Purpose
+Flask service for importing, storing, and analyzing ISUCalcFS competition data.
 
-Этот Git-репозиторий — самостоятельный Flask-сервис импорта, хранения и анализа данных ISUCalcFS. Рабочая папка проекта Codex должна быть корнем этого репозитория.
+# Architecture
+- Entry: `app.py`; routes: `routes/`; services: `services/`; parsers: `parsers/`.
+- UI: `templates/`, `static/`; tests: `tests/`; migrations: `migrations/`; operations: `scripts/`.
 
-## Контекст и навигация
+# Commands
+- Install: `python -m pip install -r requirements.txt`
+- Dev: `python app.py`
+- Test: `python -m pytest`
+- Lint/typecheck/build: `unknown`
 
-- Начинай с точечного поиска и этого файла; не изучай соседние проекты без связи с задачей.
-- Основные точки входа: `app.py`, `routes/`, `services/`, `parsers/`, `templates/` и `static/`.
-- Тесты: `tests/`; миграции: `migrations/`; эксплуатационные скрипты: `scripts/`.
-- Обзор и точечные runbook: `README.md` и `docs/`. Большой `.cursor/skills/calc-figurebase/reference.md` открывай только по нужному разделу.
-- Общая карта FFKM: `../tests/docs/agent-environment/PROJECTS.md`; читать только для межпроектной задачи.
+# Conventions
+- Start with targeted search; do not open neighboring projects without a proven contract.
+- Import changes require a narrow parser test using anonymized input.
+- Do not commit `instance/`, uploads, databases, personal source files, logs, or backups.
 
-## Разработка и проверки
+# Integration
+- `figurebase.ru` is a separate neighboring product, not part of this Git repository.
+- No cross-project dependency is assumed without contract evidence.
 
-- Устанавливай Python-зависимости из `requirements.txt` в локальное окружение.
-- Базовая проверка: `python -m pytest`.
-- Для изменения импорта добавляй узкий тест соответствующего парсера и проверяй реальный формат входного файла без коммита исходных персональных данных.
-- Для UI проверяй серверные шаблоны и статику вместе, включая ошибку и пустой результат.
+# Verification
+Run targeted parser/service tests, then `python -m pytest` when proportionate. Check template and static behavior together for UI changes.
 
-## Данные и зависимости
-
-- Рабочая БД — SQLite в `instance/`; конфигурация допускает PostgreSQL. Не коммить БД, uploads, логи и бэкапы.
-- `figurebase.ru` — отдельный соседний продукт, а не подпапка этого Git-проекта. Открывай его только при изменении подтверждённого контракта.
-- Перед любой миграцией или преобразованием существующих данных создай и проверь свежий бэкап вне Git и процедуру восстановления.
-
-## Git и выпуск
-
-- Перед изменениями проверь `git status -sb`; не включай чужие файлы.
-- После успешных проверок коммить и push текущей целевой ветки.
-- Runtime-изменения разворачивай штатным процессом из `README.md`/`scripts/`, затем проверяй systemd unit и smoke-сценарий.
-- Для изменений только `AGENTS.md` или документации деплой и рестарт не нужны.
-- В финале сообщи изменённые файлы, проверки, commit/push/deploy и препятствия.
+# Deploy
+After verifier PASS and automatic push, deploy runtime changes automatically via `README.md`/`scripts/` for `calc.figurebase.ru`, then check `calc-figurebase` and the smoke scenario. Skip when the user opts out; backup and recovery are mandatory before migration.
