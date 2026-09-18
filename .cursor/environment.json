@@ -1,0 +1,17 @@
+{
+  "name": "calc.figurebase.ru (Flask dev)",
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "web",
+      "command": "source .venv/bin/activate && exec gunicorn --timeout 600 --bind 127.0.0.1:7000 --workers 2 app:app",
+      "description": "Flask app served by Gunicorn on http://127.0.0.1:7000 (mirrors production calc-figurebase.service)."
+    }
+  ],
+  "ports": [
+    {
+      "name": "web",
+      "port": 7000
+    }
+  ]
+}
